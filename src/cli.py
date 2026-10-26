@@ -172,12 +172,95 @@ def main() -> None:
     # Status parser
     subparsers.add_parser("status", help="Show database status and tracked stocks")
 
+def forecast_baseline_command(args: argparse.Namespace) -> None:
+    """Generate persistence baseline forecast for next trading session and evaluate test performance."""
+    from src.data.db import get_observations
+    from src.models.baseline import PersistenceBaselineModel
+
+    df = get_observations(args.ticker)
+    if df.empty:
+        print(f"Error: No observations found for {args.ticker}. Run 'sync' first.")
+        sys.exit(1)
+
+    exchange = args.exchange or df["exchange"].iloc[0]
+    model = PersistenceBaselineModel()
+
+    # 1. Evaluate historical performance
+    eval_result = model.evaluate(df, horizon_sessions=1, train_ratio=0.8)
+    metrics = eval_result["metrics"]
+
+    # 2. Generate future forecast
+    future = model.generate_future_forecast(args.ticker, exchange, horizon_sessions=1)
+
+    print(f"\n=======================================================")
+    print(f"  NextOmni Stock: Next-Session Persistence Baseline")
+    print(f"=======================================================")
+    print(f"  Ticker:                 {future['ticker']} ({future['exchange']})")
+    print(f"  Forecast Horizon:       {future['forecast_horizon']} (Next Trading Session)")
+    print(f"  Forecast Origin Date:   {future['forecast_origin_date']}")
+    print(f"  Origin Observed Price:  {future['forecast_origin_price']:.4f} {future['currency']}")
+    print(f"  Target Session Date:    {future['target_session_date']}")
+    print(f"  Predicted Price:        {future['predicted_price']:.4f} {future['currency']}")
+    print(f"  Model Name / Version:   {future['model_name']} (v{future['model_version']})")
+    print(f"  Forecast Status:        {future['status']}")
+
+    print(f"\n--- Out-of-Sample Historical Test Performance (Horizon = 1 Session) ---")
+    print(f"  Test Period:            {eval_result['test_period_start']} to {eval_result['test_period_end']} ({eval_result['test_sessions_count']} sessions)")
+    print(f"  Mean Absolute Error:    {metrics['mae']} {future['currency']}")
+    print(f"  Root Mean Squared Error:{metrics['rmse']} {future['currency']}")
+    print(f"  Mean Absolute Pct Error:{metrics['mape_pct']}%")
+    print(f"  Directional Accuracy:   {metrics['directional_accuracy_pct']}%")
+    print(f"\nEducational Context:\n  {eval_result['educational_note']}\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="nextomni-stock",
+        description="NextOmni Stock Intelligence & Forecasting CLI",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Sync parser
+    sync_parser = subparsers.add_parser("sync", help="Synchronize historical market data")
+    sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
+    sync_parser.add_argument(
+        "--exchange",
+        choices=list(SUPPORTED_EXCHANGES.keys()),
+        help="Exchange MIC (XNYS, XKLS)",
+    )
+    sync_parser.add_argument("--name", type=str, default=None, help="Company name")
+    default_end = datetime.now().strftime("%Y-%m-%d")
+    default_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+    sync_parser.add_argument(
+        "--start", type=str, default=default_start, help="Start date YYYY-MM-DD"
+    )
+    sync_parser.add_argument(
+        "--end", type=str, default=default_end, help="End date YYYY-MM-DD"
+    )
+    sync_parser.add_argument(
+        "--all", action="store_true", help="Sync all default initial tickers"
+    )
+
+    # Status parser
+    subparsers.add_parser("status", help="Show database status and tracked stocks")
+
     # Analyze parser
     analyze_parser = subparsers.add_parser(
         "analyze", help="Run exploratory data analysis and export charts"
     )
     analyze_parser.add_argument(
         "--ticker", type=str, required=True, help="Stock ticker to analyze (e.g. JPM, 1155.KL)"
+    )
+
+    # Forecast Baseline parser
+    baseline_parser = subparsers.add_parser(
+        "forecast-baseline", help="Generate next-session persistence forecast & evaluate benchmark"
+    )
+    baseline_parser.add_argument(
+        "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
+    )
+    baseline_parser.add_argument(
+        "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
     )
 
     args = parser.parse_args()
@@ -187,8 +270,11 @@ def main() -> None:
         status_command(args)
     elif args.command == "analyze":
         analyze_command(args)
+    elif args.command == "forecast-baseline":
+        forecast_baseline_command(args)
 
 
 if __name__ == "__main__":
     main()
+
 
