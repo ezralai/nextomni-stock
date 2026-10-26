@@ -1,0 +1,20 @@
+# Core Numerical & Data Processing
+numpy>=1.26.4,<2.3.0
+pandas>=2.2.2,<3.0.0
+
+# Financial Data & Market Calendars
+yfinance>=0.2.40
+exchange-calendars>=4.5.0
+requests>=2.31.0
+
+# Machine Learning & Statistics
+scikit-learn>=1.4.2,<1.6.0
+scipy>=1.13.0,<1.15.0
+
+# Web Dashboard & Visualization
+streamlit>=1.35.0
+plotly>=5.20.0
+
+# Environment & Testing
+python-dotenv>=1.0.1
+pytest>=8.1.1
