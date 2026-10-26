@@ -53,3 +53,7 @@ logs/
 
 # Streamlit local state
 .streamlit/
+
+# Generated visual reports
+reports/*.html
+

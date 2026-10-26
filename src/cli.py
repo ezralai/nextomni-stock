@@ -115,15 +115,80 @@ def main() -> None:
         "--all", action="store_true", help="Sync all default initial tickers"
     )
 
+def analyze_command(args: argparse.Namespace) -> None:
+    """Run exploratory data analysis and export interactive visual report."""
+    from src.analytics.eda import export_eda_report
+
+    print(f"\nRunning Exploratory Data Analysis for {args.ticker}...")
+    try:
+        stats, report_path = export_eda_report(ticker=args.ticker)
+    except Exception as e:
+        print(f"Error during analysis: {e}")
+        sys.exit(1)
+
+    print("\n--- Summary Statistics ---")
+    print(f"  Ticker:                 {stats.ticker} ({stats.exchange})")
+    print(f"  Period:                 {stats.start_date} to {stats.end_date} ({stats.total_sessions} sessions)")
+    print(f"  Price Range:            {stats.min_price} to {stats.max_price} (Mean: {stats.mean_price})")
+    print(f"  First -> Latest Close:  {stats.first_price} -> {stats.last_price}")
+    print(f"  Cumulative Return:      {stats.cumulative_return_pct}%")
+    print(f"  Annualized Return:      {stats.annualized_return_pct}%")
+    print(f"  Annualized Volatility:  {stats.annualized_volatility_pct}%")
+    print(f"  Max Drawdown:           {stats.max_drawdown_pct}%")
+    print(f"  Return Skewness:        {stats.skewness}")
+    print(f"  Return Kurtosis:        {stats.kurtosis}")
+    print(f"  Average Daily Volume:   {int(stats.avg_daily_volume):,}")
+    print(f"\nInteractive visual report generated at: {report_path.resolve()}\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="nextomni-stock",
+        description="NextOmni Stock Intelligence & Forecasting CLI",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Sync parser
+    sync_parser = subparsers.add_parser("sync", help="Synchronize historical market data")
+    sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
+    sync_parser.add_argument(
+        "--exchange",
+        choices=list(SUPPORTED_EXCHANGES.keys()),
+        help="Exchange MIC (XNYS, XKLS)",
+    )
+    sync_parser.add_argument("--name", type=str, default=None, help="Company name")
+    default_end = datetime.now().strftime("%Y-%m-%d")
+    default_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+    sync_parser.add_argument(
+        "--start", type=str, default=default_start, help="Start date YYYY-MM-DD"
+    )
+    sync_parser.add_argument(
+        "--end", type=str, default=default_end, help="End date YYYY-MM-DD"
+    )
+    sync_parser.add_argument(
+        "--all", action="store_true", help="Sync all default initial tickers"
+    )
+
     # Status parser
     subparsers.add_parser("status", help="Show database status and tracked stocks")
+
+    # Analyze parser
+    analyze_parser = subparsers.add_parser(
+        "analyze", help="Run exploratory data analysis and export charts"
+    )
+    analyze_parser.add_argument(
+        "--ticker", type=str, required=True, help="Stock ticker to analyze (e.g. JPM, 1155.KL)"
+    )
 
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
     elif args.command == "status":
         status_command(args)
+    elif args.command == "analyze":
+        analyze_command(args)
 
 
 if __name__ == "__main__":
     main()
+
