@@ -1,9 +1,10 @@
-"""Configuration constants and exchange settings for the stock monitoring & forecasting system.
+"""Configuration constants and exchange settings for NextOmni Stock (nextomni-stock).
 
 This module acts as the single source of truth for exchange metadata,
 timezones, supported initial tickers, and forecasting horizons.
 """
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
@@ -11,7 +12,10 @@ from typing import Dict, List
 # Base Paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
-DATABASE_PATH = DATA_DIR / "stock_system.db"
+DATABASE_PATH = Path(
+    os.getenv("NEXTOMNI_STOCK_DB_PATH", str(DATA_DIR / "stock_system.db"))
+)
+
 
 
 @dataclass(frozen=True)

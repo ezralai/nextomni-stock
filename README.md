@@ -1,6 +1,7 @@
-# Real-Time Stock Market Monitoring, Price Forecasting & Prediction Evaluation System
+# NextOmni Stock (`nextomni-stock`)
+## Market Monitoring, Price Forecasting & Prediction Evaluation Service
 
-A portfolio-quality, maintainable Python system designed for stock market monitoring, multi-horizon price forecasting, and automated predicted-versus-actual evaluation across two stock exchanges:
+A portfolio-quality, production-ready quantitative financial intelligence service within the **NextOmni** ecosystem. Designed for market monitoring, multi-horizon price forecasting, and automated predicted-versus-actual evaluation across two stock exchanges:
 1. **New York Stock Exchange (NYSE)** — United States (`XNYS`, `America/New_York`, USD).
 2. **Bursa Malaysia** — Malaysia (`XKLS`, `Asia/Kuala_Lumpur`, MYR).
 
@@ -17,6 +18,7 @@ A portfolio-quality, maintainable Python system designed for stock market monito
 - **Transparent Baselines:** Evaluates all machine learning models against a naive persistence baseline ($\hat{P}_{t+k} = P_t$).
 - **Prediction Tracking & Reconciled Evaluation:** Immutable prediction records evaluated against actual market settlement prices once target sessions complete.
 - **Interactive Streamlit Dashboard:** Multi-page interface for market monitoring, exploratory analysis, forecasting, and historical model audit.
+- **Command-Line Interface (CLI):** Easy historical synchronization, validation, and database status inspection.
 
 ---
 
@@ -24,21 +26,23 @@ A portfolio-quality, maintainable Python system designed for stock market monito
 
 ```
 stock/
-├── .env.example              # Environment variables template
+├── .env.example              # Environment variables template (NEXTOMNI_STOCK_*)
 ├── .gitignore                # Git ignore configuration
 ├── requirements.txt          # Python dependencies
 ├── README.md                 # Project documentation
 ├── data/                     # Local SQLite database & raw data store
 │   └── stock_system.db
 ├── src/
+│   ├── cli.py                # Command-line interface for sync and status
 │   ├── config.py             # Exchanges, timezones, tickers, horizons
-│   ├── data/                 # Market data providers & cleaning pipeline
+│   ├── data/                 # SQLite storage, BaseProvider, YahooFinance & Pipeline
 │   ├── features/             # Leak-free feature engineering
 │   ├── models/               # Persistence baseline & ML regressors
 │   ├── evaluation/           # Metrics (MAE, RMSE, DA), validation & tracker
 │   └── dashboard/            # Streamlit multi-page dashboard
 └── tests/
-    └── test_environment.py   # Test suite
+    ├── test_environment.py   # Environment & calendar tests
+    └── test_data_pipeline.py # Storage, cleaning, calendar checks & sync tests
 ```
 
 ---
@@ -62,8 +66,15 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Run the test suite
+# Run the full automated test suite
 pytest -v
+
+# Sync historical data for default NYSE and Bursa Malaysia stocks
+python -m src.cli sync --ticker JPM --exchange XNYS --start 2023-10-01 --end 2024-10-01
+python -m src.cli sync --ticker 1155.KL --exchange XKLS --start 2023-10-01 --end 2024-10-01
+
+# Inspect database status
+python -m src.cli status
 ```
 
 ---
@@ -71,7 +82,7 @@ pytest -v
 ## Development Roadmap
 
 - [x] **Phase 0:** Repository setup, data provider research, exchange calendar verification, and environment foundation.
-- [ ] **Phase 1:** Historical data pipeline (SQLite storage, validation, Yahoo Finance & Twelve Data adapters).
+- [x] **Phase 1:** Historical data pipeline (SQLite storage, validation, Yahoo Finance adapter, corporate actions, and calendar cross-referencing).
 - [ ] **Phase 2:** Exploratory data analysis (charts, distributions, volatility, drawdown).
 - [ ] **Phase 3:** First forecast & persistence baseline ($P_{t+1}$).
 - [ ] **Phase 4:** First machine learning model (Linear Regression) with walk-forward validation.
@@ -80,3 +91,4 @@ pytest -v
 - [ ] **Phase 7:** Market monitoring & data latency labeling (`REALTIME`, `DELAYED_15MIN`, `END_OF_DAY`).
 - [ ] **Phase 8:** Interactive Streamlit Dashboard.
 - [ ] **Phase 9:** Portfolio audit, performance documentation & reproducibility checks.
+

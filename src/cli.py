@@ -1,0 +1,129 @@
+"""Command-line interface for NextOmni Stock (nextomni-stock).
+
+Allows syncing historical stock data, inspecting database state,
+and testing data providers directly from the terminal.
+"""
+
+import argparse
+import sys
+from datetime import datetime, timedelta
+
+from src.config import INITIAL_TICKERS, SUPPORTED_EXCHANGES
+from src.data.db import get_connection, get_observations, init_db
+from src.data.pipeline import DataPipeline
+
+
+def sync_command(args: argparse.Namespace) -> None:
+    """Sync historical data for a given ticker or all default initial tickers."""
+    pipeline = DataPipeline()
+
+    if args.all:
+        for exchange, tickers in INITIAL_TICKERS.items():
+            for ticker in tickers:
+                print(f"Syncing default ticker {ticker} ({exchange})...")
+                res = pipeline.sync_stock(
+                    ticker=ticker,
+                    exchange=exchange,
+                    start_date=args.start,
+                    end_date=args.end,
+                )
+                print(
+                    f"  -> {ticker}: Synced {res['sessions_synced']} sessions. "
+                    f"Missing calendar sessions: {res['missing_calendar_sessions_count']}"
+                )
+        return
+
+    if not args.ticker or not args.exchange:
+        print("Error: --ticker and --exchange are required unless --all is specified.")
+        sys.exit(1)
+
+    print(f"Syncing {args.ticker} on {args.exchange} from {args.start} to {args.end}...")
+    result = pipeline.sync_stock(
+        ticker=args.ticker,
+        exchange=args.exchange,
+        start_date=args.start,
+        end_date=args.end,
+        company_name=args.name,
+    )
+    print("\nSync Result:")
+    for k, v in result.items():
+        print(f"  {k}: {v}")
+
+
+def status_command(args: argparse.Namespace) -> None:
+    """Display current database summary: stocks, observation counts, and date ranges."""
+    init_db()
+    conn = get_connection()
+
+    stocks = conn.execute("SELECT * FROM stocks;").fetchall()
+    if not stocks:
+        print("No stocks registered in database yet. Run 'sync' to import data.")
+        conn.close()
+        return
+
+    print("\nNextOmni Stock Database Status:")
+    print(f"{'Ticker':<10} {'Exchange':<8} {'Currency':<8} {'Sessions':<10} {'Earliest':<12} {'Latest':<12}")
+    print("-" * 65)
+
+    for s in stocks:
+        ticker = s["ticker"]
+        stats = conn.execute(
+            """
+            SELECT COUNT(*) as cnt, MIN(session_date) as min_date, MAX(session_date) as max_date
+            FROM market_observations
+            WHERE ticker = ?;
+            """,
+            (ticker,),
+        ).fetchone()
+
+        cnt = stats["cnt"] if stats else 0
+        min_date = stats["min_date"] if stats and stats["min_date"] else "N/A"
+        max_date = stats["max_date"] if stats and stats["max_date"] else "N/A"
+
+        print(
+            f"{ticker:<10} {s['exchange']:<8} {s['currency']:<8} {cnt:<10} {min_date:<12} {max_date:<12}"
+        )
+    conn.close()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="nextomni-stock",
+        description="NextOmni Stock Intelligence & Forecasting CLI",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Sync parser
+    sync_parser = subparsers.add_parser("sync", help="Synchronize historical market data")
+    sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
+    sync_parser.add_argument(
+        "--exchange",
+        type=str,
+        choices=list(SUPPORTED_EXCHANGES.keys()),
+        help="Exchange MIC (XNYS, XKLS)",
+    )
+    sync_parser.add_argument("--name", type=str, default=None, help="Company name")
+    default_end = datetime.now().strftime("%Y-%m-%d")
+    default_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+    sync_parser.add_argument(
+        "--start", type=str, default=default_start, help="Start date YYYY-MM-DD"
+    )
+    sync_parser.add_argument(
+        "--end", type=str, default=default_end, help="End date YYYY-MM-DD"
+    )
+    sync_parser.add_argument(
+        "--all", action="store_true", help="Sync all default initial tickers"
+    )
+
+    # Status parser
+    subparsers.add_parser("status", help="Show database status and tracked stocks")
+
+    args = parser.parse_args()
+    if args.command == "sync":
+        sync_command(args)
+    elif args.command == "status":
+        status_command(args)
+
+
+if __name__ == "__main__":
+    main()
