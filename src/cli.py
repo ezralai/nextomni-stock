@@ -417,6 +417,26 @@ def predict_command(args: argparse.Namespace) -> None:
         print(f"  80% Confidence Band:    [{record['lower_bound']:.4f} – {record['upper_bound']:.4f}] {record['currency']}")
     print(f"  Model:                  {record['model_name']} (v{record['model_version']})")
     print(f"  Status:                 {record['status']}")
+
+    if getattr(args, "explain", False) and hasattr(forecaster, "explain_forecast"):
+        try:
+            attributions = forecaster.explain_forecast(latest_features)
+            if attributions:
+                print("  " + "-" * 61)
+                print("  Signal Attribution Breakdown (Additive Return Driver):")
+                sorted_attrs = sorted(
+                    [(k, v) for k, v in attributions.items() if k != "intercept"],
+                    key=lambda x: abs(x[1]),
+                    reverse=True,
+                )
+                intercept_val = attributions.get("intercept", 0.0)
+                print(f"    {'[Baseline Intercept]':<25} {intercept_val:>+8.4f} ({intercept_val*100:>+6.2f}%)")
+                for feat, val in sorted_attrs:
+                    direction = "▲" if val > 0 else ("▼" if val < 0 else " ")
+                    print(f"    {feat:<25} {val:>+8.4f} ({val*100:>+6.2f}%) {direction}")
+        except Exception:
+            pass
+
     print("=" * 65 + "\n")
 
 
@@ -768,6 +788,9 @@ def main() -> None:
     )
     predict_parser.add_argument(
         "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
+    )
+    predict_parser.add_argument(
+        "--explain", action="store_true", help="Print local feature signal attribution breakdown"
     )
 
     # Evaluate pending parser

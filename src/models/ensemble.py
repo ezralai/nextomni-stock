@@ -149,6 +149,25 @@ class ConvexEnsembleForecaster(BaseForecaster):
 
         return combined
 
+    def explain_forecast(
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+    ) -> Dict[str, float]:
+        """Combine submodel additive feature attributions weighted by meta-weights."""
+        if not self._fitted:
+            raise RuntimeError("Model must be fitted before calling explain_forecast.")
+
+        w_lin, w_gb = self.weights
+        lin_exp = self.linear_model.explain_forecast(X)
+        gb_exp = self.gb_model.explain_forecast(X)
+
+        all_keys = set(lin_exp.keys()) | set(gb_exp.keys())
+        blended = {}
+        for k in all_keys:
+            val = w_lin * lin_exp.get(k, 0.0) + w_gb * gb_exp.get(k, 0.0)
+            blended[k] = round(float(val), 6)
+        return blended
+
     def save(self, filepath: Union[str, Path]) -> Path:
         """Serialize ensemble model with path traversal check and HMAC-SHA256 signature."""
         base_dir = Path(filepath).resolve().parent

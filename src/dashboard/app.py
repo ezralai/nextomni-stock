@@ -468,6 +468,47 @@ def render_dashboard() -> None:
             )
             st.plotly_chart(fig_proj, use_container_width=True)
 
+            # Interactive Signal Attribution Explainer
+            with st.expander("🔍 Explainable AI: Quantitative Signal Attribution Breakdown", expanded=False):
+                st.markdown(
+                    "Inspect the local additive drivers contributing to the direct expected return for each horizon. "
+                    "Green indicates positive bullish contribution; red indicates bearish drag."
+                )
+                tab_h1, tab_h5, tab_h21 = st.tabs(["Next Session (1D)", "1-Week (5D)", "1-Month (21D)"])
+                for tab_obj, h_k in zip([tab_h1, tab_h5, tab_h21], ["1_SESSION", "5_SESSIONS", "21_SESSIONS"]):
+                    with tab_obj:
+                        attrs = forecasts.get(h_k, {}).get("signal_attributions", {})
+                        if attrs:
+                            sorted_signals = sorted(
+                                [(k, v) for k, v in attrs.items() if k != "intercept"],
+                                key=lambda x: abs(x[1]),
+                                reverse=True,
+                            )
+                            fig_attr = go.Figure()
+                            names = [s[0] for s in sorted_signals]
+                            vals = [s[1] * 100.0 for s in sorted_signals]
+                            colors = ["#00E676" if v >= 0 else "#FF5252" for v in vals]
+
+                            fig_attr.add_trace(go.Bar(
+                                x=vals,
+                                y=names,
+                                orientation="h",
+                                marker=dict(color=colors),
+                                text=[f"{v:+.2f}%" for v in vals],
+                                textposition="outside",
+                            ))
+                            fig_attr.update_layout(
+                                template="plotly_dark",
+                                title=f"Additive Signal Contributions to Expected Return ({h_k})",
+                                xaxis_title="Contribution to Expected Return (%)",
+                                yaxis=dict(autorange="reversed"),
+                                margin=dict(l=120, r=40, t=40, b=30),
+                                height=380,
+                            )
+                            st.plotly_chart(fig_attr, use_container_width=True)
+                        else:
+                            st.info("Signal attributions not available for this forecast.")
+
             # Action: Register Forecast in Audit Log
             col_reg, _ = st.columns([2, 4])
             with col_reg:

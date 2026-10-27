@@ -195,6 +195,53 @@ class GradientBoostingForecaster(BaseForecaster):
 
         return {name: 0.0 for name in self.feature_names}
 
+    def explain_forecast(
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+    ) -> Dict[str, float]:
+        """Compute additive feature attribution decomposition to expected return."""
+        if not self._fitted:
+            raise RuntimeError("Model must be fitted before calling explain_forecast.")
+
+        if isinstance(X, pd.DataFrame):
+            x_mat = X[self.feature_names].iloc[-1:]
+        else:
+            x_arr = np.asarray(X)
+            if x_arr.ndim == 1:
+                x_arr = x_arr.reshape(1, -1)
+            x_mat = x_arr[-1:]
+
+        x_scaled = self.scaler.transform(x_mat)
+        pred_return = float(self.model.predict(x_scaled)[0])
+
+        zero_baseline = np.zeros_like(x_scaled)
+        base_return = float(self.model.predict(zero_baseline)[0])
+        excess_return = pred_return - base_return
+
+        deltas = []
+        for i in range(len(self.feature_names)):
+            perturbed = np.zeros_like(x_scaled)
+            perturbed[0, i] = x_scaled[0, i]
+            delta_i = float(self.model.predict(perturbed)[0]) - base_return
+            deltas.append(delta_i)
+
+        sum_deltas = sum(deltas)
+        contributions: Dict[str, float] = {
+            "intercept": round(base_return, 6),
+        }
+
+        if abs(sum_deltas) > 1e-9:
+            scale_factor = excess_return / sum_deltas
+            for name, delta_i in zip(self.feature_names, deltas):
+                contributions[name] = round(float(delta_i * scale_factor), 6)
+        else:
+            n_features = len(self.feature_names)
+            alloc = excess_return / max(n_features, 1)
+            for name in self.feature_names:
+                contributions[name] = round(float(alloc), 6)
+
+        return contributions
+
     def save(self, file_path: Union[str, Path]) -> Path:
         """Persist trained model, quantile regressors, scaler, and hyperparameters to disk."""
         path = Path(file_path)

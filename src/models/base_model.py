@@ -77,7 +77,19 @@ class BaseForecaster(ABC):
             Tuple[np.ndarray, np.ndarray, np.ndarray]:
                 (predicted_price, lower_bound_price, upper_bound_price)
         """
-        pass
+    def explain_forecast(
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+    ) -> Dict[str, float]:
+        """Provide feature-level additive contribution to expected return for an observation.
+
+        Args:
+            X: Single observation feature row (DataFrame or 2D array).
+
+        Returns:
+            Dict[str, float]: Mapping from feature name (plus 'intercept') to return contribution.
+        """
+        return {}
 
     @abstractmethod
     def save(self, filepath: Union[str, Path]) -> Path:

@@ -81,9 +81,12 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Non-Parametric Quantile Regression:** Dual `HistGradientBoostingRegressor(loss="quantile", quantile=0.10/0.90)` models capture empirical fat tails and return skewness.
 - [x] **Automated Session-Aware Daemon:** `EvaluationDaemon` and `daemon-reconcile` CLI command orchestrate market state checks and idempotent price reconciliation.
 - [x] **Interactive Dashboard Security & Disaster Recovery Console:** Embedded real-time cryptographic audit verification, session-aware daemon triggers, and 1-click atomic database backup in Tab 4.
+- [x] **Explainable AI (XAI) Additive Attribution:** `explain_forecast()` decomposes expected returns $\hat{r}_{t+k}$ into closed-form linear and marginal non-linear signal attributions across all models, ensuring exact additivity ($\sum c_i + \text{intercept} = \hat{r}$).
+- [x] **Interactive Signal Attribution Visualizer:** Streamlit Tab 3 embeds an expander with horizontal color-coded contribution bar charts (bullish green vs. bearish red) for each horizon.
+- [x] **CLI Explainability Flag:** `predict --explain` displays local signal attribution breakdown table in terminal.
 - [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db`, `risk-report`, and `prune-db`.
 - [x] **Type Annotations:** All public functions include parameter types and return type annotations.
-- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (90/90 tests passing).
+- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (95/95 tests passing).
 - [x] **Docstrings:** Standard Google/NumPy format explaining arguments, return values, and mathematical formulas.
 - [x] **Decoupled Modules:** No circular imports between `src/data`, `src/features`, `src/models`, `src/evaluation`, `src/security`, and `src/dashboard`.
 - [x] **Reproducibility:** Random seeds fixed (`random_state=42`) in all stochastic models or splitters.

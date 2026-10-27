@@ -189,6 +189,9 @@ class MultiHorizonForecaster:
                 ((predicted_price - origin_price) / origin_price) * 100.0, 2
             )
 
+            # Local signal attribution decomposition
+            signal_attributions = model.explain_forecast(latest_features)
+
             forecasts[h_key] = {
                 "ticker": ticker,
                 "exchange": exchange,
@@ -203,6 +206,7 @@ class MultiHorizonForecaster:
                 "upper_bound": round(upper_bound, 4),
                 "confidence_level": confidence_level,
                 "expected_return_pct": expected_return_pct,
+                "signal_attributions": signal_attributions,
                 "model_name": f"{model.model_name}_Direct_{h_key}",
                 "model_version": self.model_version,
             }

@@ -130,6 +130,31 @@ class LinearRegressionForecaster(BaseForecaster):
         coef_dict["intercept"] = round(float(self.model.intercept_), 6)
         return coef_dict
 
+    def explain_forecast(
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+    ) -> Dict[str, float]:
+        """Provide exact linear additive feature contributions to expected return."""
+        if not self.is_fitted:
+            raise RuntimeError("Model must be fitted before calling explain_forecast.")
+
+        if isinstance(X, pd.DataFrame):
+            x_mat = X[self.feature_names].iloc[-1:]
+        else:
+            x_arr = np.asarray(X)
+            if x_arr.ndim == 1:
+                x_arr = x_arr.reshape(1, -1)
+            x_mat = x_arr[-1:]
+
+        x_scaled = self.scaler.transform(x_mat)[0]
+        coefs = self.model.coef_
+        contributions: Dict[str, float] = {
+            "intercept": round(float(self.model.intercept_), 6),
+        }
+        for name, coef, val in zip(self.feature_names, coefs, x_scaled):
+            contributions[name] = round(float(coef * val), 6)
+        return contributions
+
     def save(self, file_path: Union[str, Path]) -> Path:
         """Persist trained model, scaler, and metadata to disk with HMAC signature."""
         from src.security.audit import sign_model_artifact
