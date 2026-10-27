@@ -59,5 +59,4 @@ reports/*.html
 
 # Serialized model artifacts
 models/*.joblib
-
-
+models/**/*.joblib

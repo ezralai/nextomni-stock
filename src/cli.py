@@ -542,10 +542,145 @@ def main() -> None:
     linear_parser.add_argument(
         "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
     )
+def train_all_horizons_command(args: argparse.Namespace) -> None:
+    """Train direct models for 1-session, 5-session, and 21-session horizons with walk-forward validation."""
+    from src.data.db import get_observations
+    from src.models.multi_horizon import MultiHorizonForecaster
+
+    df = get_observations(args.ticker)
+    if df.empty:
+        print(f"Error: No observations found for {args.ticker}. Run 'sync' first.")
+        sys.exit(1)
+
+    exchange = args.exchange or df["exchange"].iloc[0]
+    currency = "USD" if exchange == "XNYS" else "MYR"
+
+    print(f"\n==========================================================================")
+    print(f"  NextOmni Stock: Multi-Horizon Direct Model Training ({args.ticker})")
+    print(f"==========================================================================")
+    print("Training dedicated direct models for:")
+    print("  • 1 Session  (P_{t+1})  - Next Trading Day")
+    print("  • 5 Sessions (P_{t+5})  - Next Trading Week (1 Calendar Week)")
+    print("  • 21 Sessions (P_{t+21}) - Next Trading Month (~1 Calendar Month)")
+    print("\nRunning Walk-Forward Out-of-Sample Validation across all horizons...")
+
+    forecaster = MultiHorizonForecaster(alpha=args.alpha)
+    validation_results = forecaster.evaluate_walk_forward_all(df, min_train_sessions=args.min_train)
+
+    print("\n" + "=" * 90)
+    print(f"  Multi-Horizon Out-of-Sample Performance Comparison ({args.ticker})")
+    print("=" * 90)
+    print(f"{'Horizon':<15} {'Steps':<8} {'Model MAE':<14} {'Baseline MAE':<15} {'Improvement':<13} {'Dir Acc (%)':<12}")
+    print("-" * 90)
+
+    for h_key, res in validation_results.items():
+        m_m = res["model_metrics"]
+        b_m = res["baseline_metrics"]
+        mae_imp = f"{res['mae_improvement_pct']:>+6.2f}%"
+        da = f"{m_m['directional_accuracy_pct']:.2f}%"
+        print(
+            f"{h_key:<15} {res['walk_forward_steps']:<8} "
+            f"{m_m['mae']:<14.4f} {b_m['mae']:<15.4f} {mae_imp:<13} {da:<12}"
+        )
+    print("-" * 90)
+
+    # Train final models on full feature sets and save
+    forecaster.fit(df)
+    models_dir = Path("models")
+    save_path = forecaster.save_models(models_dir, args.ticker)
+    print(f"\nMulti-horizon models saved to: {save_path.resolve()}")
+
+    # Generate current future predictions
+    future_forecasts = forecaster.predict_all_horizons(df, args.ticker, exchange)
+    print("\nCurrent Multi-Horizon Forecasts (from latest observed session):")
+    print(f"{'Horizon':<15} {'Target Date':<14} {'Origin Price':<14} {'Predicted Price':<16} {'Exp Return':<12}")
+    print("-" * 75)
+    for h_key, fc in future_forecasts.items():
+        print(
+            f"{h_key:<15} {fc['target_session_date']:<14} "
+            f"{fc['origin_price']:<14.4f} {fc['predicted_price']:<16.4f} {fc['expected_return_pct']:>+6.2f}%"
+        )
+    print("-" * 75 + "\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="nextomni-stock",
+        description="NextOmni Stock Intelligence & Forecasting CLI",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Sync parser
+    sync_parser = subparsers.add_parser("sync", help="Synchronize historical market data")
+    sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
+    sync_parser.add_argument(
+        "--exchange",
+        choices=list(SUPPORTED_EXCHANGES.keys()),
+        help="Exchange MIC (XNYS, XKLS)",
+    )
+    sync_parser.add_argument("--name", type=str, default=None, help="Company name")
+    default_end = datetime.now().strftime("%Y-%m-%d")
+    default_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
+    sync_parser.add_argument(
+        "--start", type=str, default=default_start, help="Start date YYYY-MM-DD"
+    )
+    sync_parser.add_argument(
+        "--end", type=str, default=default_end, help="End date YYYY-MM-DD"
+    )
+    sync_parser.add_argument(
+        "--all", action="store_true", help="Sync all default initial tickers"
+    )
+
+    # Status parser
+    subparsers.add_parser("status", help="Show database status and tracked stocks")
+
+    # Analyze parser
+    analyze_parser = subparsers.add_parser(
+        "analyze", help="Run exploratory data analysis and export charts"
+    )
+    analyze_parser.add_argument(
+        "--ticker", type=str, required=True, help="Stock ticker to analyze (e.g. JPM, 1155.KL)"
+    )
+
+    # Forecast Baseline parser
+    baseline_parser = subparsers.add_parser(
+        "forecast-baseline", help="Generate next-session persistence forecast & evaluate benchmark"
+    )
+    baseline_parser.add_argument(
+        "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
+    )
+    baseline_parser.add_argument(
+        "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
+    )
+
+    # Train Linear parser
+    linear_parser = subparsers.add_parser(
+        "train-linear", help="Train Linear Regression model with walk-forward validation"
+    )
+    linear_parser.add_argument(
+        "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
+    )
     linear_parser.add_argument(
         "--min-train", type=int, default=120, help="Minimum initial training sessions"
     )
     linear_parser.add_argument(
+        "--alpha", type=float, default=1.0, help="Ridge regularization strength alpha"
+    )
+
+    # Train All Horizons parser
+    multi_parser = subparsers.add_parser(
+        "train-all-horizons", help="Train and validate dedicated models for 1, 5, and 21 sessions"
+    )
+    multi_parser.add_argument(
+        "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
+    )
+    multi_parser.add_argument(
+        "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
+    )
+    multi_parser.add_argument(
+        "--min-train", type=int, default=120, help="Minimum initial training sessions"
+    )
+    multi_parser.add_argument(
         "--alpha", type=float, default=1.0, help="Ridge regularization strength alpha"
     )
 
@@ -594,12 +729,15 @@ def main() -> None:
         forecast_baseline_command(args)
     elif args.command == "train-linear":
         train_linear_command(args)
+    elif args.command == "train-all-horizons":
+        train_all_horizons_command(args)
     elif args.command == "predict":
         predict_command(args)
     elif args.command == "evaluate-pending":
         evaluate_pending_command(args)
     elif args.command == "list-predictions":
         list_predictions_command(args)
+
 
 
 if __name__ == "__main__":

@@ -1,0 +1,222 @@
+"""Multi-horizon forecasting engine for NextOmni Stock.
+
+Implements direct forecasting models for:
+- 1 Trading Session:  P_{t+1} (Next Day)
+- 5 Trading Sessions: P_{t+5} (Next Trading Week)
+- 21 Trading Sessions: P_{t+21} (Next Trading Month)
+
+Direct forecasting trains dedicated estimators f_k(X_t) for each horizon k,
+preventing the compounding errors inherent to recursive auto-regressive steps.
+"""
+
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+import exchange_calendars as xcals
+import joblib
+import pandas as pd
+
+from src.config import (
+    HORIZON_FIVE_SESSIONS,
+    HORIZON_NEXT_SESSION,
+    HORIZON_TWENTY_ONE_SESSIONS,
+    PRICE_COLUMN,
+    SUPPORTED_EXCHANGES,
+    SUPPORTED_HORIZONS,
+)
+from src.data.db import get_observations
+from src.evaluation.metrics import calculate_all_metrics
+from src.features.builder import FEATURE_COLUMNS, build_feature_matrix
+from src.models.linear_model import LinearRegressionForecaster
+
+
+class MultiHorizonForecaster:
+    """Manages dedicated direct forecasting models across multiple trading horizons."""
+
+    def __init__(self, alpha: float = 1.0, model_version: str = "1.0.0"):
+        self.alpha = alpha
+        self.model_version = model_version
+        self.models: Dict[str, LinearRegressionForecaster] = {
+            "1_SESSION": LinearRegressionForecaster(alpha=alpha, model_version=model_version),
+            "5_SESSIONS": LinearRegressionForecaster(alpha=alpha, model_version=model_version),
+            "21_SESSIONS": LinearRegressionForecaster(alpha=alpha, model_version=model_version),
+        }
+        self.horizons_map = {
+            "1_SESSION": HORIZON_NEXT_SESSION,
+            "5_SESSIONS": HORIZON_FIVE_SESSIONS,
+            "21_SESSIONS": HORIZON_TWENTY_ONE_SESSIONS,
+        }
+        self.is_fitted: bool = False
+
+    def fit(self, df: pd.DataFrame) -> "MultiHorizonForecaster":
+        """Fit separate direct models for 1-session, 5-session, and 21-session horizons."""
+        for h_key, h_sessions in self.horizons_map.items():
+            feature_df, feat_cols = build_feature_matrix(
+                df, include_target=True, horizon_sessions=h_sessions
+            )
+            trainable = feature_df.dropna(subset=["target_price"]).copy().reset_index(drop=True)
+
+            if len(trainable) < 15:
+                raise ValueError(
+                    f"Insufficient observations ({len(trainable)}) to train horizon {h_key}."
+                )
+
+
+            self.models[h_key].fit(
+                X=trainable[feat_cols],
+                y_target_price=trainable["target_price"],
+                p_origin=trainable[PRICE_COLUMN],
+            )
+
+        self.is_fitted = True
+        return self
+
+    def predict_all_horizons(
+        self,
+        df: pd.DataFrame,
+        ticker: str,
+        exchange: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Generate out-of-sample predictions across all 3 horizons from latest observation.
+
+        Uses exchange_calendars to resolve exact future target dates.
+        """
+        if not self.is_fitted:
+            raise RuntimeError("MultiHorizonForecaster must be fitted before predict_all_horizons.")
+
+        if exchange not in SUPPORTED_EXCHANGES:
+            raise ValueError(f"Unsupported exchange '{exchange}'")
+
+        cfg = SUPPORTED_EXCHANGES[exchange]
+        cal = xcals.get_calendar(exchange)
+
+        # Feature vector for the latest observation
+        feature_df, feat_cols = build_feature_matrix(df, include_target=False)
+        latest_row = feature_df.iloc[-1]
+        latest_features = latest_row[feat_cols].to_frame().T
+
+        origin_session = str(latest_row["session_date"])
+        origin_price = float(latest_row[PRICE_COLUMN])
+        origin_ts = pd.Timestamp(origin_session)
+
+        forecasts = {}
+
+        for h_key, h_sessions in self.horizons_map.items():
+            # Resolve target trading session date
+            sessions_ahead = cal.sessions_in_range(
+                origin_ts, origin_ts + pd.Timedelta(days=h_sessions * 7)
+            )
+            try:
+                idx = list(sessions_ahead).index(origin_ts)
+                target_ts = sessions_ahead[idx + h_sessions]
+            except Exception:
+                target_ts = origin_ts + pd.Timedelta(days=h_sessions)
+
+            target_date_str = target_ts.strftime("%Y-%m-%d")
+
+            # Predict price
+            model = self.models[h_key]
+            predicted_price = float(model.predict(latest_features, p_origin=origin_price)[0])
+
+            expected_return_pct = round(
+                ((predicted_price - origin_price) / origin_price) * 100.0, 2
+            )
+
+            forecasts[h_key] = {
+                "ticker": ticker,
+                "exchange": exchange,
+                "currency": cfg.currency,
+                "horizon_type": h_key,
+                "horizon_sessions": h_sessions,
+                "forecast_origin_session": origin_session,
+                "origin_price": origin_price,
+                "target_session_date": target_date_str,
+                "predicted_price": round(predicted_price, 4),
+                "expected_return_pct": expected_return_pct,
+                "model_name": f"{model.model_name}_Direct_{h_key}",
+                "model_version": self.model_version,
+            }
+
+        return forecasts
+
+    def evaluate_walk_forward_all(
+        self,
+        df: pd.DataFrame,
+        min_train_sessions: int = 120,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Perform separate walk-forward evaluations for each horizon and compare to baseline."""
+        results = {}
+
+        for h_key, h_sessions in self.horizons_map.items():
+            feature_df, feat_cols = build_feature_matrix(
+                df, include_target=True, horizon_sessions=h_sessions
+            )
+            valid_df = feature_df.dropna(subset=["target_price"]).copy().reset_index(drop=True)
+
+            if len(valid_df) <= min_train_sessions:
+                raise ValueError(
+                    f"Dataset ({len(valid_df)}) too small for min_train_sessions ({min_train_sessions}) on {h_key}."
+                )
+
+            actual_origins = []
+            actual_targets = []
+            model_preds = []
+            baseline_preds = []
+
+            for t in range(min_train_sessions, len(valid_df)):
+                train_part = valid_df.iloc[:t]
+                test_r = valid_df.iloc[t]
+
+                forecaster = LinearRegressionForecaster(alpha=self.alpha)
+                forecaster.fit(
+                    X=train_part[feat_cols],
+                    y_target_price=train_part["target_price"],
+                    p_origin=train_part[PRICE_COLUMN],
+                )
+
+                p_orig = float(test_r[PRICE_COLUMN])
+                p_actual = float(test_r["target_price"])
+                p_pred = float(
+                    forecaster.predict(X=test_r[feat_cols].to_frame().T, p_origin=p_orig)[0]
+                )
+
+                actual_origins.append(p_orig)
+                actual_targets.append(p_actual)
+                model_preds.append(p_pred)
+                baseline_preds.append(p_orig)
+
+            m_metrics = calculate_all_metrics(actual_origins, actual_targets, model_preds)
+            b_metrics = calculate_all_metrics(actual_origins, actual_targets, baseline_preds)
+
+            results[h_key] = {
+                "horizon_sessions": h_sessions,
+                "walk_forward_steps": len(model_preds),
+                "model_metrics": m_metrics,
+                "baseline_metrics": b_metrics,
+                "mae_improvement_pct": round(
+                    ((b_metrics["mae"] - m_metrics["mae"]) / b_metrics["mae"]) * 100
+                    if b_metrics["mae"] > 0
+                    else 0.0,
+                    2,
+                ),
+            }
+
+        return results
+
+    def save_models(self, dir_path: Union[str, Path], ticker: str) -> Path:
+        """Serialize all direct horizon models to directory."""
+        path = Path(dir_path) / f"multi_horizon_{ticker.replace('.', '_')}"
+        path.mkdir(parents=True, exist_ok=True)
+        for h_key, model in self.models.items():
+            model.save(path / f"{h_key}.joblib")
+        return path
+
+    @classmethod
+    def load_models(cls, dir_path: Union[str, Path], ticker: str) -> "MultiHorizonForecaster":
+        """Load all direct horizon models from directory."""
+        path = Path(dir_path) / f"multi_horizon_{ticker.replace('.', '_')}"
+        instance = cls()
+        for h_key in instance.horizons_map.keys():
+            instance.models[h_key] = LinearRegressionForecaster.load(path / f"{h_key}.joblib")
+        instance.is_fitted = True
+        return instance

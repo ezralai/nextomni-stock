@@ -88,6 +88,10 @@ python -m src.cli forecast-baseline --ticker 1155.KL
 python -m src.cli train-linear --ticker JPM
 python -m src.cli train-linear --ticker 1155.KL
 
+# Train Multi-Horizon direct models (1, 5, 21 sessions) with walk-forward validation
+python -m src.cli train-all-horizons --ticker JPM
+python -m src.cli train-all-horizons --ticker 1155.KL
+
 # Generate and register a forecast prediction
 python -m src.cli predict --ticker JPM --model linear
 python -m src.cli predict --ticker 1155.KL --model linear
@@ -109,7 +113,7 @@ python -m src.cli list-predictions
 - [x] **Phase 3:** First forecast & persistence baseline ($P_{t+1}$).
 - [x] **Phase 4:** First machine learning model (Linear Regression) with walk-forward validation.
 - [x] **Phase 5:** Prediction tracking finite state machine & idempotent actual-price evaluation.
-- [ ] **Phase 6:** Multi-horizon expansion ($P_{t+5}$, $P_{t+21}$).
+- [x] **Phase 6:** Multi-horizon expansion ($P_{t+5}$, $P_{t+21}$).
 - [ ] **Phase 7:** Market monitoring & data latency labeling (`REALTIME`, `DELAYED_15MIN`, `END_OF_DAY`).
 - [ ] **Phase 8:** Interactive Streamlit Dashboard.
 - [ ] **Phase 9:** Portfolio audit, performance documentation & reproducibility checks.
