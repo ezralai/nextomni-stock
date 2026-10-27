@@ -130,6 +130,20 @@ def analyze_command(args: argparse.Namespace) -> None:
     print(f"  Return Skewness:        {stats.skewness}")
     print(f"  Return Kurtosis:        {stats.kurtosis}")
     print(f"  Average Daily Volume:   {int(stats.avg_daily_volume):,}")
+
+    try:
+        from src.analytics.regime import detect_market_regime
+        df_obs = get_observations(ticker)
+        if len(df_obs) >= 20:
+            regime_rec = detect_market_regime(df_obs)
+            print("\n--- Market Regime Diagnostic ---")
+            print(f"  Quantitative Regime:    {regime_rec.regime} [{regime_rec.regime_label}]")
+            print(f"  Macro Sentiment Score:  {regime_rec.sentiment_score:+.3f} (Range [-1.0, +1.0])")
+            print(f"  Volatility State:       {regime_rec.volatility_regime} ({regime_rec.rolling_vol_annualized:.1f}% Ann, {regime_rec.vol_percentile_1y:.1f}% 1Y Percentile)")
+            print(f"  Trend State:            {regime_rec.trend_regime} (SMA50: {regime_rec.sma_50:.2f}" + (f", SMA200: {regime_rec.sma_200:.2f})" if regime_rec.sma_200 else ")"))
+    except Exception:
+        pass
+
     print(f"\nInteractive visual report generated at: {report_path.resolve()}\n")
 
 

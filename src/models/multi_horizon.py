@@ -10,6 +10,7 @@ preventing the compounding errors inherent to recursive auto-regressive steps.
 """
 
 from datetime import datetime
+import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 import exchange_calendars as xcals
@@ -220,6 +221,49 @@ class MultiHorizonForecaster:
                 "model_name": f"{model.model_name}_Direct_{h_key}",
                 "model_version": self.model_version,
             }
+
+        return self.enforce_term_structure_monotonicity(forecasts)
+
+    @staticmethod
+    def enforce_term_structure_monotonicity(
+        forecasts: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Enforce physical term-structure diffusion monotonicity across horizons.
+
+        Ensures that uncertainty interval width expands with forecast horizon:
+        Width(21) >= Width(5) >= Width(1), scaling as sqrt(horizon_ratio).
+        Prevents small-sample quantile estimation noise from producing inverted bands.
+        """
+        horizon_order = ["1_SESSION", "5_SESSIONS", "21_SESSIONS"]
+        present_keys = [k for k in horizon_order if k in forecasts]
+        if len(present_keys) <= 1:
+            return forecasts
+
+        prev_k = present_keys[0]
+        for curr_k in present_keys[1:]:
+            prev_f = forecasts[prev_k]
+            curr_f = forecasts[curr_k]
+
+            h_prev = max(1, prev_f.get("horizon_sessions", 1))
+            h_curr = max(1, curr_f.get("horizon_sessions", 5))
+            scale = math.sqrt(h_curr / h_prev)
+
+            prev_pred = float(prev_f["predicted_price"])
+            curr_pred = float(curr_f["predicted_price"])
+
+            prev_upper_w = max(0.001, float(prev_f["upper_bound"]) - prev_pred)
+            prev_lower_w = max(0.001, prev_pred - float(prev_f["lower_bound"]))
+
+            curr_upper_w = max(0.001, float(curr_f["upper_bound"]) - curr_pred)
+            curr_lower_w = max(0.001, curr_pred - float(curr_f["lower_bound"]))
+
+            enforced_upper_w = max(curr_upper_w, prev_upper_w * scale)
+            enforced_lower_w = max(curr_lower_w, prev_lower_w * scale)
+
+            curr_f["upper_bound"] = round(curr_pred + enforced_upper_w, 4)
+            curr_f["lower_bound"] = round(max(0.01, curr_pred - enforced_lower_w), 4)
+
+            prev_k = curr_k
 
         return forecasts
 

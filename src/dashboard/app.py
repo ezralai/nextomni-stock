@@ -253,6 +253,16 @@ def render_dashboard() -> None:
         else:
             df_ind, stats = compute_stock_analytics(df_obs)
 
+            from src.analytics.regime import detect_market_regime
+            if len(df_obs) >= 20:
+                regime_info = detect_market_regime(df_obs)
+                st.info(
+                    f"🧭 **Market Regime:** `{regime_info.regime_label}` | "
+                    f"**Sentiment Score:** `{regime_info.sentiment_score:+.2f}` | "
+                    f"**Volatility State:** `{regime_info.volatility_regime}` ({regime_info.rolling_vol_annualized:.1f}% Ann, {regime_info.vol_percentile_1y:.1f}% 1Y Percentile) | "
+                    f"**Trend State:** `{regime_info.trend_regime}`"
+                )
+
             # Key Metrics Row
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Latest Adj Close", f"{stats.last_price:.2f} {exchange_cfg.currency}")
