@@ -64,11 +64,21 @@ class EvaluationDaemon:
                 f"Valid evaluations: {audit_report['evaluations_valid']}/{audit_report['evaluations_audited']}"
             )
 
+        # Check Information Coefficient drift and alpha decay
+        from src.analytics.drift import calculate_information_coefficient_drift
+        from src.data.db import get_predictions
+
+        evaluated_df = get_predictions(status="EVALUATED", db_path=self.db_path)
+        drift_receipt = calculate_information_coefficient_drift(evaluated_df)
+        if drift_receipt.is_decaying and drift_receipt.decay_warning:
+            logger.warning(f"MODEL ALPHA DECAY ALERT: {drift_receipt.decay_warning}")
+
         return {
             "timestamp": datetime.now().isoformat(),
             "exchange_sessions": session_states,
             "reconciliation_metrics": eval_result,
             "integrity_report": audit_report,
+            "alpha_drift": drift_receipt.to_dict(),
         }
 
     def run_loop(

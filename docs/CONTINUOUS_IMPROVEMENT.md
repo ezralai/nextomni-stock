@@ -98,9 +98,12 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Term-Structure Monotonicity Bounds:** `enforce_term_structure_monotonicity()` in `MultiHorizonForecaster` guarantees physical diffusion expansion ($\text{Width}_{21} \ge \text{Width}_5 \ge \text{Width}_1 \sim \sigma \sqrt{k/j}$), preventing small-sample quantile estimation noise from generating inverted interval bands.
 - [x] **Interactive Strategy Equity Curve Visualizer:** Streamlit Tab 2 embeds an interactive backtest card with compounding equity curves ($100 base), dynamic sizing selectors, target volatility sliders, and risk-adjusted return metrics.
 - [x] **CLI Backtest Command:** `backtest` command in `src/cli.py` exposes strategy simulation with customizable horizons, fee parameters, `--sizing`, `--target-vol`, and `--max-leverage`.
-- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db`, `risk-report` (with `--stress-test`), `prune-db`, `vacuum-db`, `backtest`, `system-health`, and `screen`.
+- [x] **Quantitative Alpha Decay & Rolling Information Coefficient (IC) Monitor:** `src/analytics/drift.py` and `calculate_information_coefficient_drift()` compute rolling Pearson and Spearman Rank IC, Information Ratio ($IR$), $t$-statistic, and automated alpha decay detection (`ACUTE_DECAY` vs `MILD_DECAY` vs `STABLE_ALPHA`) across evaluated predictions.
+- [x] **Continuous Daemon Drift & Retraining Alertness:** `EvaluationDaemon.run_once()` automatically assesses Information Coefficient drift over reconciled predictions and raises alerts when models experience acute decay.
+- [x] **Interactive Dashboard Alpha Health & IC Monitor:** Streamlit Tab 4 embeds a real-time Information Coefficient & Alpha Decay expander card displaying trailing Spearman Rank IC, IR, and alpha status.
+- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db`, `risk-report` (with `--stress-test`), `prune-db`, `vacuum-db`, `backtest`, `system-health`, `screen`, and `ic-drift`.
 - [x] **Type Annotations:** All public functions include parameter types and return type annotations.
-- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (130/130 tests passing).
+- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (135/135 tests passing).
 - [x] **Docstrings:** Standard Google/NumPy format explaining arguments, return values, and mathematical formulas.
 - [x] **Decoupled Modules:** No circular imports between `src/data`, `src/features`, `src/models`, `src/evaluation`, `src/security`, and `src/dashboard`.
 - [x] **Reproducibility:** Random seeds fixed (`random_state=42`) in all stochastic models or splitters.

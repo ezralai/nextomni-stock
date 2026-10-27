@@ -770,6 +770,24 @@ def render_dashboard() -> None:
             k3.metric("Awaiting Settlement", int(await_count))
             k4.metric("Pending Future Sessions", int(pend_count))
 
+            # Information Coefficient & Alpha Decay Diagnostic Box
+            evaluated_subset = df_preds[df_preds["status"] == "EVALUATED"]
+            if not evaluated_subset.empty:
+                with st.expander("📈 Rolling Information Coefficient (IC) & Alpha Decay Monitor", expanded=False):
+                    from src.analytics.drift import calculate_information_coefficient_drift
+                    ic_receipt = calculate_information_coefficient_drift(evaluated_subset)
+
+                    ic_col1, ic_col2, ic_col3, ic_col4 = st.columns(4)
+                    ic_col1.metric("Mean Rank IC (Spearman)", f"{ic_receipt.mean_rank_ic:+.4f}")
+                    ic_col2.metric("Trailing Rank IC", f"{ic_receipt.trailing_rank_ic:+.4f}")
+                    ic_col3.metric("Information Ratio (IR)", f"{ic_receipt.information_ratio:+.2f}")
+                    ic_col4.metric("Alpha State", ic_receipt.decay_status)
+
+                    if ic_receipt.is_decaying:
+                        st.warning(f"⚠️ {ic_receipt.decay_warning}")
+                    else:
+                        st.success(f"✅ Forecasting skill stable across {ic_receipt.sample_size} evaluated predictions (t-stat: {ic_receipt.t_statistic:+.2f}).")
+
             # Format Display Table
             disp_df = df_preds.copy()
             disp_df["predicted_price"] = disp_df["predicted_price"].apply(lambda v: f"{float(v):.2f}")

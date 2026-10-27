@@ -870,6 +870,46 @@ def screen_command(args: argparse.Namespace) -> None:
     print("=" * 105 + "\n")
 
 
+def ic_drift_command(args: argparse.Namespace) -> None:
+    """Evaluate Information Coefficient drift and detect alpha decay on reconciled predictions."""
+    import json
+    from src.analytics.drift import calculate_information_coefficient_drift
+    from src.data.db import get_predictions
+
+    ticker = validate_ticker(args.ticker) if getattr(args, "ticker", None) else None
+    horizon = f"{args.horizon}d" if getattr(args, "horizon", None) else None
+    window = int(args.window) if getattr(args, "window", None) else 20
+
+    preds_df = get_predictions(
+        ticker=ticker,
+        horizon_type=horizon,
+        status="EVALUATED",
+    )
+
+    receipt = calculate_information_coefficient_drift(preds_df, window=window)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 70)
+    print("  NextOmni Stock: Information Coefficient & Alpha Drift Monitor")
+    print("=" * 70)
+    print(f"  Ticker Filter:       {receipt.ticker or 'ALL TICKERS'}")
+    print(f"  Horizon Filter:      {receipt.horizon_type or 'ALL HORIZONS'}")
+    print(f"  Sample Size:         {receipt.sample_size} evaluated predictions")
+    print(f"  Mean IC (Pearson):   {receipt.mean_ic:>+7.4f}")
+    print(f"  Mean Rank IC (Spear):{receipt.mean_rank_ic:>+7.4f}")
+    print(f"  Rank IC Std Dev:     {receipt.ic_std:>7.4f}")
+    print(f"  Information Ratio:   {receipt.information_ratio:>+7.3f}")
+    print(f"  IC t-Statistic:      {receipt.t_statistic:>+7.3f}")
+    print(f"  Trailing Rank IC:    {receipt.trailing_rank_ic:>+7.4f}")
+    print(f"  Alpha Status:        {receipt.decay_status}")
+    if receipt.decay_warning:
+        print(f"  Alert Warning:       {receipt.decay_warning}")
+    print("=" * 70 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -1160,6 +1200,35 @@ def main() -> None:
         help="Output screener rankings as JSON",
     )
 
+    # IC Drift parser
+    ic_drift_parser = subparsers.add_parser(
+        "ic-drift", help="Monitor Information Coefficient drift and alpha decay"
+    )
+    ic_drift_parser.add_argument(
+        "--ticker",
+        type=str,
+        default=None,
+        help="Optional ticker symbol to filter evaluated predictions",
+    )
+    ic_drift_parser.add_argument(
+        "--horizon",
+        type=int,
+        choices=[1, 5, 21],
+        default=None,
+        help="Optional forecast horizon filter (1, 5, 21)",
+    )
+    ic_drift_parser.add_argument(
+        "--window",
+        type=int,
+        default=20,
+        help="Rolling window size in sessions (default: 20)",
+    )
+    ic_drift_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output IC drift receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1201,6 +1270,8 @@ def main() -> None:
         system_health_command(args)
     elif args.command == "screen":
         screen_command(args)
+    elif args.command == "ic-drift":
+        ic_drift_command(args)
 
 
 if __name__ == "__main__":
