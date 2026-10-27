@@ -341,11 +341,26 @@ def render_dashboard() -> None:
                     "Simulates an expanding-window walk-forward execution strategy driven by the multi-horizon forecasting engine, "
                     "incorporating realistic transaction costs and evaluating risk-adjusted equity compounding."
                 )
-                col_bt1, col_bt2 = st.columns(2)
+                col_bt1, col_bt2, col_bt3 = st.columns(3)
                 with col_bt1:
                     bt_horizon = st.selectbox("Strategy Horizon", [1, 5, 21], format_func=lambda h: f"{h} Session(s)", key="bt_h")
                 with col_bt2:
+                    bt_sizing = st.selectbox(
+                        "Position Sizing",
+                        ["fixed", "vol_target", "half_kelly"],
+                        format_func=lambda s: {
+                            "fixed": "Fixed Binary (1.0x)",
+                            "vol_target": "Volatility-Targeted",
+                            "half_kelly": "Half-Kelly Sizing",
+                        }[s],
+                        key="bt_s",
+                    )
+                with col_bt3:
                     bt_fee = st.number_input("Transaction Fee (bps)", min_value=0.0, max_value=50.0, value=5.0, step=1.0, key="bt_f")
+
+                bt_target_vol = 0.15
+                if bt_sizing == "vol_target":
+                    bt_target_vol = st.slider("Target Annualized Volatility (%)", min_value=5.0, max_value=40.0, value=15.0, step=1.0, key="bt_tv") / 100.0
 
                 if st.button("🚀 Run Walk-Forward Strategy Backtest", use_container_width=True):
                     with st.spinner("Executing walk-forward strategy backtest..."):
@@ -356,6 +371,8 @@ def render_dashboard() -> None:
                             fee_bps=bt_fee,
                             min_train_sessions=min(120, max(30, len(df_obs) // 2)),
                             model_family=selected_model_family,
+                            sizing_mode=bt_sizing,
+                            target_annual_vol=bt_target_vol,
                         )
                         m = bt_res.metrics
 
@@ -363,7 +380,7 @@ def render_dashboard() -> None:
                         bm1.metric("Strategy Net Return", f"{m.total_return_pct:+.2f}%")
                         bm2.metric("Buy & Hold Return", f"{m.benchmark_return_pct:+.2f}%")
                         bm3.metric("Annualized Sharpe", f"{m.annualized_sharpe:.3f}")
-                        bm4.metric("Annualized Sortino", f"{m.annualized_sortino:.3f}")
+                        bm4.metric("Avg Portfolio Exposure", f"{m.avg_exposure:.2f}x")
 
                         bm5, bm6, bm7, bm8 = st.columns(4)
                         bm5.metric("Max Drawdown", f"{m.max_drawdown_pct:.2f}%")
@@ -375,7 +392,7 @@ def render_dashboard() -> None:
                         fig_bt.add_trace(go.Scatter(
                             x=bt_res.equity_df["session_date"],
                             y=bt_res.equity_df["strategy_equity"],
-                            name=f"Strategy Equity ({selected_model_family.capitalize()})",
+                            name=f"Strategy Equity ({selected_model_family.capitalize()} - {bt_sizing})",
                             line=dict(color="#00E676", width=2.5),
                         ))
                         fig_bt.add_trace(go.Scatter(
@@ -386,7 +403,7 @@ def render_dashboard() -> None:
                         ))
                         fig_bt.update_layout(
                             template="plotly_dark",
-                            title="Compounding Equity Curve (Starting Base = $100.00)",
+                            title=f"Compounding Equity Curve (Base = $100.00 | Sizing: {bt_sizing.upper()})",
                             xaxis_title="Trading Session Date",
                             yaxis_title="Portfolio Equity ($)",
                             margin=dict(l=20, r=20, t=40, b=20),

@@ -20,6 +20,10 @@ from src.data.db import (
     upsert_stock,
 )
 from src.data.yfinance_provider import YahooFinanceProvider
+from src.security.validators import validate_ohlc_integrity
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DataPipeline:
@@ -81,15 +85,12 @@ class DataPipeline:
         # 2. Chronological sort
         cleaned = cleaned.sort_values("session_date", ascending=True).reset_index(drop=True)
 
-        # 3. Detect and filter invalid non-positive prices
-        valid_prices = (
-            (cleaned["open"] > 0)
-            & (cleaned["high"] > 0)
-            & (cleaned["low"] > 0)
-            & (cleaned["close"] > 0)
-            & (cleaned["adj_close"] > 0)
-        )
-        cleaned = cleaned[valid_prices].reset_index(drop=True)
+        # 3. Mathematical OHLC envelope & quote integrity sanitizer
+        cleaned, dropped_count = validate_ohlc_integrity(cleaned, drop_invalid=True)
+        if dropped_count > 0:
+            logger.warning(
+                f"Sanitized and discarded {dropped_count} invalid OHLC quote(s) for exchange {exchange}."
+            )
 
         # 4. Exchange Calendar Cross-Reference
         # Identify if any observed dates fall on known non-trading days or holidays

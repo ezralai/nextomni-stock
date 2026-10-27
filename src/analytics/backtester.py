@@ -31,6 +31,7 @@ class BacktestMetrics:
     profit_factor: float
     total_trades: int
     fee_drag_pct: float
+    avg_exposure: float = 1.0
 
 
 @dataclass
@@ -126,15 +127,20 @@ def run_forecast_backtest(
     min_train_sessions: int = 120,
     model_family: str = "ensemble",
     threshold_return_bps: float = 0.0,
+    sizing_mode: str = "fixed",
+    target_annual_vol: float = 0.15,
+    max_leverage: float = 1.0,
 ) -> BacktestResult:
     """Execute an expanding-window walk-forward out-of-sample backtest.
 
     Strategy Logic:
     - At session t, train model on features P_{<= t}.
     - Forecast expected return r_hat_{t+k}.
-    - If r_hat_{t+k} > threshold: Go Long (position = 1.0).
-    - Else: Hold Cash (position = 0.0).
-    - Deduct transaction costs (fee_bps) on every position change.
+    - Determine position size:
+      * 'fixed': 1.0 if r_hat > threshold else 0.0.
+      * 'vol_target': Scale exposure inversely with historical volatility to target annual volatility.
+      * 'half_kelly': Scale exposure proportional to expected return / variance.
+    - Deduct transaction costs (fee_bps) on turnover.
     - Track net daily portfolio returns and compounding equity curves.
 
     Args:
@@ -145,10 +151,16 @@ def run_forecast_backtest(
         min_train_sessions: Initial burn-in training sessions.
         model_family: Model family if forecaster not provided ("ensemble", "linear", "gradient_boosting").
         threshold_return_bps: Minimum forecasted return to enter long position in bps.
+        sizing_mode: Position sizing mechanism ('fixed', 'vol_target', 'half_kelly').
+        target_annual_vol: Desired annualized volatility when using 'vol_target' (e.g. 0.15 for 15%).
+        max_leverage: Maximum allowed portfolio leverage (default: 1.0).
 
     Returns:
         BacktestResult with detailed time series and summary metrics.
     """
+    valid_sizing = {"fixed", "vol_target", "half_kelly"}
+    if sizing_mode not in valid_sizing:
+        raise ValueError(f"Invalid sizing_mode '{sizing_mode}'. Must be one of {sorted(list(valid_sizing))}")
     data = df.copy().sort_values("session_date", ascending=True).reset_index(drop=True)
     n_total = len(data)
 
@@ -209,8 +221,38 @@ def run_forecast_backtest(
         pred_ret = (pred_price - p_t) / p_t
         realized_asset_ret = (p_next - p_t) / p_t
 
-        # 3. Position decision (Long / Cash)
-        target_position = 1.0 if pred_ret > threshold else 0.0
+        # 3. Position decision based on sizing_mode
+        if pred_ret > threshold:
+            if sizing_mode == "vol_target":
+                # Rolling 20-session historical volatility from training fold (strictly <= t)
+                p_hist = p_tr.tail(21)
+                if len(p_hist) >= 5:
+                    pct_changes = p_hist.pct_change().dropna()
+                    hist_vol = float(pct_changes.std(ddof=1) * np.sqrt(252))
+                else:
+                    hist_vol = target_annual_vol
+
+                safe_vol = max(hist_vol, 1e-4) if np.isfinite(hist_vol) and hist_vol > 0 else target_annual_vol
+                raw_pos = target_annual_vol / safe_vol
+                target_position = float(np.clip(raw_pos, 0.1, max_leverage))
+            elif sizing_mode == "half_kelly":
+                p_hist = p_tr.tail(21)
+                if len(p_hist) >= 5:
+                    pct_changes = p_hist.pct_change().dropna()
+                    var_daily = float(pct_changes.var(ddof=1))
+                else:
+                    var_daily = 0.0004
+                safe_var = (
+                    max(var_daily * max(horizon_sessions, 1), 1e-5)
+                    if np.isfinite(var_daily) and var_daily > 0
+                    else 0.0004
+                )
+                raw_pos = 0.5 * (pred_ret / safe_var)
+                target_position = float(np.clip(raw_pos, 0.0, max_leverage))
+            else:
+                target_position = 1.0
+        else:
+            target_position = 0.0
 
         # Transaction cost on turnover
         turnover = abs(target_position - current_position)
@@ -269,6 +311,7 @@ def run_forecast_backtest(
 
     trades_count = int(np.sum(np.abs(np.diff([0.0] + signals)) > 0))
     total_fee_drag = float(sum(fee_costs) * 100.0)
+    avg_exposure = float(np.mean(signals)) if signals else 0.0
 
     metrics = BacktestMetrics(
         total_return_pct=round(total_return_pct, 2),
@@ -281,6 +324,7 @@ def run_forecast_backtest(
         profit_factor=round(profit_factor, 2),
         total_trades=trades_count,
         fee_drag_pct=round(total_fee_drag, 2),
+        avg_exposure=round(avg_exposure, 3),
     )
 
     equity_df = pd.DataFrame(

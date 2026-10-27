@@ -7,7 +7,9 @@ guards across data ingestion, model persistence, and CLI commands.
 from datetime import datetime
 from pathlib import Path
 import re
-from typing import Optional, Set
+from typing import Optional, Set, Tuple
+import numpy as np
+import pandas as pd
 
 from src.config import SUPPORTED_EXCHANGES
 
@@ -218,4 +220,71 @@ def mask_secret(secret: Optional[str], visible_chars: int = 4) -> str:
         return "*" * len(clean)
     masked_middle = "*" * (len(clean) - visible_chars * 2)
     return f"{clean[:visible_chars]}{masked_middle}{clean[-visible_chars:]}"
+
+
+def validate_ohlc_integrity(
+    df: pd.DataFrame, drop_invalid: bool = True
+) -> Tuple[pd.DataFrame, int]:
+    """Validate and sanitize OHLCV market data bars for mathematical and physical integrity.
+
+    Verifies:
+    1. Mandatory column existence ('open', 'high', 'low', 'close').
+    2. Positive prices: open > 0, high > 0, low > 0, close > 0 (and adj_close > 0 if present).
+    3. Non-negative volume: volume >= 0 (if present).
+    4. Mathematical envelope:
+       - high >= low
+       - high >= open * (1 - 1e-5)
+       - high >= close * (1 - 1e-5)
+       - low <= open * (1 + 1e-5)
+       - low <= close * (1 + 1e-5)
+    5. Finite numbers (no NaN or Inf in price columns).
+
+    Args:
+        df: DataFrame containing at least ['open', 'high', 'low', 'close'] columns.
+        drop_invalid: If True, filters out invalid rows and returns (cleaned_df, dropped_count).
+                     If False, raises SecurityValidationError on the first invalid row.
+
+    Returns:
+        Tuple of (sanitized_df, dropped_count).
+
+    Raises:
+        SecurityValidationError: If required columns are missing, or drop_invalid=False and violations exist.
+    """
+    if df.empty:
+        return df.copy(), 0
+
+    required_cols = {"open", "high", "low", "close"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        raise SecurityValidationError(f"Missing required OHLC columns: {sorted(list(missing))}")
+
+    eps = 1e-5
+    valid_mask = (
+        np.isfinite(df["open"])
+        & np.isfinite(df["high"])
+        & np.isfinite(df["low"])
+        & np.isfinite(df["close"])
+        & (df["open"] > 0)
+        & (df["high"] > 0)
+        & (df["low"] > 0)
+        & (df["close"] > 0)
+        & (df["high"] >= df["low"])
+        & (df["high"] >= df["open"] * (1.0 - eps))
+        & (df["high"] >= df["close"] * (1.0 - eps))
+        & (df["low"] <= df["open"] * (1.0 + eps))
+        & (df["low"] <= df["close"] * (1.0 + eps))
+    )
+
+    if "volume" in df.columns:
+        valid_mask &= np.isfinite(df["volume"]) & (df["volume"] >= 0)
+
+    if "adj_close" in df.columns:
+        valid_mask &= np.isfinite(df["adj_close"]) & (df["adj_close"] > 0)
+
+    invalid_count = int((~valid_mask).sum())
+    if invalid_count > 0 and not drop_invalid:
+        raise SecurityValidationError(f"OHLC integrity violation detected in {invalid_count} records.")
+
+    cleaned_df = df[valid_mask].copy().reset_index(drop=True)
+    return cleaned_df, invalid_count
 

@@ -731,9 +731,14 @@ def backtest_command(args: argparse.Namespace) -> None:
         print(f"Error: No observations found for {ticker}. Run 'sync' first.")
         sys.exit(1)
 
+    sizing_mode = getattr(args, "sizing", "fixed")
+    target_vol = float(getattr(args, "target_vol", 0.15))
+    max_leverage = float(getattr(args, "max_leverage", 1.0))
+
     print(f"\nRunning out-of-sample walk-forward strategy backtest for {ticker}...")
     print(f"  Model Family:      {model_family}")
     print(f"  Forecast Horizon:  {horizon} session(s)")
+    print(f"  Position Sizing:   {sizing_mode.upper()} (Target Vol: {target_vol:.1%}, Max Leverage: {max_leverage:.1f}x)")
     print(f"  Transaction Fee:   {fee_bps} bps")
     print(f"  Min Train Burn-in: {args.min_train} sessions\n")
 
@@ -743,6 +748,9 @@ def backtest_command(args: argparse.Namespace) -> None:
         fee_bps=fee_bps,
         min_train_sessions=args.min_train,
         model_family=model_family,
+        sizing_mode=sizing_mode,
+        target_annual_vol=target_vol,
+        max_leverage=max_leverage,
     )
     m = res.metrics
 
@@ -758,6 +766,7 @@ def backtest_command(args: argparse.Namespace) -> None:
     print(f"  Win Rate (Active Trades):  {m.win_rate_pct:>8.2f}%")
     print(f"  Profit Factor:             {m.profit_factor:>8.2f}")
     print(f"  Total Trades (Turnover):   {m.total_trades:>8d}")
+    print(f"  Average Portfolio Exposure:{m.avg_exposure:>8.2f}x")
     print(f"  Total Fee Drag Deducted:   {m.fee_drag_pct:>8.2f}%")
     print("=" * 65 + "\n")
 
@@ -1016,6 +1025,24 @@ def main() -> None:
     )
     backtest_parser.add_argument(
         "--min-train", type=int, default=120, help="Initial burn-in training sessions (default: 120)"
+    )
+    backtest_parser.add_argument(
+        "--sizing",
+        choices=["fixed", "vol_target", "half_kelly"],
+        default="fixed",
+        help="Position sizing mechanism (default: fixed)",
+    )
+    backtest_parser.add_argument(
+        "--target-vol",
+        type=float,
+        default=0.15,
+        help="Annualized volatility target for vol_target sizing (default: 0.15)",
+    )
+    backtest_parser.add_argument(
+        "--max-leverage",
+        type=float,
+        default=1.0,
+        help="Maximum portfolio leverage constraint (default: 1.0)",
     )
 
     # System health parser
