@@ -198,3 +198,91 @@ def compute_multi_horizon_risk_profile(
         }
 
     return results
+
+
+def simulate_macro_stress_scenarios(
+    df: pd.DataFrame,
+    position_value: float = 10000.0,
+    price_col: str = PRICE_COLUMN,
+) -> List[Dict[str, Any]]:
+    """Simulate impact of acute historical macroeconomic shock scenarios on current position.
+
+    Scenarios modeled:
+    1. 2022 Rates & Inflation Shock (-4.5% benchmark drop, 2.1x volatility multiplier)
+    2. 2008 Lehman Brothers Insolvency (-8.5% benchmark drop, 3.5x volatility multiplier)
+    3. 2020 COVID Liquidity Freeze (-12.0% benchmark drop, 4.2x volatility multiplier)
+    4. 1987 Black Monday Tail Event (-20.5% benchmark drop, 5.0x volatility multiplier)
+
+    Args:
+        df: Historical observations DataFrame.
+        position_value: Current capital exposed in dollars/currency.
+        price_col: Closing price column name.
+
+    Returns:
+        List of scenario impact summaries including estimated loss percentage and dollars.
+    """
+    if len(df) < 5 or price_col not in df.columns:
+        return []
+
+    prices = df[price_col].dropna().values
+    latest_price = float(prices[-1])
+    daily_returns = np.diff(prices) / prices[:-1]
+    ticker_ann_vol = float(np.std(daily_returns, ddof=1) * np.sqrt(252)) if len(daily_returns) > 1 else 0.20
+
+    market_benchmark_vol = 0.16
+    vol_beta = max(0.5, min(2.5, ticker_ann_vol / market_benchmark_vol))
+
+    scenarios = [
+        {
+            "scenario_name": "2022 Rates & Inflation Shock",
+            "benchmark_shock_pct": -4.5,
+            "vol_multiplier": 2.1,
+            "severity": "Moderate",
+            "description": "Persistent rate hike pressure and aggressive multiple compression.",
+        },
+        {
+            "scenario_name": "2008 Lehman Brothers Insolvency",
+            "benchmark_shock_pct": -8.5,
+            "vol_multiplier": 3.5,
+            "severity": "Severe",
+            "description": "Systemic financial counterparty credit crisis and collateral lockup.",
+        },
+        {
+            "scenario_name": "2020 COVID Liquidity Freeze",
+            "benchmark_shock_pct": -12.0,
+            "vol_multiplier": 4.2,
+            "severity": "Extreme",
+            "description": "Rapid market-wide dash for cash and cross-asset liquidity dry-up.",
+        },
+        {
+            "scenario_name": "1987 Black Monday Tail Event",
+            "benchmark_shock_pct": -20.5,
+            "vol_multiplier": 5.0,
+            "severity": "Catastrophic",
+            "description": "Cascading portfolio insurance algorithmic liquidation shock.",
+        },
+    ]
+
+    results = []
+    for sc in scenarios:
+        shock = sc["benchmark_shock_pct"] * vol_beta
+        loss_pct = round(abs(shock), 2)
+        loss_dollars = round(position_value * (loss_pct / 100.0), 2)
+        post_stress_price = round(latest_price * (1.0 - (loss_pct / 100.0)), 2)
+
+        results.append(
+            {
+                "scenario_name": sc["scenario_name"],
+                "severity": sc["severity"],
+                "benchmark_shock_pct": sc["benchmark_shock_pct"],
+                "vol_multiplier": sc["vol_multiplier"],
+                "ticker_vol_beta": round(vol_beta, 2),
+                "estimated_loss_pct": loss_pct,
+                "estimated_loss_dollars": loss_dollars,
+                "post_stress_price": post_stress_price,
+                "description": sc["description"],
+            }
+        )
+
+    return results
+

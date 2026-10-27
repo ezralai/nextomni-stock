@@ -659,3 +659,57 @@ def backup_database(
     return target_path
 
 
+def vacuum_database(db_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Execute SQLite integrity checks and VACUUM to defragment B-trees and reclaim disk pages.
+
+    1. Checks initial database file size.
+    2. Runs PRAGMA foreign_key_check to ensure referential integrity.
+    3. Runs PRAGMA integrity_check to verify page allocation and B-tree consistency.
+    4. Executes VACUUM to reclaim deleted page space and compact storage.
+    5. Returns a structured report with bytes reclaimed and verification status.
+
+    Args:
+        db_path: Path to target database file.
+
+    Returns:
+        Dict[str, Any]: Status, initial size, final size, bytes reclaimed, and integrity reports.
+    """
+    path = Path(db_path) if db_path else DATABASE_PATH
+    if not path.exists():
+        init_db(path)
+
+    size_before = path.stat().st_size
+
+    conn = get_connection(path)
+    # Check foreign keys
+    fk_violations = conn.execute("PRAGMA foreign_key_check;").fetchall()
+    if fk_violations:
+        conn.close()
+        raise RuntimeError(f"Database foreign key check failed with {len(fk_violations)} violation(s).")
+
+    # Check structural integrity
+    integrity_rows = conn.execute("PRAGMA integrity_check;").fetchall()
+    integrity_status = [row[0] for row in integrity_rows]
+    if "ok" not in integrity_status:
+        conn.close()
+        raise RuntimeError(f"Database integrity check failed: {integrity_status}")
+
+    # Reclaim free pages and defragment
+    conn.execute("VACUUM;")
+    conn.close()
+
+    size_after = path.stat().st_size
+    reclaimed = max(0, size_before - size_after)
+
+    return {
+        "status": "success",
+        "db_path": str(path),
+        "size_before_bytes": size_before,
+        "size_after_bytes": size_after,
+        "bytes_reclaimed": reclaimed,
+        "integrity": "ok",
+        "foreign_keys": "ok",
+    }
+
+
+

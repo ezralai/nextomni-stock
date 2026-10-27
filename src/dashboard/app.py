@@ -316,6 +316,25 @@ def render_dashboard() -> None:
                     ]
                     st.dataframe(pd.DataFrame(risk_rows), use_container_width=True, hide_index=True)
 
+                    # Macro Stress-Testing Simulation
+                    from src.analytics.risk import simulate_macro_stress_scenarios
+                    stress_res = simulate_macro_stress_scenarios(df_ind, position_value=10000.0)
+                    if stress_res:
+                        st.markdown("**Historical Macro Stress Scenarios ($10,000 Portfolio Base):**")
+                        stress_df = pd.DataFrame([
+                            {
+                                "Macro Scenario": s["scenario_name"],
+                                "Severity": s["severity"],
+                                "Benchmark Shock": f"{s['benchmark_shock_pct']:+.1f}%",
+                                "Estimated Loss": f"-{s['estimated_loss_pct']:.2f}%",
+                                "Loss ($)": f"-${s['estimated_loss_dollars']:.2f}",
+                                "Stressed Price": f"{s['post_stress_price']:.2f} {exchange_cfg.currency}",
+                                "Historical Dynamic": s["description"],
+                            }
+                            for s in stress_res
+                        ])
+                        st.dataframe(stress_df, use_container_width=True, hide_index=True)
+
             # Out-of-Sample Quantitative Strategy Backtest Card
             with st.expander("📈 Out-of-Sample Strategy Backtest (Realized Sharpe & PnL Curve)", expanded=False):
                 st.markdown(
@@ -610,12 +629,18 @@ def render_dashboard() -> None:
             else:
                 col_a3.error("✗ Tampering Detected")
 
-            col_bk1, col_bk2 = st.columns([2, 3])
+            col_bk1, col_bk2 = st.columns(2)
             with col_bk1:
                 if st.button("📦 Create Atomic Database Backup", use_container_width=True):
                     with st.spinner("Executing non-blocking online SQLite backup..."):
                         bk_path = backup_database()
                         st.success(f"Snapshot created: `{bk_path.name}` ({bk_path.stat().st_size} bytes)")
+            with col_bk2:
+                if st.button("🧹 Vacuum Database & Compact Storage", use_container_width=True):
+                    with st.spinner("Defragmenting B-trees and reclaiming disk pages..."):
+                        from src.data.db import vacuum_database
+                        v_res = vacuum_database()
+                        st.success(f"Compacted! Reclaimed {v_res['bytes_reclaimed']} bytes. Integrity: {v_res['integrity']}.")
 
         # Action: Reconcile Pending Button
         col_act, col_filter = st.columns([2, 3])

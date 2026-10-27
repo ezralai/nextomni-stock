@@ -14,7 +14,7 @@ from typing import Optional
 import pandas as pd
 
 from src.config import INITIAL_TICKERS, SUPPORTED_EXCHANGES
-from src.data.db import get_connection, get_observations, init_db, prune_raw_payloads
+from src.data.db import get_connection, get_observations, init_db, prune_raw_payloads, vacuum_database
 from src.data.pipeline import DataPipeline
 from src.security.validators import (
     SUPPORTED_MODEL_FAMILIES,
@@ -667,7 +667,42 @@ def risk_report_command(args: argparse.Namespace) -> None:
     print(f"Latest Settlement Price: {latest_price:.2f}")
     print(f"1-Day Maximum Expected Loss (95% Cornish-Fisher VaR): {var95_1d:.2f}% (~{latest_price * var95_1d / 100:.2f})")
     print(f"1-Day Extreme Tail Shortfall (95% Historical CVaR):     {cvar95_1d:.2f}% (~{latest_price * cvar95_1d / 100:.2f})")
+
+    if getattr(args, "stress_test", False):
+        from src.analytics.risk import simulate_macro_stress_scenarios
+        stress_results = simulate_macro_stress_scenarios(df)
+        if stress_results:
+            print("\n  Historical Macroeconomic Stress-Testing Scenarios ($10,000 Portfolio Base):")
+            print("  " + "-" * 112)
+            print(
+                f"  {'Scenario':<36} {'Severity':<14} {'Benchmark':<12} {'Ticker Beta':<14} "
+                f"{'Est. Loss %':<14} {'Est. Loss ($)':<15} {'Post-Stress Price'}"
+            )
+            print("  " + "-" * 112)
+            for s in stress_results:
+                print(
+                    f"  {s['scenario_name']:<36} {s['severity']:<14} {s['benchmark_shock_pct']:>+6.1f}%     "
+                    f"{s['ticker_vol_beta']:>8.2f}       {s['estimated_loss_pct']:>8.2f}%     "
+                    f"${s['estimated_loss_dollars']:>9.2f}      {s['post_stress_price']:>10.2f}"
+                )
+            print("  " + "-" * 112)
+
     print("=" * 116 + "\n")
+
+
+def vacuum_db_command(args: argparse.Namespace) -> None:
+    """Run SQLite database integrity check, foreign key verification, and VACUUM defragmentation."""
+    print("\nInitiating SQLite database verification and VACUUM compaction...")
+    res = vacuum_database()
+    kb_before = res["size_before_bytes"] / 1024.0
+    kb_after = res["size_after_bytes"] / 1024.0
+    kb_reclaimed = res["bytes_reclaimed"] / 1024.0
+    print(f"  Foreign Key Consistency: {res['foreign_keys']}")
+    print(f"  B-Tree Page Integrity:   {res['integrity']}")
+    print(f"  Storage Before:          {kb_before:.2f} KB")
+    print(f"  Storage After:           {kb_after:.2f} KB")
+    print(f"  Space Reclaimed:         {kb_reclaimed:.2f} KB")
+    print("VACUUM and integrity verification completed successfully.\n")
 
 
 def prune_db_command(args: argparse.Namespace) -> None:
@@ -915,6 +950,9 @@ def main() -> None:
     risk_parser.add_argument(
         "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
     )
+    risk_parser.add_argument(
+        "--stress-test", action="store_true", help="Simulate historical macroeconomic stress scenarios"
+    )
 
     # Prune DB parser
     prune_parser = subparsers.add_parser(
@@ -922,6 +960,11 @@ def main() -> None:
     )
     prune_parser.add_argument(
         "--days", type=int, default=90, help="Retention period in days (default: 90)"
+    )
+
+    # Vacuum DB parser
+    subparsers.add_parser(
+        "vacuum-db", help="Verify B-tree integrity and execute VACUUM storage defragmentation"
     )
 
     # Backtest parser
@@ -980,6 +1023,8 @@ def main() -> None:
         risk_report_command(args)
     elif args.command == "prune-db":
         prune_db_command(args)
+    elif args.command == "vacuum-db":
+        vacuum_db_command(args)
     elif args.command == "backtest":
         backtest_command(args)
 
