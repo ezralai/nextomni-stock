@@ -287,6 +287,35 @@ def render_dashboard() -> None:
                 )
                 st.plotly_chart(fig_dd, use_container_width=True)
 
+            # Tail-Risk & Value-at-Risk (VaR) Analytics
+            with st.expander("🛡️ Quantitative Tail-Risk & Value-at-Risk (VaR) Profile", expanded=True):
+                from src.analytics.risk import compute_multi_horizon_risk_profile
+                risk_profile = compute_multi_horizon_risk_profile(df_ind, horizons=[1, 5, 21])
+                if risk_profile:
+                    r1 = risk_profile.get("1_SESSION", {})
+                    r5 = risk_profile.get("5_SESSIONS", {})
+                    r21 = risk_profile.get("21_SESSIONS", {})
+
+                    rc1, rc2, rc3, rc4 = st.columns(4)
+                    rc1.metric("1-Day VaR (95% Cornish-Fisher)", f"{r1.get('var_95_cornish_fisher_pct', 0.0):.2f}%")
+                    rc2.metric("1-Day CVaR (95% Expected Shortfall)", f"{r1.get('cvar_95_historical_pct', 0.0):.2f}%")
+                    rc3.metric("5-Day VaR (95% Cornish-Fisher)", f"{r5.get('var_95_cornish_fisher_pct', 0.0):.2f}%")
+                    rc4.metric("21-Day VaR (95% Cornish-Fisher)", f"{r21.get('var_95_cornish_fisher_pct', 0.0):.2f}%")
+
+                    risk_rows = [
+                        {
+                            "Horizon": k,
+                            "Gaussian VaR 95%": f"{v['var_95_gaussian_pct']:.2f}%",
+                            "Cornish-Fisher VaR 95%": f"{v['var_95_cornish_fisher_pct']:.2f}%",
+                            "Cornish-Fisher VaR 99%": f"{v['var_99_cornish_fisher_pct']:.2f}%",
+                            "Historical VaR 95%": f"{v['var_95_historical_pct']:.2f}%",
+                            "Expected Shortfall (CVaR 95%)": f"{v['cvar_95_historical_pct']:.2f}%",
+                            "Expected Shortfall (CVaR 99%)": f"{v['cvar_99_historical_pct']:.2f}%",
+                        }
+                        for k, v in risk_profile.items()
+                    ]
+                    st.dataframe(pd.DataFrame(risk_rows), use_container_width=True, hide_index=True)
+
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
     # =========================================================================

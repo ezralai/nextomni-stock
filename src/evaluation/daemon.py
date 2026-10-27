@@ -46,18 +46,29 @@ class EvaluationDaemon:
         return status_map
 
     def run_once(self) -> Dict[str, Any]:
-        """Execute a single reconciliation evaluation cycle across closed sessions.
+        """Execute a single reconciliation evaluation cycle across closed sessions and audit integrity.
 
         Returns:
-            Dictionary containing session states and evaluation counts.
+            Dictionary containing session states, evaluation counts, and cryptographic integrity report.
         """
+        from src.data.db import verify_database_integrity
+
         session_states = self.check_exchange_sessions()
         eval_result = self.tracker.evaluate_pending_predictions()
+        audit_report = verify_database_integrity(db_path=self.db_path)
+
+        if not audit_report["is_intact"]:
+            logger.critical(
+                f"SECURITY TAMPER ALERT: Database at {self.db_path} failed cryptographic integrity checks! "
+                f"Valid predictions: {audit_report['predictions_valid']}/{audit_report['predictions_audited']}, "
+                f"Valid evaluations: {audit_report['evaluations_valid']}/{audit_report['evaluations_audited']}"
+            )
 
         return {
             "timestamp": datetime.now().isoformat(),
             "exchange_sessions": session_states,
             "reconciliation_metrics": eval_result,
+            "integrity_report": audit_report,
         }
 
     def run_loop(

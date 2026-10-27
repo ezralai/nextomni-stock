@@ -61,6 +61,7 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Cryptographic Audit Manifest Signing:** `list-predictions --export` generates SHA-256 manifest signatures for verifiable external compliance exports.
 - [x] **Online Atomic SQLite Backup & Disaster Recovery:** `backup_database()` leverages SQLite's online backup API (`src_conn.backup(dst_conn)`) for transactionally consistent, zero-downtime snapshots under active WAL writes, followed by automatic cryptographic tamper verification.
 - [x] **Cryptographic HMAC-SHA256 Model Signing at Rest:** All serialized models (`.joblib`) automatically write signed sidecars (`.joblib.sig`) verified upon loading via `verify_model_artifact()` to prevent weights tampering.
+- [x] **Automated Continuous Database Tamper Alertness:** `EvaluationDaemon.run_once()` validates cryptographic database integrity during reconciliation cycles, raising critical system alerts upon any detected tamper event.
 
 ---
 
@@ -69,16 +70,17 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Polymorphic Forecaster Contract:** `BaseForecaster(ABC)` defines polymorphic interface for `fit`, `predict`, `predict_interval`, and serialization with `**kwargs` support.
 - [x] **Convex Ensemble Meta-Model:** `ConvexEnsembleForecaster` combines Ridge and HistGradientBoosting via leak-free out-of-fold non-negative bounded least squares ($w_{\text{lin}} \ge 0, w_{\text{gb}} \ge 0, w_{\text{lin}} + w_{\text{gb}} = 1.0$), capturing non-linear volatility while retaining linear stability.
 - [x] **Horizon-Adaptive Regularization:** Direct multi-horizon engine applies asymmetric capacity constraints (`max_depth=1`, `l2=20.0` for 1-session noise shrinkage vs `max_depth=3`, `l2=1.0` for multi-step momentum).
-- [x] **Extended Quantitative Risk & Performance Metrics:** `calculate_max_error` (Chebyshev $\ell_\infty$ norm worst-case risk) and `calculate_information_ratio` (benchmark-relative active alpha per tracking error) integrated into evaluation core and reports.
+- [x] **Extended Quantitative Tail-Risk Engine:** `src/analytics/risk.py` computes Parametric Gaussian, Cornish-Fisher expansion VaR (accounting for skewness & excess kurtosis), Empirical Historical VaR, and Conditional Value-at-Risk (Expected Shortfall / CVaR) across multi-horizon forecasts.
+- [x] **Extended Risk Metrics:** `calculate_max_error` (Chebyshev $\ell_\infty$ norm worst-case risk) and `calculate_information_ratio` (benchmark-relative active alpha per tracking error) integrated into evaluation core and reports.
 - [x] **Walk-Forward Quantile Bypass:** `fit(fit_quantiles=False)` accelerates walk-forward evaluation by ~65% while keeping intervals active in production.
 - [x] **12-Signal Quantitative Feature Engine:** `vol_regime_ratio` ($\sigma_5 / \sigma_{21}$) and `macd_norm` integrated with zero lookahead leakage.
 - [x] **Uncertainty Quantification:** Calibrated 80% prediction intervals ($[P_{\text{lower}}, P_{\text{upper}}]$) via both train-fold residual standard error and asymmetric quantile tree regression.
 - [x] **Non-Parametric Quantile Regression:** Dual `HistGradientBoostingRegressor(loss="quantile", quantile=0.10/0.90)` models capture empirical fat tails and return skewness.
 - [x] **Automated Session-Aware Daemon:** `EvaluationDaemon` and `daemon-reconcile` CLI command orchestrate market state checks and idempotent price reconciliation.
 - [x] **Interactive Dashboard Security & Disaster Recovery Console:** Embedded real-time cryptographic audit verification, session-aware daemon triggers, and 1-click atomic database backup in Tab 4.
-- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db`.
+- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db` and `risk-report`.
 - [x] **Type Annotations:** All public functions include parameter types and return type annotations.
-- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (81/81 tests passing).
+- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (86/86 tests passing).
 - [x] **Docstrings:** Standard Google/NumPy format explaining arguments, return values, and mathematical formulas.
 - [x] **Decoupled Modules:** No circular imports between `src/data`, `src/features`, `src/models`, `src/evaluation`, `src/security`, and `src/dashboard`.
 - [x] **Reproducibility:** Random seeds fixed (`random_state=42`) in all stochastic models or splitters.

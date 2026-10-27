@@ -602,6 +602,54 @@ def backup_db_command(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def risk_report_command(args: argparse.Namespace) -> None:
+    """Generate comprehensive Value-at-Risk (VaR) and Expected Shortfall (CVaR) report."""
+    from src.analytics.risk import compute_multi_horizon_risk_profile
+    from src.data.db import get_observations
+
+    ticker = validate_ticker(args.ticker)
+    df = get_observations(ticker)
+    if df.empty:
+        print(f"Error: No observations found for {ticker}. Run 'sync' first.")
+        sys.exit(1)
+
+    print("\n" + "=" * 116)
+    print(f"  NextOmni Stock: Multi-Horizon Quantitative Tail Risk Report ({ticker})")
+    print("=" * 116)
+    risk_summary = compute_multi_horizon_risk_profile(df, horizons=[1, 5, 21])
+
+    if not risk_summary:
+        print(f"Error: Insufficient data to compute risk distribution for {ticker}.")
+        sys.exit(1)
+
+    print(
+        f"{'Horizon':<15} {'VaR 95% (G)':<14} {'VaR 95% (CF)':<14} {'VaR 99% (CF)':<14} "
+        f"{'VaR 95% (Hist)':<16} {'CVaR 95% (Hist)':<17} {'CVaR 99% (Hist)':<17}"
+    )
+    print("-" * 116)
+
+    for h_key, r in risk_summary.items():
+        v95_g = f"{r['var_95_gaussian_pct']:.2f}%"
+        v95_cf = f"{r['var_95_cornish_fisher_pct']:.2f}%"
+        v99_cf = f"{r['var_99_cornish_fisher_pct']:.2f}%"
+        v95_h = f"{r['var_95_historical_pct']:.2f}%"
+        c95_h = f"{r['cvar_95_historical_pct']:.2f}%"
+        c99_h = f"{r['cvar_99_historical_pct']:.2f}%"
+        print(
+            f"{h_key:<15} {v95_g:<14} {v95_cf:<14} {v99_cf:<14} "
+            f"{v95_h:<16} {c95_h:<17} {c99_h:<17}"
+        )
+    print("-" * 116)
+    latest_price = float(df["adj_close"].iloc[-1])
+    h1 = risk_summary.get("1_SESSION", {})
+    var95_1d = h1.get("var_95_cornish_fisher_pct", 0.0)
+    cvar95_1d = h1.get("cvar_95_historical_pct", 0.0)
+    print(f"Latest Settlement Price: {latest_price:.2f}")
+    print(f"1-Day Maximum Expected Loss (95% Cornish-Fisher VaR): {var95_1d:.2f}% (~{latest_price * var95_1d / 100:.2f})")
+    print(f"1-Day Extreme Tail Shortfall (95% Historical CVaR):     {cvar95_1d:.2f}% (~{latest_price * cvar95_1d / 100:.2f})")
+    print("=" * 116 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -780,6 +828,14 @@ def main() -> None:
         "--dest", type=str, default=None, help="Target destination file path for backup"
     )
 
+    # Risk report parser
+    risk_parser = subparsers.add_parser(
+        "risk-report", help="Compute quantitative tail-risk metrics (VaR & CVaR)"
+    )
+    risk_parser.add_argument(
+        "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -809,6 +865,8 @@ def main() -> None:
         verify_audit_command(args)
     elif args.command == "backup-db":
         backup_db_command(args)
+    elif args.command == "risk-report":
+        risk_report_command(args)
 
 
 if __name__ == "__main__":
