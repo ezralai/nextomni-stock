@@ -5,7 +5,7 @@ with StandardScaler normalization fitted strictly on training folds to eliminate
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import joblib
 import numpy as np
 import pandas as pd
@@ -51,6 +51,7 @@ class GradientBoostingForecaster(BaseForecaster):
         self.feature_names: List[str] = []
         self._last_X_train_scaled: Optional[np.ndarray] = None
         self._last_y_train: Optional[np.ndarray] = None
+        self.residual_std_: float = 0.015
 
     @property
     def model_name(self) -> str:
@@ -73,6 +74,8 @@ class GradientBoostingForecaster(BaseForecaster):
 
         # 2. Fit tree ensemble
         self.model.fit(X_scaled, y_return)
+        residuals = y_return - self.model.predict(X_scaled)
+        self.residual_std_ = float(np.std(residuals)) if len(residuals) > 1 else 0.015
         self._fitted = True
 
         self._last_X_train_scaled = X_scaled
@@ -97,6 +100,31 @@ class GradientBoostingForecaster(BaseForecaster):
         p_orig = np.asarray(p_origin, dtype=float)
         pred_price = p_orig * (1.0 + pred_return)
         return pred_price
+
+    def predict_interval(
+        self,
+        X: pd.DataFrame,
+        p_origin: Union[pd.Series, np.ndarray, float],
+        confidence_level: float = 0.80,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Predict price levels and calibrated confidence interval bounds."""
+        if not self._fitted:
+            raise RuntimeError("Model must be fitted before calling predict_interval.")
+
+        from scipy import stats
+        z = float(stats.norm.ppf(0.5 + confidence_level / 2.0))
+
+        X_scaled = self.scaler.transform(X[self.feature_names])
+        pred_return = self.model.predict(X_scaled)
+        p_orig = np.asarray(p_origin, dtype=float)
+
+        pred_price = p_orig * (1.0 + pred_return)
+        lower_return = pred_return - (z * self.residual_std_)
+        upper_return = pred_return + (z * self.residual_std_)
+
+        lower_price = p_orig * (1.0 + lower_return)
+        upper_price = p_orig * (1.0 + upper_return)
+        return pred_price, lower_price, upper_price
 
     def get_feature_importances(self) -> Dict[str, float]:
         """Compute permutation feature importances on the training fold."""
@@ -134,6 +162,7 @@ class GradientBoostingForecaster(BaseForecaster):
                 "feature_names": self.feature_names,
                 "scaler": self.scaler,
                 "model": self.model,
+                "residual_std": getattr(self, "residual_std_", 0.015),
             },
             path,
         )
@@ -155,5 +184,6 @@ class GradientBoostingForecaster(BaseForecaster):
         instance.feature_names = data["feature_names"]
         instance.scaler = data["scaler"]
         instance.model = data["model"]
+        instance.residual_std_ = data.get("residual_std", 0.015)
         instance._fitted = True
         return instance

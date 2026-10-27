@@ -115,6 +115,9 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 horizon_sessions INTEGER NOT NULL,
                 target_session_date TEXT NOT NULL,
                 predicted_price REAL NOT NULL,
+                lower_bound REAL,
+                upper_bound REAL,
+                confidence_level REAL,
                 model_name TEXT NOT NULL,
                 model_version TEXT NOT NULL,
                 adjustment_convention TEXT NOT NULL,
@@ -125,6 +128,12 @@ def init_db(db_path: Optional[Path] = None) -> None:
             );
             """
         )
+        for col in ["lower_bound", "upper_bound", "confidence_level"]:
+            try:
+                conn.execute(f"ALTER TABLE predictions ADD COLUMN {col} REAL;")
+            except sqlite3.OperationalError:
+                pass
+
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_pred_status_target ON predictions(status, target_session_date);"
         )
@@ -356,6 +365,21 @@ def save_prediction(
     """Store an immutable forecast prediction record."""
     origin_price = assert_finite_number(pred["origin_price"], "origin_price")
     predicted_price = assert_finite_number(pred["predicted_price"], "predicted_price")
+    lower_bound = (
+        assert_finite_number(pred["lower_bound"], "lower_bound")
+        if pred.get("lower_bound") is not None
+        else None
+    )
+    upper_bound = (
+        assert_finite_number(pred["upper_bound"], "upper_bound")
+        if pred.get("upper_bound") is not None
+        else None
+    )
+    confidence_level = (
+        float(pred["confidence_level"])
+        if pred.get("confidence_level") is not None
+        else None
+    )
 
     conn = get_connection(db_path)
     with conn:
@@ -365,9 +389,10 @@ def save_prediction(
                 prediction_id, ticker, exchange, currency,
                 forecast_origin_timestamp, forecast_origin_session, origin_price,
                 horizon_type, horizon_sessions, target_session_date,
-                predicted_price, model_name, model_version,
+                predicted_price, lower_bound, upper_bound, confidence_level,
+                model_name, model_version,
                 adjustment_convention, reproducibility_ref, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 str(pred["prediction_id"]),
@@ -381,6 +406,9 @@ def save_prediction(
                 int(pred["horizon_sessions"]),
                 str(pred["target_session_date"]),
                 predicted_price,
+                lower_bound,
+                upper_bound,
+                confidence_level,
                 str(pred["model_name"]),
                 str(pred["model_version"]),
                 str(pred.get("adjustment_convention", "ADJUSTED_CLOSE")),

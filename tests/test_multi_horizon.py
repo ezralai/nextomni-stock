@@ -59,6 +59,10 @@ def test_multi_horizon_fit_and_predict(multi_horizon_timeseries_df: pd.DataFrame
         assert pred["exchange"] == "XNYS"
         assert pred["predicted_price"] > 0
         assert pred["target_session_date"] > pred["forecast_origin_session"]
+        assert "lower_bound" in pred
+        assert "upper_bound" in pred
+        assert pred["lower_bound"] <= pred["predicted_price"] <= pred["upper_bound"]
+        assert pred["confidence_level"] == 0.80
 
     # Target date ordering: 1 session < 5 sessions < 21 sessions
     d1 = predictions["1_SESSION"]["target_session_date"]
@@ -145,4 +149,25 @@ def test_multi_horizon_invalid_model_family():
 
     with pytest.raises(SecurityValidationError):
         MultiHorizonForecaster(model_family="unsupported_deep_net")
+
+
+def test_multi_horizon_feature_importances_and_intervals(multi_horizon_timeseries_df: pd.DataFrame):
+    """Verify polymorphic get_feature_importances and calibrated interval bounds across horizons."""
+    for fam in ["linear", "gradient_boosting"]:
+        forecaster = MultiHorizonForecaster(model_family=fam, max_iter=15, min_samples_leaf=5)
+        forecaster.fit(multi_horizon_timeseries_df)
+
+        for h in ["1_SESSION", "5_SESSIONS", "21_SESSIONS"]:
+            importances = forecaster.get_feature_importances(h)
+            assert isinstance(importances, dict)
+            assert len(importances) > 0
+
+        preds = forecaster.predict_all_horizons(
+            multi_horizon_timeseries_df, ticker="TEST", exchange="XNYS", confidence_level=0.80
+        )
+        for h in ["1_SESSION", "5_SESSIONS", "21_SESSIONS"]:
+            p = preds[h]
+            assert p["lower_bound"] <= p["predicted_price"] <= p["upper_bound"]
+            assert p["confidence_level"] == 0.80
+
 

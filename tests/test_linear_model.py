@@ -79,6 +79,13 @@ def test_linear_forecaster_fit_predict_save_load(tmp_path: Path, sample_timeseri
     assert len(preds) == len(trainable)
     assert np.all(preds > 0)
 
+    # Check calibrated prediction intervals
+    pred_p, low_p, up_p = forecaster.predict_interval(X, p_orig, confidence_level=0.80)
+    assert len(low_p) == len(trainable)
+    assert len(up_p) == len(trainable)
+    assert np.all(low_p <= pred_p)
+    assert np.all(pred_p <= up_p)
+
     # Check coefficients
     coefs = forecaster.get_coefficients()
     assert len(coefs) == len(feat_cols) + 1  # Features + intercept
@@ -95,6 +102,10 @@ def test_linear_forecaster_fit_predict_save_load(tmp_path: Path, sample_timeseri
     assert loaded.is_fitted is True
     loaded_preds = loaded.predict(X, p_orig)
     np.testing.assert_allclose(preds, loaded_preds)
+
+    l_pred, l_low, l_up = loaded.predict_interval(X, p_orig, confidence_level=0.80)
+    np.testing.assert_allclose(low_p, l_low)
+    np.testing.assert_allclose(up_p, l_up)
 
 
 def test_walk_forward_validator(sample_timeseries_df: pd.DataFrame):

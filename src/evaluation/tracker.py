@@ -59,6 +59,9 @@ class PredictionTracker:
         model_name: str,
         model_version: str,
         reproducibility_ref: Optional[str] = None,
+        lower_bound: Optional[float] = None,
+        upper_bound: Optional[float] = None,
+        confidence_level: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Create and store an immutable prediction record."""
         if exchange not in SUPPORTED_EXCHANGES:
@@ -81,6 +84,9 @@ class PredictionTracker:
             "horizon_sessions": int(horizon_sessions),
             "target_session_date": target_session_date,
             "predicted_price": float(predicted_price),
+            "lower_bound": float(lower_bound) if lower_bound is not None else None,
+            "upper_bound": float(upper_bound) if upper_bound is not None else None,
+            "confidence_level": float(confidence_level) if confidence_level is not None else None,
             "model_name": model_name,
             "model_version": model_version,
             "adjustment_convention": "ADJUSTED_CLOSE",

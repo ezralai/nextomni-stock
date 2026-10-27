@@ -5,7 +5,7 @@ normalization fitted strictly on training data to prevent lookahead leakage.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import joblib
 import numpy as np
 import pandas as pd
@@ -59,6 +59,8 @@ class LinearRegressionForecaster(BaseForecaster):
 
         # 2. Fit Ridge regression on scaled features and target return
         self.model.fit(X_scaled, y_return)
+        residuals = y_return - self.model.predict(X_scaled)
+        self.residual_std_ = float(np.std(residuals)) if len(residuals) > 1 else 0.015
         self._fitted = True
         return self
 
@@ -84,6 +86,31 @@ class LinearRegressionForecaster(BaseForecaster):
         # Convert predicted return to price level: P_pred = P_t * (1 + r_pred)
         pred_price = p_orig * (1.0 + pred_return)
         return pred_price
+
+    def predict_interval(
+        self,
+        X: pd.DataFrame,
+        p_origin: Union[pd.Series, np.ndarray, float],
+        confidence_level: float = 0.80,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Predict price levels and calibrated confidence interval bounds."""
+        if not self.is_fitted:
+            raise RuntimeError("Model must be fitted before calling predict_interval.")
+
+        from scipy import stats
+        z = float(stats.norm.ppf(0.5 + confidence_level / 2.0))
+
+        X_scaled = self.scaler.transform(X[self.feature_names])
+        pred_return = self.model.predict(X_scaled)
+        p_orig = np.asarray(p_origin, dtype=float)
+
+        pred_price = p_orig * (1.0 + pred_return)
+        lower_return = pred_return - (z * self.residual_std_)
+        upper_return = pred_return + (z * self.residual_std_)
+
+        lower_price = p_orig * (1.0 + lower_return)
+        upper_price = p_orig * (1.0 + upper_return)
+        return pred_price, lower_price, upper_price
 
     def get_coefficients(self) -> Dict[str, float]:
         """Return regression coefficients beta_j mapped to feature names.
@@ -112,6 +139,7 @@ class LinearRegressionForecaster(BaseForecaster):
                 "feature_names": self.feature_names,
                 "scaler": self.scaler,
                 "model": self.model,
+                "residual_std": getattr(self, "residual_std_", 0.015),
             },
             path,
         )
@@ -126,5 +154,6 @@ class LinearRegressionForecaster(BaseForecaster):
         instance.feature_names = data["feature_names"]
         instance.scaler = data["scaler"]
         instance.model = data["model"]
+        instance.residual_std_ = data.get("residual_std", 0.015)
         instance._fitted = True
         return instance

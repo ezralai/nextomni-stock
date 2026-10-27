@@ -6,7 +6,7 @@ Gradient Boosting, Deep Learning) to ensure consistent fit, predict, and seriali
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
@@ -55,6 +55,26 @@ class BaseForecaster(ABC):
 
         Returns:
             np.ndarray: Predicted absolute price levels P_t * (1 + r_{t+k}).
+        """
+        pass
+
+    @abstractmethod
+    def predict_interval(
+        self,
+        X: Union[np.ndarray, pd.DataFrame],
+        p_origin: Union[float, np.ndarray, pd.Series],
+        confidence_level: float = 0.80,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Predict price levels and calibrated confidence interval bounds.
+
+        Args:
+            X: Feature matrix.
+            p_origin: Origin price P_t.
+            confidence_level: Desired coverage probability (default: 0.80).
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                (predicted_price, lower_bound_price, upper_bound_price)
         """
         pass
 

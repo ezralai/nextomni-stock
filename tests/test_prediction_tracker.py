@@ -71,6 +71,9 @@ def test_record_prediction(test_tracker_db: Tuple[PredictionTracker, Path]):
         horizon_sessions=1,
         target_session_date="2024-01-16",
         predicted_price=171.5,
+        lower_bound=168.0,
+        upper_bound=175.0,
+        confidence_level=0.80,
         model_name="LinearRegression_Ridge",
         model_version="1.0.0",
         reproducibility_ref="models/linear_JPM.joblib",
@@ -79,11 +82,16 @@ def test_record_prediction(test_tracker_db: Tuple[PredictionTracker, Path]):
     assert record["prediction_id"] is not None
     assert record["status"] == "PENDING"
     assert record["predicted_price"] == 171.5
+    assert record["lower_bound"] == 168.0
+    assert record["upper_bound"] == 175.0
+    assert record["confidence_level"] == 0.80
 
     df = get_predictions(db_path=db_file)
     assert len(df) == 1
     assert df["prediction_id"].iloc[0] == record["prediction_id"]
     assert df["status"].iloc[0] == "PENDING"
+    assert df["lower_bound"].iloc[0] == 168.0
+    assert df["upper_bound"].iloc[0] == 175.0
     assert pd.isna(df["actual_price"].iloc[0])
 
 

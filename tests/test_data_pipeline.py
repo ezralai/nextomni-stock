@@ -104,7 +104,22 @@ def test_database_initialization(temp_db: Path):
     assert "market_observations" in tables
     assert "raw_provider_payloads" in tables
     assert "corporate_actions" in tables
+    assert "predictions" in tables
+    assert "prediction_evaluations" in tables
+
+    # Check interval columns in predictions table
+    pred_cols = {
+        col[1]
+        for col in cursor.execute("PRAGMA table_info(predictions);").fetchall()
+    }
+    assert "lower_bound" in pred_cols
+    assert "upper_bound" in pred_cols
+    assert "confidence_level" in pred_cols
     conn.close()
+
+    # Verify idempotency of init_db migrations
+    init_db(temp_db)
+    init_db(temp_db)
 
 
 def test_upsert_stock(temp_db: Path):

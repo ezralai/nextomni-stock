@@ -97,10 +97,12 @@ class MultiHorizonForecaster:
         df: pd.DataFrame,
         ticker: str,
         exchange: str,
+        confidence_level: float = 0.80,
     ) -> Dict[str, Dict[str, Any]]:
         """Generate out-of-sample predictions across all 3 horizons from latest observation.
 
-        Uses exchange_calendars to resolve exact future target dates.
+        Uses exchange_calendars to resolve exact future target dates and computes
+        calibrated confidence intervals.
         """
         if not self.is_fitted:
             raise RuntimeError("MultiHorizonForecaster must be fitted before predict_all_horizons.")
@@ -135,9 +137,14 @@ class MultiHorizonForecaster:
 
             target_date_str = target_ts.strftime("%Y-%m-%d")
 
-            # Predict price
+            # Predict price and calibrated prediction interval
             model = self.models[h_key]
-            predicted_price = float(model.predict(latest_features, p_origin=origin_price)[0])
+            pred_arr, low_arr, up_arr = model.predict_interval(
+                latest_features, p_origin=origin_price, confidence_level=confidence_level
+            )
+            predicted_price = float(pred_arr[0])
+            lower_bound = float(low_arr[0])
+            upper_bound = float(up_arr[0])
 
             expected_return_pct = round(
                 ((predicted_price - origin_price) / origin_price) * 100.0, 2
@@ -153,6 +160,9 @@ class MultiHorizonForecaster:
                 "origin_price": origin_price,
                 "target_session_date": target_date_str,
                 "predicted_price": round(predicted_price, 4),
+                "lower_bound": round(lower_bound, 4),
+                "upper_bound": round(upper_bound, 4),
+                "confidence_level": confidence_level,
                 "expected_return_pct": expected_return_pct,
                 "model_name": f"{model.model_name}_Direct_{h_key}",
                 "model_version": self.model_version,
@@ -244,6 +254,19 @@ class MultiHorizonForecaster:
         for h_key, model in self.models.items():
             model.save(path / f"{h_key}.joblib")
         return path
+
+    def get_feature_importances(self, horizon_key: str) -> Dict[str, float]:
+        """Return quantitative feature importances or coefficients for the given horizon."""
+        if horizon_key not in self.models:
+            raise ValueError(f"Invalid horizon key '{horizon_key}'")
+        model = self.models[horizon_key]
+        if hasattr(model, "get_feature_importances"):
+            return model.get_feature_importances()
+        if hasattr(model, "get_coefficients"):
+            return model.get_coefficients()
+        return {}
+
+    walk_forward_validate = evaluate_walk_forward_all
 
     @classmethod
     def load_models(cls, dir_path: Union[str, Path], ticker: str) -> "MultiHorizonForecaster":

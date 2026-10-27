@@ -64,6 +64,12 @@ def test_gradient_boosting_forecaster_fit_predict_save_load(sample_timeseries_df
     assert isinstance(preds[0], float)
     assert preds[0] > 0
 
+    # Prediction Interval
+    pred_p, low_p, up_p = forecaster.predict_interval(test_X, test_p_orig, confidence_level=0.80)
+    assert len(low_p) == 1
+    assert len(up_p) == 1
+    assert low_p[0] <= pred_p[0] <= up_p[0]
+
     # Feature importances
     importances = forecaster.get_feature_importances()
     assert isinstance(importances, dict)
@@ -78,3 +84,7 @@ def test_gradient_boosting_forecaster_fit_predict_save_load(sample_timeseries_df
     assert loaded_forecaster.is_fitted
     loaded_preds = loaded_forecaster.predict(test_X, test_p_orig)
     np.testing.assert_allclose(preds, loaded_preds, rtol=1e-5)
+
+    l_pred, l_low, l_up = loaded_forecaster.predict_interval(test_X, test_p_orig, confidence_level=0.80)
+    np.testing.assert_allclose(low_p, l_low, rtol=1e-5)
+    np.testing.assert_allclose(up_p, l_up, rtol=1e-5)

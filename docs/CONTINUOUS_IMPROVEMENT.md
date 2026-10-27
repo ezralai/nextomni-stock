@@ -35,20 +35,23 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **SQL Query Safety:** All database queries utilize parameter binding (`?`). Zero string formatting in SQL statements.
 - [x] **Input Allowlisting:** Ticker symbols match regex `^[A-Z0-9]{1,6}(\.[A-Z]{2})?$`; Exchange MIC matches `^(XNYS|XKLS)$` via `src/security/validators.py`.
 - [x] **Model Family Allowlisting:** Model choice validated against `{"linear", "gradient_boosting", "baseline"}`.
-- [x] **Floating-Point Finite Assertion:** Database writes validate `assert_finite_number` to protect against NaN/Inf float poisonings.
+- [x] **Floating-Point Finite Assertion:** Database writes validate `assert_finite_number` to protect against NaN/Inf float poisonings across prices and interval bounds.
 - [x] **Path Traversal Protection:** Serialized model filenames sanitized and checked with `assert_safe_model_path`.
 - [x] **Secret Isolation:** Environment variables (`NEXTOMNI_STOCK_*`) never logged to stdout or serialized in database payloads.
 - [x] **Rate Limiter Health:** Token bucket properly bounds requests (max 8 req/min for free tier) and logs warnings on failover.
 - [x] **FSM Idempotency:** Running `evaluate-pending` multiple times produces identical records without duplicating evaluations.
+- [x] **Safe Schema Evolution:** Idempotent `ALTER TABLE` migrations safely evolve SQLite tables (`lower_bound`, `upper_bound`, `confidence_level`).
 
 ---
 
 ## 3. Architecture & Code Quality Checklist
 
-- [x] **Polymorphic Forecaster Contract:** `BaseForecaster(ABC)` defines polymorphic interface for `fit`, `predict`, and serialization.
+- [x] **Polymorphic Forecaster Contract:** `BaseForecaster(ABC)` defines polymorphic interface for `fit`, `predict`, `predict_interval`, and serialization.
+- [x] **Uncertainty Quantification:** Calibrated 80% prediction intervals ($[P_{\text{lower}}, P_{\text{upper}}]$) calculated via train-fold return residual standard error ($\sigma_{\epsilon}$).
+- [x] **Interactive Dashboard Architecture:** Dual-architecture selection (`HistGradientBoosting` vs `Linear Ridge`) in Streamlit sidebar, rendering 80% prediction interval cones in Plotly.
 - [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code or duplicate subparser definitions.
 - [x] **Type Annotations:** All public functions include parameter types and return type annotations.
-- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (57/57 tests passing).
+- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (58/58 tests passing).
 - [x] **Docstrings:** Standard Google/NumPy format explaining arguments, return values, and mathematical formulas.
 - [x] **Decoupled Modules:** No circular imports between `src/data`, `src/features`, `src/models`, `src/evaluation`, and `src/dashboard`.
 - [x] **Reproducibility:** Random seeds fixed (`random_state=42`) in all stochastic models or splitters.

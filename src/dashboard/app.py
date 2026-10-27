@@ -77,29 +77,39 @@ def render_dashboard() -> None:
     st.sidebar.title("NextOmni Stock")
     st.sidebar.caption("Dual-Exchange Quantitative Intelligence Service")
 
-    selected_exchange = st.sidebar.selectbox(
+    raw_exchange = st.sidebar.selectbox(
         "Select Exchange",
         options=list(SUPPORTED_EXCHANGES.keys()),
         format_func=lambda k: f"{SUPPORTED_EXCHANGES[k].name} ({k})",
     )
-
+    from src.security.validators import validate_exchange, validate_model_family, validate_ticker
+    selected_exchange = validate_exchange(raw_exchange)
     exchange_cfg = SUPPORTED_EXCHANGES[selected_exchange]
     available_tickers = INITIAL_TICKERS.get(selected_exchange, [])
 
-    selected_ticker = st.sidebar.selectbox(
+    raw_ticker = st.sidebar.selectbox(
         "Select Stock Ticker",
         options=available_tickers,
         index=0,
     )
+    selected_ticker = validate_ticker(raw_ticker)
+
+    raw_model = st.sidebar.selectbox(
+        "Forecasting Architecture",
+        options=["gradient_boosting", "linear"],
+        format_func=lambda x: "⚡ Gradient Boosting (Non-Linear)" if x == "gradient_boosting" else "📈 Ridge Regression (Linear)",
+    )
+    selected_model_family = validate_model_family(raw_model)
 
     st.sidebar.markdown("---")
     st.sidebar.markdown(
         f"""
-        **Exchange Info:**
+        **System Parameters:**
+        - **Active Model:** `{selected_model_family}`
         - **MIC:** `{exchange_cfg.mic}`
         - **Timezone:** `{exchange_cfg.timezone}`
         - **Currency:** `{exchange_cfg.currency}`
-        - **Standard Hours:** `{exchange_cfg.session_open} - {exchange_cfg.session_close}`
+        - **Hours:** `{exchange_cfg.session_open} - {exchange_cfg.session_close}`
         """
     )
 
@@ -277,7 +287,7 @@ def render_dashboard() -> None:
     # TAB 3: Multi-Horizon Price Forecasting
     # =========================================================================
     with tabs[2]:
-        st.header(f"Multi-Horizon Forecasting Engine: {selected_ticker}")
+        st.header(f"Multi-Horizon Forecasting Engine: {selected_ticker} ({selected_model_family})")
         df_obs = load_stock_observations(selected_ticker, selected_exchange)
 
         if df_obs.empty:
@@ -285,27 +295,29 @@ def render_dashboard() -> None:
         else:
             # Load or fit multi-horizon model
             models_dir = PROJECT_ROOT / "models"
-            forecaster = MultiHorizonForecaster()
+            forecaster = MultiHorizonForecaster(model_family=selected_model_family)
             model_loaded = False
             try:
-                forecaster.load_models(models_dir, selected_ticker)
-                model_loaded = True
+                forecaster = MultiHorizonForecaster.load_models(models_dir, selected_ticker)
+                if forecaster.model_family == selected_model_family:
+                    model_loaded = True
             except Exception:
                 model_loaded = False
 
             if not model_loaded:
-                st.info(f"Trained model artifact not found for {selected_ticker}. Training on latest historical sessions...")
-                with st.spinner("Training Multi-Horizon Direct Ridge Models (1, 5, 21 sessions)..."):
+                st.info(f"Trained {selected_model_family} model artifact not found for {selected_ticker}. Training on latest historical sessions...")
+                with st.spinner(f"Training Multi-Horizon {selected_model_family} Models (1, 5, 21 sessions)..."):
+                    forecaster = MultiHorizonForecaster(model_family=selected_model_family)
                     forecaster.fit(df_obs)
                     forecaster.save_models(models_dir, selected_ticker)
                     st.success("Models trained and artifacts saved!")
 
-            # Generate future forecasts
-            forecasts = forecaster.predict_all_horizons(df_obs, selected_ticker, selected_exchange)
+            # Generate future forecasts with 80% prediction interval
+            forecasts = forecaster.predict_all_horizons(df_obs, selected_ticker, selected_exchange, confidence_level=0.80)
             latest_price = float(df_obs.iloc[-1][PRICE_COLUMN])
             latest_date = str(df_obs.iloc[-1]["session_date"])
 
-            st.markdown(f"**Origin Session Date:** `{latest_date}` | **Origin Price:** `{latest_price:.2f} {exchange_cfg.currency}`")
+            st.markdown(f"**Origin Session Date:** `{latest_date}` | **Origin Price:** `{latest_price:.2f} {exchange_cfg.currency}` | **Model:** `{selected_model_family}`")
 
             # 3 Horizon Cards
             col_h1, col_h5, col_h21 = st.columns(3)
@@ -319,7 +331,7 @@ def render_dashboard() -> None:
                     value=f"{h1['predicted_price']:.2f} {exchange_cfg.currency}",
                     delta=f"{h1['expected_return_pct']:+.2f}%",
                 )
-                st.caption("1 Trading Day Horizon")
+                st.caption(f"80% CI: `[{h1['lower_bound']:.2f} – {h1['upper_bound']:.2f}]`")
 
             with col_h5:
                 st.metric(
@@ -327,7 +339,7 @@ def render_dashboard() -> None:
                     value=f"{h5['predicted_price']:.2f} {exchange_cfg.currency}",
                     delta=f"{h5['expected_return_pct']:+.2f}%",
                 )
-                st.caption("1 Trading Week Horizon")
+                st.caption(f"80% CI: `[{h5['lower_bound']:.2f} – {h5['upper_bound']:.2f}]`")
 
             with col_h21:
                 st.metric(
@@ -335,12 +347,12 @@ def render_dashboard() -> None:
                     value=f"{h21['predicted_price']:.2f} {exchange_cfg.currency}",
                     delta=f"{h21['expected_return_pct']:+.2f}%",
                 )
-                st.caption("1 Trading Month Horizon")
+                st.caption(f"80% CI: `[{h21['lower_bound']:.2f} – {h21['upper_bound']:.2f}]`")
 
             st.markdown("---")
 
-            # Forward Projection Chart
-            st.subheader("Forward Price Trajectory")
+            # Forward Projection Chart with Uncertainty Interval Cone
+            st.subheader("Forward Price Trajectory & Calibrated Prediction Intervals")
             recent_df = df_obs.tail(40)
             fig_proj = go.Figure()
             # Historical Path
@@ -352,15 +364,39 @@ def render_dashboard() -> None:
                 line=dict(color="#90CAF9", width=2),
             ))
 
-            # Forward Projection Line
+            # Forward Projection Line and 80% Interval Cone
             proj_dates = [latest_date, h1["target_session_date"], h5["target_session_date"], h21["target_session_date"]]
             proj_prices = [latest_price, h1["predicted_price"], h5["predicted_price"], h21["predicted_price"]]
+            upper_prices = [latest_price, h1["upper_bound"], h5["upper_bound"], h21["upper_bound"]]
+            lower_prices = [latest_price, h1["lower_bound"], h5["lower_bound"], h21["lower_bound"]]
 
+            # Upper bound line (invisible)
+            fig_proj.add_trace(go.Scatter(
+                x=proj_dates,
+                y=upper_prices,
+                mode="lines",
+                line=dict(width=0),
+                showlegend=False,
+                hoverinfo="skip",
+            ))
+
+            # Lower bound line with shaded fill to upper
+            fig_proj.add_trace(go.Scatter(
+                x=proj_dates,
+                y=lower_prices,
+                mode="lines",
+                line=dict(width=0),
+                fill="tonexty",
+                fillcolor="rgba(255, 214, 0, 0.18)",
+                name="80% Prediction Interval",
+            ))
+
+            # Forecast centerline
             fig_proj.add_trace(go.Scatter(
                 x=proj_dates,
                 y=proj_prices,
                 mode="lines+markers",
-                name="Multi-Horizon Direct Forecast",
+                name=f"Direct Forecast ({selected_model_family})",
                 line=dict(color="#FFD600", width=2.5, dash="dash"),
                 marker=dict(size=[6, 10, 10, 12], symbol="diamond"),
             ))
@@ -456,8 +492,8 @@ def render_dashboard() -> None:
             cols_to_show = [
                 "ticker", "exchange", "model_name", "horizon_sessions",
                 "forecast_origin_session", "target_session_date",
-                "predicted_price", "actual_price", "percentage_error",
-                "direction_correct", "status"
+                "predicted_price", "lower_bound", "upper_bound", "confidence_level",
+                "actual_price", "percentage_error", "direction_correct", "status"
             ]
             st.dataframe(
                 disp_df[[c for c in cols_to_show if c in disp_df.columns]],
@@ -469,39 +505,41 @@ def render_dashboard() -> None:
     # TAB 5: Model Performance & Walk-Forward Validation
     # =========================================================================
     with tabs[4]:
-        st.header(f"Model Performance & Validation: {selected_ticker}")
+        st.header(f"Model Performance & Validation: {selected_ticker} ({selected_model_family})")
         st.caption("Chronological expanding-window walk-forward backtest results vs persistence baseline.")
 
         df_obs = load_stock_observations(selected_ticker, selected_exchange)
         if df_obs.empty:
             st.warning(f"No historical observations available for {selected_ticker}.")
         else:
-            forecaster = MultiHorizonForecaster()
-            with st.spinner("Computing Walk-Forward Validation metrics across all horizons..."):
-                validation_summary = forecaster.walk_forward_validate(df_obs, initial_train_size=120)
+            forecaster = MultiHorizonForecaster(model_family=selected_model_family)
+            with st.spinner(f"Computing Walk-Forward Validation metrics ({selected_model_family})..."):
+                validation_summary = forecaster.evaluate_walk_forward_all(df_obs, min_train_sessions=120)
 
             # Performance Comparison Table
-            st.subheader("Walk-Forward Validation Summary")
+            st.subheader(f"Walk-Forward Validation Summary ({selected_model_family})")
             val_rows = []
-            for h_key, metrics in validation_summary.items():
+            for h_key, res in validation_summary.items():
+                m_m = res["model_metrics"]
+                b_m = res["baseline_metrics"]
                 val_rows.append({
                     "Horizon": h_key,
-                    "Model MAE": f"{metrics['mae']:.4f}",
-                    "Baseline MAE": f"{metrics['baseline_mae']:.4f}",
-                    "MAE Improvement %": f"{metrics['mae_improvement_pct']:+.2f}%",
-                    "Model RMSE": f"{metrics['rmse']:.4f}",
-                    "Baseline RMSE": f"{metrics['baseline_rmse']:.4f}",
-                    "Directional Accuracy": f"{metrics['directional_accuracy']:.2f}%",
-                    "Folds Evaluated": metrics["test_samples"],
+                    "Model MAE": f"{m_m['mae']:.4f}",
+                    "Baseline MAE": f"{b_m['mae']:.4f}",
+                    "MAE Improvement %": f"{res['mae_improvement_pct']:+.2f}%",
+                    "Model RMSE": f"{m_m['rmse']:.4f}",
+                    "Baseline RMSE": f"{b_m['rmse']:.4f}",
+                    "Directional Accuracy": f"{m_m['directional_accuracy_pct']:.2f}%",
+                    "Folds Evaluated": res["walk_forward_steps"],
                 })
 
             st.dataframe(pd.DataFrame(val_rows), use_container_width=True, hide_index=True)
 
             st.markdown("---")
 
-            # Ridge Feature Importance Weights
-            st.subheader("Quantitative Feature Importance (Ridge Beta Weights)")
-            st.caption("Feature signals learned by the direct models across forecasting horizons.")
+            # Quantitative Feature Importance
+            st.subheader(f"Quantitative Feature Signals ({selected_model_family})")
+            st.caption("Feature signals learned by direct models across forecasting horizons.")
 
             # Train models to inspect weights
             forecaster.fit(df_obs)

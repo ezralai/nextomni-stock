@@ -290,15 +290,16 @@ def train_all_horizons_command(args: argparse.Namespace) -> None:
 
     # Generate current future predictions
     future_forecasts = forecaster.predict_all_horizons(df, ticker, exchange)
-    print("\nCurrent Multi-Horizon Forecasts (from latest observed session):")
-    print(f"{'Horizon':<15} {'Target Date':<14} {'Origin Price':<14} {'Predicted Price':<16} {'Exp Return':<12}")
-    print("-" * 75)
+    print("\nCurrent Multi-Horizon Forecasts & 80% Confidence Bands (from latest observed session):")
+    print(f"{'Horizon':<15} {'Target Date':<14} {'Origin Price':<14} {'Predicted Price':<16} {'80% Confidence Band':<24} {'Exp Return':<12}")
+    print("-" * 98)
     for h_key, fc in future_forecasts.items():
+        interval_str = f"[{fc['lower_bound']:.2f} – {fc['upper_bound']:.2f}]"
         print(
             f"{h_key:<15} {fc['target_session_date']:<14} "
-            f"{fc['origin_price']:<14.4f} {fc['predicted_price']:<16.4f} {fc['expected_return_pct']:>+6.2f}%"
+            f"{fc['origin_price']:<14.4f} {fc['predicted_price']:<16.4f} {interval_str:<24} {fc['expected_return_pct']:>+6.2f}%"
         )
-    print("-" * 75 + "\n")
+    print("-" * 98 + "\n")
 
 
 def predict_command(args: argparse.Namespace) -> None:
@@ -342,6 +343,10 @@ def predict_command(args: argparse.Namespace) -> None:
     multi_dir = models_dir / f"multi_horizon_{safe_ticker}"
     linear_file = models_dir / f"linear_{safe_ticker}.joblib"
 
+    lower_bound = None
+    upper_bound = None
+    confidence_level = 0.80
+
     if args.model == "baseline":
         model_name = "PersistenceBaseline"
         model_version = "1.0.0"
@@ -354,7 +359,12 @@ def predict_command(args: argparse.Namespace) -> None:
         forecaster = multi_forecaster.models[h_key]
         feature_df, feat_cols = build_feature_matrix(df, include_target=False)
         latest_features = feature_df.iloc[-1][feat_cols].to_frame().T
-        pred_price = float(forecaster.predict(latest_features, p_origin=origin_price)[0])
+        pred_arr, low_arr, up_arr = forecaster.predict_interval(
+            latest_features, p_origin=origin_price, confidence_level=confidence_level
+        )
+        pred_price = float(pred_arr[0])
+        lower_bound = float(low_arr[0])
+        upper_bound = float(up_arr[0])
         model_name = f"{forecaster.model_name}_Direct_{h_key}"
         model_version = forecaster.model_version
         repro_ref = str(multi_dir / f"{h_key}.joblib")
@@ -362,7 +372,12 @@ def predict_command(args: argparse.Namespace) -> None:
         forecaster = LinearRegressionForecaster.load(linear_file)
         feature_df, feat_cols = build_feature_matrix(df, include_target=False)
         latest_features = feature_df.iloc[-1][feat_cols].to_frame().T
-        pred_price = float(forecaster.predict(latest_features, p_origin=origin_price)[0])
+        pred_arr, low_arr, up_arr = forecaster.predict_interval(
+            latest_features, p_origin=origin_price, confidence_level=confidence_level
+        )
+        pred_price = float(pred_arr[0])
+        lower_bound = float(low_arr[0])
+        upper_bound = float(up_arr[0])
         model_name = forecaster.model_name
         model_version = forecaster.model_version
         repro_ref = str(linear_file)
@@ -381,6 +396,9 @@ def predict_command(args: argparse.Namespace) -> None:
         model_name=model_name,
         model_version=model_version,
         reproducibility_ref=repro_ref,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+        confidence_level=confidence_level if lower_bound is not None else None,
     )
 
     print("\n" + "=" * 65)
@@ -393,6 +411,8 @@ def predict_command(args: argparse.Namespace) -> None:
     print(f"  Origin Observed Price:  {record['origin_price']:.4f} {record['currency']}")
     print(f"  Target Session Date:    {record['target_session_date']}")
     print(f"  Predicted Price:        {record['predicted_price']:.4f} {record['currency']}")
+    if record.get("lower_bound") is not None and record.get("upper_bound") is not None:
+        print(f"  80% Confidence Band:    [{record['lower_bound']:.4f} – {record['upper_bound']:.4f}] {record['currency']}")
     print(f"  Model:                  {record['model_name']} (v{record['model_version']})")
     print(f"  Status:                 {record['status']}")
     print("=" * 65 + "\n")
