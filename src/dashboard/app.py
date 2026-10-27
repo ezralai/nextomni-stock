@@ -316,6 +316,65 @@ def render_dashboard() -> None:
                     ]
                     st.dataframe(pd.DataFrame(risk_rows), use_container_width=True, hide_index=True)
 
+            # Out-of-Sample Quantitative Strategy Backtest Card
+            with st.expander("📈 Out-of-Sample Strategy Backtest (Realized Sharpe & PnL Curve)", expanded=False):
+                st.markdown(
+                    "Simulates an expanding-window walk-forward execution strategy driven by the multi-horizon forecasting engine, "
+                    "incorporating realistic transaction costs and evaluating risk-adjusted equity compounding."
+                )
+                col_bt1, col_bt2 = st.columns(2)
+                with col_bt1:
+                    bt_horizon = st.selectbox("Strategy Horizon", [1, 5, 21], format_func=lambda h: f"{h} Session(s)", key="bt_h")
+                with col_bt2:
+                    bt_fee = st.number_input("Transaction Fee (bps)", min_value=0.0, max_value=50.0, value=5.0, step=1.0, key="bt_f")
+
+                if st.button("🚀 Run Walk-Forward Strategy Backtest", use_container_width=True):
+                    with st.spinner("Executing walk-forward strategy backtest..."):
+                        from src.analytics.backtester import run_forecast_backtest
+                        bt_res = run_forecast_backtest(
+                            df_obs,
+                            horizon_sessions=bt_horizon,
+                            fee_bps=bt_fee,
+                            min_train_sessions=min(120, max(30, len(df_obs) // 2)),
+                            model_family=selected_model_family,
+                        )
+                        m = bt_res.metrics
+
+                        bm1, bm2, bm3, bm4 = st.columns(4)
+                        bm1.metric("Strategy Net Return", f"{m.total_return_pct:+.2f}%")
+                        bm2.metric("Buy & Hold Return", f"{m.benchmark_return_pct:+.2f}%")
+                        bm3.metric("Annualized Sharpe", f"{m.annualized_sharpe:.3f}")
+                        bm4.metric("Annualized Sortino", f"{m.annualized_sortino:.3f}")
+
+                        bm5, bm6, bm7, bm8 = st.columns(4)
+                        bm5.metric("Max Drawdown", f"{m.max_drawdown_pct:.2f}%")
+                        bm6.metric("Win Rate", f"{m.win_rate_pct:.1f}%")
+                        bm7.metric("Profit Factor", f"{m.profit_factor:.2f}")
+                        bm8.metric("Fee Drag Deducted", f"{m.fee_drag_pct:.2f}%")
+
+                        fig_bt = go.Figure()
+                        fig_bt.add_trace(go.Scatter(
+                            x=bt_res.equity_df["session_date"],
+                            y=bt_res.equity_df["strategy_equity"],
+                            name=f"Strategy Equity ({selected_model_family.capitalize()})",
+                            line=dict(color="#00E676", width=2.5),
+                        ))
+                        fig_bt.add_trace(go.Scatter(
+                            x=bt_res.equity_df["session_date"],
+                            y=bt_res.equity_df["benchmark_equity"],
+                            name="Buy & Hold Benchmark",
+                            line=dict(color="#90CAF9", width=1.8, dash="dash"),
+                        ))
+                        fig_bt.update_layout(
+                            template="plotly_dark",
+                            title="Compounding Equity Curve (Starting Base = $100.00)",
+                            xaxis_title="Trading Session Date",
+                            yaxis_title="Portfolio Equity ($)",
+                            margin=dict(l=20, r=20, t=40, b=20),
+                            hovermode="x unified",
+                        )
+                        st.plotly_chart(fig_bt, use_container_width=True)
+
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
     # =========================================================================

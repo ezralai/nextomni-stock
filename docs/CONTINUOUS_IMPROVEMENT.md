@@ -84,9 +84,12 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Explainable AI (XAI) Additive Attribution:** `explain_forecast()` decomposes expected returns $\hat{r}_{t+k}$ into closed-form linear and marginal non-linear signal attributions across all models, ensuring exact additivity ($\sum c_i + \text{intercept} = \hat{r}$).
 - [x] **Interactive Signal Attribution Visualizer:** Streamlit Tab 3 embeds an expander with horizontal color-coded contribution bar charts (bullish green vs. bearish red) for each horizon.
 - [x] **CLI Explainability Flag:** `predict --explain` displays local signal attribution breakdown table in terminal.
-- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db`, `risk-report`, and `prune-db`.
+- [x] **Walk-Forward Quantitative Backtester:** `src/analytics/backtester.py` simulates realistic execution with turnover transaction fee deductions (`fee_bps`), computing realized Annualized Sharpe, Sortino ratio, Max Drawdown, Profit Factor, and compounding equity curves vs. Buy & Hold benchmark.
+- [x] **Interactive Strategy Equity Curve Visualizer:** Streamlit Tab 2 embeds an interactive backtest card with compounding equity curves ($100 base) and risk-adjusted return metrics.
+- [x] **CLI Backtest Command:** `backtest` command in `src/cli.py` exposes strategy simulation with customizable horizons and fee parameters.
+- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db`, `risk-report`, `prune-db`, and `backtest`.
 - [x] **Type Annotations:** All public functions include parameter types and return type annotations.
-- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (95/95 tests passing).
+- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (101/101 tests passing).
 - [x] **Docstrings:** Standard Google/NumPy format explaining arguments, return values, and mathematical formulas.
 - [x] **Decoupled Modules:** No circular imports between `src/data`, `src/features`, `src/models`, `src/evaluation`, `src/security`, and `src/dashboard`.
 - [x] **Reproducibility:** Random seeds fixed (`random_state=42`) in all stochastic models or splitters.

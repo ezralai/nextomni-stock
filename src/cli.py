@@ -682,6 +682,51 @@ def prune_db_command(args: argparse.Namespace) -> None:
     print(f"Pruning complete. Removed {deleted_count} expired payload record(s).")
 
 
+def backtest_command(args: argparse.Namespace) -> None:
+    """Run walk-forward strategy backtest and output risk-adjusted performance scorecard."""
+    from src.analytics.backtester import run_forecast_backtest
+
+    ticker = validate_ticker(args.ticker)
+    model_family = validate_model_family(args.model)
+    horizon = args.horizon
+    fee_bps = float(args.fee_bps)
+
+    df = get_observations(ticker)
+    if df.empty:
+        print(f"Error: No observations found for {ticker}. Run 'sync' first.")
+        sys.exit(1)
+
+    print(f"\nRunning out-of-sample walk-forward strategy backtest for {ticker}...")
+    print(f"  Model Family:      {model_family}")
+    print(f"  Forecast Horizon:  {horizon} session(s)")
+    print(f"  Transaction Fee:   {fee_bps} bps")
+    print(f"  Min Train Burn-in: {args.min_train} sessions\n")
+
+    res = run_forecast_backtest(
+        df,
+        horizon_sessions=horizon,
+        fee_bps=fee_bps,
+        min_train_sessions=args.min_train,
+        model_family=model_family,
+    )
+    m = res.metrics
+
+    print("=" * 65)
+    print("  NextOmni Stock: Out-of-Sample Backtest Scorecard")
+    print("=" * 65)
+    print(f"  Strategy Net Return:       {m.total_return_pct:>+8.2f}%")
+    print(f"  Buy & Hold Benchmark:      {m.benchmark_return_pct:>+8.2f}%")
+    print(f"  Annualized Strategy Return:{m.annualized_return_pct:>+8.2f}%")
+    print(f"  Annualized Sharpe Ratio:   {m.annualized_sharpe:>8.3f}")
+    print(f"  Annualized Sortino Ratio:  {m.annualized_sortino:>8.3f}")
+    print(f"  Maximum Drawdown:          {m.max_drawdown_pct:>8.2f}%")
+    print(f"  Win Rate (Active Trades):  {m.win_rate_pct:>8.2f}%")
+    print(f"  Profit Factor:             {m.profit_factor:>8.2f}")
+    print(f"  Total Trades (Turnover):   {m.total_trades:>8d}")
+    print(f"  Total Fee Drag Deducted:   {m.fee_drag_pct:>8.2f}%")
+    print("=" * 65 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -879,6 +924,29 @@ def main() -> None:
         "--days", type=int, default=90, help="Retention period in days (default: 90)"
     )
 
+    # Backtest parser
+    backtest_parser = subparsers.add_parser(
+        "backtest", help="Simulate out-of-sample quantitative strategy backtest"
+    )
+    backtest_parser.add_argument(
+        "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
+    )
+    backtest_parser.add_argument(
+        "--model",
+        choices=["ensemble", "linear", "gradient_boosting"],
+        default="ensemble",
+        help="Forecasting model family (default: ensemble)",
+    )
+    backtest_parser.add_argument(
+        "--horizon", type=int, default=1, choices=[1, 5, 21], help="Forecast horizon (default: 1)"
+    )
+    backtest_parser.add_argument(
+        "--fee-bps", type=float, default=5.0, help="Transaction fee in basis points (default: 5.0)"
+    )
+    backtest_parser.add_argument(
+        "--min-train", type=int, default=120, help="Initial burn-in training sessions (default: 120)"
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -912,6 +980,8 @@ def main() -> None:
         risk_report_command(args)
     elif args.command == "prune-db":
         prune_db_command(args)
+    elif args.command == "backtest":
+        backtest_command(args)
 
 
 if __name__ == "__main__":
