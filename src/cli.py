@@ -14,7 +14,7 @@ from typing import Optional
 import pandas as pd
 
 from src.config import INITIAL_TICKERS, SUPPORTED_EXCHANGES
-from src.data.db import get_connection, get_observations, init_db
+from src.data.db import get_connection, get_observations, init_db, prune_raw_payloads
 from src.data.pipeline import DataPipeline
 from src.security.validators import (
     SUPPORTED_MODEL_FAMILIES,
@@ -650,6 +650,18 @@ def risk_report_command(args: argparse.Namespace) -> None:
     print("=" * 116 + "\n")
 
 
+def prune_db_command(args: argparse.Namespace) -> None:
+    """Safely prune expired raw provider payloads older than specified days."""
+    days = args.days
+    if days < 1:
+        print("Error: --days must be greater than or equal to 1.")
+        sys.exit(1)
+
+    print(f"Pruning raw provider payloads older than {days} days from database...")
+    deleted_count = prune_raw_payloads(retention_days=days)
+    print(f"Pruning complete. Removed {deleted_count} expired payload record(s).")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -836,6 +848,14 @@ def main() -> None:
         "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
     )
 
+    # Prune DB parser
+    prune_parser = subparsers.add_parser(
+        "prune-db", help="Safely prune expired raw provider payloads older than N days"
+    )
+    prune_parser.add_argument(
+        "--days", type=int, default=90, help="Retention period in days (default: 90)"
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -867,6 +887,8 @@ def main() -> None:
         backup_db_command(args)
     elif args.command == "risk-report":
         risk_report_command(args)
+    elif args.command == "prune-db":
+        prune_db_command(args)
 
 
 if __name__ == "__main__":

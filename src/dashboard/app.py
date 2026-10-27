@@ -434,6 +434,31 @@ def render_dashboard() -> None:
                 marker=dict(size=[6, 10, 10, 12], symbol="diamond"),
             ))
 
+            # Cornish-Fisher VaR 95% downside floor
+            try:
+                from src.analytics.risk import compute_multi_horizon_risk_profile
+                risk_summary = compute_multi_horizon_risk_profile(df_obs, horizons=[1, 5, 21])
+                if risk_summary:
+                    v1 = risk_summary.get("1_SESSION", {}).get("var_95_cornish_fisher_pct", 0.0) / 100.0
+                    v5 = risk_summary.get("5_SESSIONS", {}).get("var_95_cornish_fisher_pct", 0.0) / 100.0
+                    v21 = risk_summary.get("21_SESSIONS", {}).get("var_95_cornish_fisher_pct", 0.0) / 100.0
+                    floor_prices = [
+                        latest_price,
+                        latest_price * (1.0 - v1),
+                        latest_price * (1.0 - v5),
+                        latest_price * (1.0 - v21),
+                    ]
+                    fig_proj.add_trace(go.Scatter(
+                        x=proj_dates,
+                        y=floor_prices,
+                        mode="lines+markers",
+                        name="VaR 95% Downside Floor (Cornish-Fisher)",
+                        line=dict(color="#FF5252", width=1.8, dash="dot"),
+                        marker=dict(size=6, symbol="x"),
+                    ))
+            except Exception:
+                pass
+
             fig_proj.update_layout(
                 template="plotly_dark",
                 xaxis_title="Trading Session Date",

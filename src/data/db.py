@@ -342,6 +342,40 @@ def save_raw_payload(
     conn.close()
 
 
+def prune_raw_payloads(
+    retention_days: int = 90,
+    db_path: Optional[Path] = None,
+) -> int:
+    """Safely prune raw provider payload JSON blobs older than retention_days.
+
+    Strictly preserves market observations, predictions, and evaluation audit records.
+    Uses parameterized SQL to guard against SQL injection.
+
+    Args:
+        retention_days: Maximum age of payload records in days (must be >= 1).
+        db_path: Optional custom path to SQLite database.
+
+    Returns:
+        Number of raw payload records deleted.
+    """
+    if retention_days < 1:
+        raise ValueError(f"retention_days must be >= 1, got {retention_days}")
+
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.execute(
+            """
+            DELETE FROM raw_provider_payloads
+            WHERE retrieved_at < datetime('now', ?);
+            """,
+            (f"-{int(retention_days)} days",),
+        )
+        deleted_count = cursor.rowcount
+    conn.close()
+    return int(deleted_count)
+
+
+
 
 def save_corporate_actions(
     ticker: str,
