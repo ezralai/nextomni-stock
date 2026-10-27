@@ -618,16 +618,22 @@ def render_dashboard() -> None:
         st.caption("Auditable tracking finite state machine reconciling predictions with actual settlement prices.")
 
         # Cryptographic Audit Verification & Database Backup Box
-        with st.expander("🛡️ Cryptographic SHA-256 Audit Trail Integrity & Disaster Recovery", expanded=True):
+        with st.expander("🛡️ Unified Cryptographic Security & Health Pre-Flight Audit", expanded=True):
             from src.data.db import backup_database, verify_database_integrity
-            audit_rep = verify_database_integrity()
-            col_a1, col_a2, col_a3 = st.columns(3)
-            col_a1.metric("Audited Predictions", f"{audit_rep['predictions_valid']} / {audit_rep['predictions_audited']}")
-            col_a2.metric("Audited Evaluations", f"{audit_rep['evaluations_valid']} / {audit_rep['evaluations_audited']}")
-            if audit_rep["is_intact"]:
-                col_a3.success("✓ 100% Cryptographically Intact")
+            from src.security.health import run_system_health_audit
+
+            health_rec = run_system_health_audit()
+
+            col_h1, col_h2, col_h3, col_h4 = st.columns(4)
+            col_h1.metric("Database B-Trees", health_rec.database_integrity)
+            col_h2.metric("Foreign Keys", health_rec.foreign_keys_integrity)
+            col_h3.metric("Prediction Audit", health_rec.prediction_audit)
+            col_h4.metric("Model Signatures", health_rec.model_signatures)
+
+            if health_rec.is_healthy:
+                st.success(f"🔒 High Assurance Security Seal: {health_rec.summary}")
             else:
-                col_a3.error("✗ Tampering Detected")
+                st.error(f"⚠️ Security Health Alert: {health_rec.summary}")
 
             col_bk1, col_bk2 = st.columns(2)
             with col_bk1:

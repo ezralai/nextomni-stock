@@ -64,6 +64,7 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Automated Continuous Database Tamper Alertness:** `EvaluationDaemon.run_once()` validates cryptographic database integrity during reconciliation cycles, raising critical system alerts upon any detected tamper event.
 - [x] **Secure Parameter-Bound Storage Lifecycle Pruning:** `prune_raw_payloads()` safely purges expired raw JSON blobs (`retrieved_at < datetime('now', '-N days')`) using parameter binding `?`, protecting SQLite page storage while guaranteeing 100% inviolability of predictions and evaluation audit trails.
 - [x] **Relational Schema Hygiene & Vacuum Compaction:** `vacuum_database()` runs `PRAGMA foreign_key_check` and `PRAGMA integrity_check` before executing `VACUUM` to defragment B-trees and reclaim freed page storage safely.
+- [x] **Unified System Health & Pre-Flight Security Audit:** `run_system_health_audit()` consolidates B-tree page allocation, foreign keys, deterministic SHA-256 prediction hashes, HMAC-SHA256 model artifact sidecars, and environment credential masking into a cryptographically verified health receipt.
 
 ---
 
@@ -89,9 +90,9 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Walk-Forward Quantitative Backtester:** `src/analytics/backtester.py` simulates realistic execution with turnover transaction fee deductions (`fee_bps`), computing realized Annualized Sharpe, Sortino ratio, Max Drawdown, Profit Factor, and compounding equity curves vs. Buy & Hold benchmark.
 - [x] **Interactive Strategy Equity Curve Visualizer:** Streamlit Tab 2 embeds an interactive backtest card with compounding equity curves ($100 base) and risk-adjusted return metrics.
 - [x] **CLI Backtest Command:** `backtest` command in `src/cli.py` exposes strategy simulation with customizable horizons and fee parameters.
-- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db`, `risk-report` (with `--stress-test`), `prune-db`, `vacuum-db`, and `backtest`.
+- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db`, `risk-report` (with `--stress-test`), `prune-db`, `vacuum-db`, `backtest`, and `system-health`.
 - [x] **Type Annotations:** All public functions include parameter types and return type annotations.
-- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (106/106 tests passing).
+- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (110/110 tests passing).
 - [x] **Docstrings:** Standard Google/NumPy format explaining arguments, return values, and mathematical formulas.
 - [x] **Decoupled Modules:** No circular imports between `src/data`, `src/features`, `src/models`, `src/evaluation`, `src/security`, and `src/dashboard`.
 - [x] **Reproducibility:** Random seeds fixed (`random_state=42`) in all stochastic models or splitters.

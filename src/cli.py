@@ -762,6 +762,34 @@ def backtest_command(args: argparse.Namespace) -> None:
     print("=" * 65 + "\n")
 
 
+def system_health_command(args: argparse.Namespace) -> None:
+    """Run unified security and system health pre-flight audit."""
+    import json
+    from src.security.health import run_system_health_audit
+
+    receipt = run_system_health_audit()
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 65)
+    print("  NextOmni Stock: Unified Security & Health Audit")
+    print("=" * 65)
+    print(f"  Audit Timestamp:         {receipt.timestamp}")
+    print(f"  Database Storage:        {receipt.database_path}")
+    print(f"  B-Tree Integrity:        {receipt.database_integrity}")
+    print(f"  Foreign Key Checks:      {receipt.foreign_keys_integrity}")
+    print(f"  Prediction Audit Trail:  {receipt.prediction_audit} ({receipt.audited_predictions_count} preds, {receipt.audited_evaluations_count} evals)")
+    print(f"  Model Signatures:        {receipt.model_signatures} ({receipt.verified_models_count} verified)")
+    if receipt.tampered_models:
+        print(f"  Tampered Models:         {receipt.tampered_models}")
+    print(f"  Secret Masking Hygiene:  {receipt.secret_hygiene}")
+    print(f"  Overall Health Status:   {'HEALTHY (PASS)' if receipt.is_healthy else 'ISSUES DETECTED (FAIL)'}")
+    print(f"  Summary:                 {receipt.summary}")
+    print("=" * 65 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -990,6 +1018,14 @@ def main() -> None:
         "--min-train", type=int, default=120, help="Initial burn-in training sessions (default: 120)"
     )
 
+    # System health parser
+    health_parser = subparsers.add_parser(
+        "system-health", help="Execute unified security and health pre-flight audit"
+    )
+    health_parser.add_argument(
+        "--json", action="store_true", help="Output audit receipt as JSON"
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1027,6 +1063,8 @@ def main() -> None:
         vacuum_db_command(args)
     elif args.command == "backtest":
         backtest_command(args)
+    elif args.command == "system-health":
+        system_health_command(args)
 
 
 if __name__ == "__main__":
