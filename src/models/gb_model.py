@@ -81,8 +81,10 @@ class GradientBoostingForecaster(BaseForecaster):
         X: pd.DataFrame,
         y_target_price: pd.Series,
         p_origin: pd.Series,
+        fit_quantiles: bool = True,
+        **kwargs: Any,
     ) -> "GradientBoostingForecaster":
-        """Fit StandardScaler, point regressor, and empirical quantile trees on training data."""
+        """Fit StandardScaler, point regressor, and optionally empirical quantile trees on training data."""
         self.feature_names = list(X.columns)
 
         # Target variable: fractional percentage return
@@ -97,11 +99,14 @@ class GradientBoostingForecaster(BaseForecaster):
         self.residual_std_ = float(np.std(residuals)) if len(residuals) > 1 else 0.015
 
         # 3. Fit non-parametric quantile regressors (10th and 90th percentiles for 80% CI)
-        try:
-            self.lower_quantile_model.fit(X_scaled, y_return)
-            self.upper_quantile_model.fit(X_scaled, y_return)
-            self._quantile_fitted = True
-        except Exception:
+        if fit_quantiles:
+            try:
+                self.lower_quantile_model.fit(X_scaled, y_return)
+                self.upper_quantile_model.fit(X_scaled, y_return)
+                self._quantile_fitted = True
+            except Exception:
+                self._quantile_fitted = False
+        else:
             self._quantile_fitted = False
 
         self._fitted = True

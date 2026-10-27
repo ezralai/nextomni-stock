@@ -35,6 +35,7 @@ class BaseForecaster(ABC):
         X: Union[np.ndarray, pd.DataFrame],
         y_target_price: Union[np.ndarray, pd.Series],
         p_origin: Union[float, np.ndarray, pd.Series],
+        **kwargs: Any,
     ) -> "BaseForecaster":
         """Fit model strictly on training features and stationary return targets.
 

@@ -419,14 +419,18 @@ def render_dashboard() -> None:
                         tracker.record_prediction(
                             ticker=selected_ticker,
                             exchange=selected_exchange,
-                            model_name=f"Ridge_Direct_{h_key}",
+                            forecast_origin_session=latest_date,
+                            origin_price=latest_price,
                             horizon_sessions=fc["horizon_sessions"],
-                            origin_date=latest_date,
-                            target_date=fc["target_session_date"],
+                            target_session_date=fc["target_session_date"],
                             predicted_price=fc["predicted_price"],
-                            features_snapshot=fc.get("features_snapshot", {}),
+                            model_name=f"{selected_model_family.capitalize()}_Direct_{h_key}",
+                            model_version="1.0.0",
+                            lower_bound=fc.get("lower_bound"),
+                            upper_bound=fc.get("upper_bound"),
+                            confidence_level=fc.get("confidence_level"),
                         )
-                    st.success("All 3 horizon forecasts registered to prediction database!")
+                    st.success("All 3 horizon forecasts registered to prediction audit database!")
                     st.cache_data.clear()
 
     # =========================================================================
@@ -436,17 +440,31 @@ def render_dashboard() -> None:
         st.header("Prediction Audit Log & Evaluation")
         st.caption("Auditable tracking finite state machine reconciling predictions with actual settlement prices.")
 
+        # Cryptographic Audit Verification Box
+        with st.expander("🛡️ Cryptographic SHA-256 Audit Trail Integrity", expanded=True):
+            from src.data.db import verify_database_integrity
+            audit_rep = verify_database_integrity()
+            col_a1, col_a2, col_a3 = st.columns(3)
+            col_a1.metric("Audited Predictions", f"{audit_rep['predictions_valid']} / {audit_rep['predictions_audited']}")
+            col_a2.metric("Audited Evaluations", f"{audit_rep['evaluations_valid']} / {audit_rep['evaluations_audited']}")
+            if audit_rep["is_intact"]:
+                col_a3.success("✓ 100% Cryptographically Intact")
+            else:
+                col_a3.error("✗ Tampering Detected")
+
         # Action: Reconcile Pending Button
         col_act, col_filter = st.columns([2, 3])
         with col_act:
-            if st.button("⚖️ Reconcile Past Predictions with Actual Prices", use_container_width=True):
-                with st.spinner("Fetching confirmed exchange settlement prices and evaluating..."):
-                    tracker = PredictionTracker()
-                    res = tracker.evaluate_all_pending()
+            if st.button("⚖️ Run Session-Aware Reconciliation Daemon", use_container_width=True):
+                with st.spinner("Checking closed exchange sessions and reconciling prices..."):
+                    from src.evaluation.daemon import EvaluationDaemon
+                    daemon = EvaluationDaemon()
+                    res = daemon.run_once()
                     st.cache_data.clear()
+                    m = res["reconciliation_metrics"]
                     st.toast(
-                        f"Reconciled: {res['evaluated']} evaluated, {res['awaiting']} awaiting actuals, {res['pending']} future targets.",
-                        icon="📊"
+                        f"Reconciliation complete: {m.get('evaluated', 0)} evaluated, {m.get('awaiting', 0)} awaiting, {m.get('pending', 0)} pending future.",
+                        icon="⚖️"
                     )
 
         with col_filter:

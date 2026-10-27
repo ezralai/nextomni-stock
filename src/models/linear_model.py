@@ -41,6 +41,7 @@ class LinearRegressionForecaster(BaseForecaster):
         X: pd.DataFrame,
         y_target_price: pd.Series,
         p_origin: pd.Series,
+        **kwargs: Any,
     ) -> "LinearRegressionForecaster":
         """Fit the StandardScaler and Ridge regression strictly on training data.
 

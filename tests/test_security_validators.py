@@ -126,3 +126,53 @@ def test_assert_finite_number_valid_and_invalid():
     with pytest.raises(ValueError):
         assert_finite_number("not_a_number", "invalid_type")
 
+
+def test_validate_api_key_valid_and_invalid():
+    """Verify API key allowlisting and control character detection."""
+    from src.security.validators import validate_api_key
+
+    assert validate_api_key(None) is None
+    assert validate_api_key("") is None
+    assert validate_api_key("1234567890abcdef") == "1234567890abcdef"
+    assert validate_api_key("api_key-prod.123") == "api_key-prod.123"
+
+    with pytest.raises(SecurityValidationError):
+        validate_api_key("short")
+
+    with pytest.raises(SecurityValidationError):
+        validate_api_key("key; rm -rf /")
+
+    with pytest.raises(SecurityValidationError):
+        validate_api_key("key\ninjection")
+
+
+def test_mask_secret():
+    """Verify secret token masking."""
+    from src.security.validators import mask_secret
+
+    assert mask_secret(None) == ""
+    assert mask_secret("") == ""
+    assert mask_secret("short") == "*****"
+    assert mask_secret("1234567890abcdef", visible_chars=3) == "123**********def"
+
+
+def test_audit_manifest_generation_and_verification():
+    """Verify export manifest generation and cryptographic verification."""
+    from src.security.audit import generate_audit_manifest, verify_audit_manifest
+
+    records = [
+        {"prediction_id": "p1", "predicted_price": 100.0, "audit_hash": "hash1"},
+        {"prediction_id": "p2", "predicted_price": 105.0, "audit_hash": "hash2"},
+    ]
+    manifest = generate_audit_manifest(records)
+    assert len(manifest) == 64
+    assert verify_audit_manifest(records, manifest) is True
+
+    # Tampered collection fails
+    tampered_records = [
+        {"prediction_id": "p1", "predicted_price": 100.0, "audit_hash": "hash1"},
+        {"prediction_id": "p2", "predicted_price": 999.0, "audit_hash": "hash2_tampered"},
+    ]
+    assert verify_audit_manifest(tampered_records, manifest) is False
+
+

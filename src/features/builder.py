@@ -22,6 +22,8 @@ FEATURE_COLUMNS = [
     "gk_vol_21",
     "rsi_14",
     "bb_pct_b_20",
+    "vol_regime_ratio",
+    "macd_norm",
 ]
 
 
@@ -44,6 +46,8 @@ def build_feature_matrix(
     8. gk_vol_21: 21-session Garman-Klass intra-day volatility estimator (Open, High, Low, Close)
     9. rsi_14: 14-session Relative Strength Index normalized to [0, 1]
     10. bb_pct_b_20: 20-session Bollinger Band %B normalized position
+    11. vol_regime_ratio: 5-session to 21-session volatility ratio (regime expansion/contraction)
+    12. macd_norm: Normalized 12/26/9 MACD histogram difference scaled by price
 
     All rolling metrics strictly include observations up to index t, with ZERO forward leakage.
 
@@ -114,7 +118,18 @@ def build_feature_matrix(
     band_width = np.maximum(upper_b - lower_b, 1e-8)
     data["bb_pct_b_20"] = (data[price_col] - lower_b) / band_width
 
-    # 8. Target alignment
+    # 8. Volatility Regime Ratio (short-term 5-day vol / long-term 21-day vol)
+    vol_5 = daily_returns.rolling(window=5, min_periods=5).std()
+    data["vol_regime_ratio"] = vol_5 / np.maximum(data["rolling_vol_21"], 1e-4)
+
+    # 9. Normalized MACD Histogram Difference (12/26/9 EMA)
+    ema_12 = data[price_col].ewm(span=12, adjust=False).mean()
+    ema_26 = data[price_col].ewm(span=26, adjust=False).mean()
+    macd_line = (ema_12 - ema_26) / data[price_col]
+    macd_signal = macd_line.ewm(span=9, adjust=False).mean()
+    data["macd_norm"] = macd_line - macd_signal
+
+    # 10. Target alignment
     if include_target:
         data = align_forecasting_target(
             data, horizon_sessions=horizon_sessions, price_col=price_col

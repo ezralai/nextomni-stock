@@ -203,6 +203,7 @@ class MultiHorizonForecaster:
                     X=train_part[feat_cols],
                     y_target_price=train_part["target_price"],
                     p_origin=train_part[PRICE_COLUMN],
+                    fit_quantiles=False,
                 )
 
                 p_orig = float(test_r[PRICE_COLUMN])

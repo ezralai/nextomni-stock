@@ -95,3 +95,31 @@ def verify_evaluation_hash(eval_entry: Dict[str, Any], expected_hash: str) -> bo
         return False
     computed = compute_evaluation_audit_hash(eval_entry)
     return computed.lower() == expected_hash.strip().lower()
+
+
+def generate_audit_manifest(records: List[Dict[str, Any]]) -> str:
+    """Generate a cryptographic SHA-256 manifest signature for a collection of audit records.
+
+    Used when exporting audit records to CSV or JSON for compliance verification.
+    """
+    hashes = []
+    for r in records:
+        if "predicted_price" in r:
+            h = r.get("audit_hash") or compute_prediction_audit_hash(r)
+        elif "actual_price" in r:
+            h = r.get("audit_hash") or compute_evaluation_audit_hash(r)
+        else:
+            h = hashlib.sha256(json.dumps(r, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        hashes.append(h)
+
+    manifest_payload = "\n".join(hashes).encode("utf-8")
+    return hashlib.sha256(manifest_payload).hexdigest()
+
+
+def verify_audit_manifest(records: List[Dict[str, Any]], expected_manifest_hash: str) -> bool:
+    """Verify whether an exported audit record collection matches its manifest signature."""
+    if not expected_manifest_hash:
+        return False
+    computed = generate_audit_manifest(records)
+    return computed.lower() == expected_manifest_hash.strip().lower()
+

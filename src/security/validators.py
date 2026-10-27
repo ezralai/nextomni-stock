@@ -7,7 +7,7 @@ guards across data ingestion, model persistence, and CLI commands.
 from datetime import datetime
 from pathlib import Path
 import re
-from typing import Set
+from typing import Optional, Set
 
 from src.config import SUPPORTED_EXCHANGES
 
@@ -171,3 +171,51 @@ def assert_finite_number(val: float, field_name: str = "Value") -> float:
         raise SecurityValidationError(f"{field_name} must be finite (got {val}).")
 
     return f_val
+
+
+API_KEY_REGEX = re.compile(r"^[A-Za-z0-9_\-\.]{8,128}$")
+
+
+def validate_api_key(key: Optional[str]) -> Optional[str]:
+    """Validate external API key against strict alphanumeric allowlist.
+
+    Guards against command injection, shell metacharacters, and malformed secrets.
+
+    Args:
+        key: Raw API key from environment or config.
+
+    Returns:
+        Sanitized API key string, or None if key is absent.
+
+    Raises:
+        SecurityValidationError: If key contains illegal characters or abnormal lengths.
+    """
+    if key is None or not str(key).strip():
+        return None
+
+    cleaned = str(key).strip()
+    if not API_KEY_REGEX.match(cleaned):
+        raise SecurityValidationError(
+            "Invalid API key format. Must be 8-128 alphanumeric characters, dots, underscores, or hyphens."
+        )
+
+    # Reject null bytes or newline escapes
+    if "\x00" in cleaned or "\n" in cleaned or "\r" in cleaned:
+        raise SecurityValidationError("Control characters detected in API key.")
+
+    return cleaned
+
+
+def mask_secret(secret: Optional[str], visible_chars: int = 4) -> str:
+    """Mask a secret token for safe logging and UI display.
+
+    Example: 'twelve_data_secret_key_12345' -> 'twel*********************2345'
+    """
+    if not secret:
+        return ""
+    clean = str(secret).strip()
+    if len(clean) <= visible_chars * 2:
+        return "*" * len(clean)
+    masked_middle = "*" * (len(clean) - visible_chars * 2)
+    return f"{clean[:visible_chars]}{masked_middle}{clean[-visible_chars:]}"
+

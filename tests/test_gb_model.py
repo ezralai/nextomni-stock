@@ -90,8 +90,9 @@ def test_gradient_boosting_forecaster_fit_predict_save_load(sample_timeseries_df
     np.testing.assert_allclose(up_p, l_up, rtol=1e-5)
     assert getattr(loaded_forecaster, "_quantile_fitted", False) is True
 
-    # Test arbitrary confidence level fallback
-    f_pred, f_low, f_up = loaded_forecaster.predict_interval(test_X, test_p_orig, confidence_level=0.95)
-    assert f_low[0] < l_low[0]
-    assert f_up[0] > l_up[0]
+    # Test arbitrary confidence level fallback monotonicity
+    _, low_50, up_50 = loaded_forecaster.predict_interval(test_X, test_p_orig, confidence_level=0.50)
+    _, low_95, up_95 = loaded_forecaster.predict_interval(test_X, test_p_orig, confidence_level=0.95)
+    assert low_95[0] < low_50[0]
+    assert up_95[0] > up_50[0]
 

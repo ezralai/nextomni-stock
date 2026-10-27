@@ -465,6 +465,24 @@ def list_predictions_command(args: argparse.Namespace) -> None:
         )
     print("-" * 115 + "\n")
 
+    if getattr(args, "export", None):
+        from src.security.audit import generate_audit_manifest
+
+        export_path = Path(args.export)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        if export_path.suffix.lower() == ".json":
+            df.to_json(export_path, orient="records", indent=2)
+        else:
+            df.to_csv(export_path, index=False)
+
+        manifest_hash = generate_audit_manifest(df.to_dict("records"))
+        manifest_file = export_path.with_suffix(export_path.suffix + ".manifest")
+        manifest_file.write_text(f"SHA256_MANIFEST:{manifest_hash}\nRECORDS_COUNT:{len(df)}\n")
+
+        print(f"Exported {len(df)} records to: {export_path}")
+        print(f"Cryptographic Manifest:     {manifest_file} ({manifest_hash[:16]}...)\n")
+
+
 
 def monitor_command(args: argparse.Namespace) -> None:
     """Monitor real-time quotes with session status and latency badges."""
@@ -686,6 +704,12 @@ def main() -> None:
         choices=["PENDING", "AWAITING_ACTUAL", "EVALUATED", "FAILED"],
         default=None,
         help="Filter by status",
+    )
+    list_parser.add_argument(
+        "--export",
+        type=str,
+        default=None,
+        help="Export predictions to signed CSV or JSON file with SHA-256 manifest",
     )
 
     # Monitor parser
