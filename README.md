@@ -83,6 +83,10 @@ python -m src.cli analyze --ticker 1155.KL
 # Generate next-session forecast and evaluate persistence benchmark
 python -m src.cli forecast-baseline --ticker JPM
 python -m src.cli forecast-baseline --ticker 1155.KL
+
+# Train Linear Regression model with walk-forward validation and save artifact
+python -m src.cli train-linear --ticker JPM
+python -m src.cli train-linear --ticker 1155.KL
 ```
 
 ---
@@ -93,12 +97,13 @@ python -m src.cli forecast-baseline --ticker 1155.KL
 - [x] **Phase 1:** Historical data pipeline (SQLite storage, validation, Yahoo Finance adapter, corporate actions, and calendar cross-referencing).
 - [x] **Phase 2:** Exploratory data analysis (charts, distributions, volatility, drawdown).
 - [x] **Phase 3:** First forecast & persistence baseline ($P_{t+1}$).
-- [ ] **Phase 4:** First machine learning model (Linear Regression) with walk-forward validation.
+- [x] **Phase 4:** First machine learning model (Linear Regression) with walk-forward validation.
 - [ ] **Phase 5:** Prediction tracking finite state machine & idempotent actual-price evaluation.
 - [ ] **Phase 6:** Multi-horizon expansion ($P_{t+5}$, $P_{t+21}$).
 - [ ] **Phase 7:** Market monitoring & data latency labeling (`REALTIME`, `DELAYED_15MIN`, `END_OF_DAY`).
 - [ ] **Phase 8:** Interactive Streamlit Dashboard.
 - [ ] **Phase 9:** Portfolio audit, performance documentation & reproducibility checks.
+
 
 
 

@@ -57,3 +57,7 @@ logs/
 # Generated visual reports
 reports/*.html
 
+# Serialized model artifacts
+models/*.joblib
+
+
