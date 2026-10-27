@@ -106,6 +106,9 @@ python -m src.cli session-status
 python -m src.cli monitor
 python -m src.cli monitor --ticker JPM --exchange XNYS
 python -m src.cli monitor --ticker 1155.KL --exchange XKLS
+
+# Launch interactive multi-page Streamlit dashboard
+streamlit run src/dashboard/app.py
 ```
 
 ---
@@ -120,7 +123,7 @@ python -m src.cli monitor --ticker 1155.KL --exchange XKLS
 - [x] **Phase 5:** Prediction tracking finite state machine & idempotent actual-price evaluation.
 - [x] **Phase 6:** Multi-horizon expansion ($P_{t+5}$, $P_{t+21}$).
 - [x] **Phase 7:** Market monitoring & data latency labeling (`REALTIME`, `DELAYED_15MIN`, `END_OF_DAY`).
-- [ ] **Phase 8:** Interactive Streamlit Dashboard.
+- [x] **Phase 8:** Interactive Streamlit Dashboard.
 - [ ] **Phase 9:** Portfolio audit, performance documentation & reproducibility checks.
 
 
