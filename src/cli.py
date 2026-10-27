@@ -14,6 +14,7 @@ from typing import Optional
 import pandas as pd
 
 from src.config import INITIAL_TICKERS, SUPPORTED_EXCHANGES
+from src.analytics.probability import calculate_directional_probability
 from src.data.db import get_connection, get_observations, init_db, prune_raw_payloads, vacuum_database
 from src.data.pipeline import DataPipeline
 from src.security.validators import (
@@ -415,6 +416,14 @@ def predict_command(args: argparse.Namespace) -> None:
     print(f"  Predicted Price:        {record['predicted_price']:.4f} {record['currency']}")
     if record.get("lower_bound") is not None and record.get("upper_bound") is not None:
         print(f"  80% Confidence Band:    [{record['lower_bound']:.4f} – {record['upper_bound']:.4f}] {record['currency']}")
+    exp_ret_pct = ((pred_price - origin_price) / origin_price) * 100.0
+    res_std = getattr(forecaster, "residual_std_", 0.02)
+    win_prob, conviction_label = calculate_directional_probability(
+        expected_return=exp_ret_pct / 100.0,
+        residual_std=res_std if res_std > 0 else 0.02,
+    )
+    print(f"  Expected Return:        {exp_ret_pct:>+6.2f}%")
+    print(f"  Directional Win Prob:   {win_prob * 100:.1f}% [{conviction_label}]")
     print(f"  Model:                  {record['model_name']} (v{record['model_version']})")
     print(f"  Status:                 {record['status']}")
 

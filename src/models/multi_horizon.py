@@ -24,6 +24,7 @@ from src.config import (
     SUPPORTED_EXCHANGES,
     SUPPORTED_HORIZONS,
 )
+from src.analytics.probability import calculate_directional_probability
 from src.data.db import get_observations
 from src.evaluation.metrics import calculate_all_metrics
 from src.features.builder import FEATURE_COLUMNS, build_feature_matrix
@@ -189,6 +190,13 @@ class MultiHorizonForecaster:
                 ((predicted_price - origin_price) / origin_price) * 100.0, 2
             )
 
+            # Directional win-probability calibration
+            res_std = getattr(model, "residual_std_", 0.02)
+            win_prob, conviction_label = calculate_directional_probability(
+                expected_return=expected_return_pct / 100.0,
+                residual_std=res_std if res_std > 0 else 0.02,
+            )
+
             # Local signal attribution decomposition
             signal_attributions = model.explain_forecast(latest_features)
 
@@ -206,6 +214,8 @@ class MultiHorizonForecaster:
                 "upper_bound": round(upper_bound, 4),
                 "confidence_level": confidence_level,
                 "expected_return_pct": expected_return_pct,
+                "directional_win_probability": win_prob,
+                "conviction_label": conviction_label,
                 "signal_attributions": signal_attributions,
                 "model_name": f"{model.model_name}_Direct_{h_key}",
                 "model_version": self.model_version,

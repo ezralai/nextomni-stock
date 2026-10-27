@@ -12,6 +12,7 @@ import pandas as pd
 
 from src.config import FEED_DELAYED, FEED_EOD, FEED_REALTIME, SUPPORTED_EXCHANGES
 from src.data.base_provider import BaseMarketDataProvider
+from src.data.rate_limiter import ProviderQuotaTracker
 from src.data.yfinance_provider import YahooFinanceProvider
 
 
@@ -27,7 +28,9 @@ class TwelveDataProvider(BaseMarketDataProvider):
         self.api_key = api_key or os.getenv("NEXTOMNI_STOCK_TWELVE_DATA_API_KEY", "")
         self.max_requests_per_minute = max_requests_per_minute
         self.fallback = fallback_provider or YahooFinanceProvider()
-        self._request_timestamps: List[float] = []
+        self.quota_tracker = ProviderQuotaTracker(
+            provider="TwelveData", max_requests_per_minute=max_requests_per_minute
+        )
 
     @property
     def name(self) -> str:
@@ -43,17 +46,12 @@ class TwelveDataProvider(BaseMarketDataProvider):
         return clean
 
     def _check_rate_limit(self) -> bool:
-        """Sliding window rate limit check (max N requests per 60 seconds)."""
-        now = time.time()
-        # Keep timestamps within the last 60 seconds
-        self._request_timestamps = [t for t in self._request_timestamps if now - t < 60.0]
-        if len(self._request_timestamps) >= self.max_requests_per_minute:
-            return False
-        return True
+        """Sliding window rate limit check via thread-safe quota tracker."""
+        return self.quota_tracker.acquire()
 
     def _record_request(self) -> None:
-        """Record an API request timestamp."""
-        self._request_timestamps.append(time.time())
+        """No-op retained for backwards compatibility (handled by quota_tracker.acquire)."""
+        pass
 
     def fetch_latest_quote(
         self,
@@ -69,6 +67,7 @@ class TwelveDataProvider(BaseMarketDataProvider):
 
         if not self._check_rate_limit():
             # Rate limit reached; fall back transparently
+            self.quota_tracker.record_failover()
             fb_quote = self.fallback.fetch_latest_quote(ticker, exchange)
             fb_quote["note"] = "Twelve Data rate limit (8 req/min) active; using Yahoo Finance fallback."
             return fb_quote
@@ -80,6 +79,7 @@ class TwelveDataProvider(BaseMarketDataProvider):
             self._record_request()
             resp = requests.get(url, timeout=5)
             if resp.status_code != 200:
+                self.quota_tracker.record_failover()
                 fb_quote = self.fallback.fetch_latest_quote(ticker, exchange)
                 fb_quote["note"] = f"Twelve Data HTTP {resp.status_code}; fallback applied."
                 return fb_quote
@@ -115,6 +115,7 @@ class TwelveDataProvider(BaseMarketDataProvider):
                 "timestamp": data.get("timestamp"),
             }
         except Exception as e:
+            self.quota_tracker.record_failover()
             fb_quote = self.fallback.fetch_latest_quote(ticker, exchange)
             fb_quote["note"] = f"Twelve Data exception ({str(e)}); fallback applied."
             return fb_quote

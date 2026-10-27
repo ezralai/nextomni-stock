@@ -459,7 +459,9 @@ def render_dashboard() -> None:
                     value=f"{h1['predicted_price']:.2f} {exchange_cfg.currency}",
                     delta=f"{h1['expected_return_pct']:+.2f}%",
                 )
+                prob_1 = h1.get("directional_win_probability", 0.5) * 100.0
                 st.caption(f"80% CI: `[{h1['lower_bound']:.2f} – {h1['upper_bound']:.2f}]`")
+                st.caption(f"Win Prob: **{prob_1:.1f}%** ({h1.get('conviction_label', 'NEUTRAL')})")
 
             with col_h5:
                 st.metric(
@@ -467,7 +469,9 @@ def render_dashboard() -> None:
                     value=f"{h5['predicted_price']:.2f} {exchange_cfg.currency}",
                     delta=f"{h5['expected_return_pct']:+.2f}%",
                 )
+                prob_5 = h5.get("directional_win_probability", 0.5) * 100.0
                 st.caption(f"80% CI: `[{h5['lower_bound']:.2f} – {h5['upper_bound']:.2f}]`")
+                st.caption(f"Win Prob: **{prob_5:.1f}%** ({h5.get('conviction_label', 'NEUTRAL')})")
 
             with col_h21:
                 st.metric(
@@ -475,7 +479,9 @@ def render_dashboard() -> None:
                     value=f"{h21['predicted_price']:.2f} {exchange_cfg.currency}",
                     delta=f"{h21['expected_return_pct']:+.2f}%",
                 )
+                prob_21 = h21.get("directional_win_probability", 0.5) * 100.0
                 st.caption(f"80% CI: `[{h21['lower_bound']:.2f} – {h21['upper_bound']:.2f}]`")
+                st.caption(f"Win Prob: **{prob_21:.1f}%** ({h21.get('conviction_label', 'NEUTRAL')})")
 
             st.markdown("---")
 
@@ -651,6 +657,17 @@ def render_dashboard() -> None:
                 st.success(f"🔒 High Assurance Security Seal: {health_rec.summary}")
             else:
                 st.error(f"⚠️ Security Health Alert: {health_rec.summary}")
+
+            from src.data.rate_limiter import get_quota_tracker
+            tracker_td = get_quota_tracker("TwelveData")
+            q_tel = tracker_td.get_telemetry()
+            st.markdown(
+                f"**Provider Rate Limiter Telemetry (Twelve Data):** "
+                f"Requests (Last 60s): `{q_tel.requests_last_minute}/{q_tel.max_requests_per_minute}` | "
+                f"Quota Remaining: `{q_tel.quota_remaining}` | "
+                f"Total Invocations: `{q_tel.total_requests}` | "
+                f"Failover Count: `{q_tel.failover_count}`"
+            )
 
             col_bk1, col_bk2 = st.columns(2)
             with col_bk1:
