@@ -894,6 +894,22 @@ def render_dashboard() -> None:
 
             st.dataframe(pd.DataFrame(val_rows), use_container_width=True, hide_index=True)
 
+            # Conformal Prediction & Interval Calibration Box
+            from src.analytics.calibration import evaluate_interval_calibration
+            from src.data.db import get_predictions
+            evaluated_preds = get_predictions(ticker=selected_ticker, status="EVALUATED")
+            if not evaluated_preds.empty:
+                calib_rec = evaluate_interval_calibration(evaluated_preds, confidence_level=0.80)
+                if calib_rec.sample_size >= 5:
+                    st.markdown("---")
+                    st.subheader("🎯 Prediction Interval Calibration & Winkler Sharpness")
+                    st.caption("Empirical coverage and sharpness parsimony audit on reconciled out-of-sample predictions.")
+                    c_col1, c_col2, c_col3, c_col4 = st.columns(4)
+                    c_col1.metric("Empirical Coverage", f"{calib_rec.empirical_coverage_pct:.1f}%", delta=f"{calib_rec.empirical_coverage_pct - 80.0:+.1f}% vs 80% nominal")
+                    c_col2.metric("Mean Width", f"{calib_rec.mean_interval_width:.2f}")
+                    c_col3.metric("Mean Winkler Score", f"{calib_rec.mean_winkler_score:.2f}")
+                    c_col4.metric("Calibration Status", calib_rec.calibration_status)
+
             st.markdown("---")
 
             # Quantitative Feature Importance

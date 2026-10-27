@@ -956,6 +956,45 @@ def portfolio_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def calibration_report_command(args: argparse.Namespace) -> None:
+    """Evaluate prediction interval empirical coverage and Winkler sharpness scores."""
+    import json
+    from src.analytics.calibration import evaluate_interval_calibration
+    from src.data.db import get_predictions
+
+    ticker = validate_ticker(args.ticker) if getattr(args, "ticker", None) else None
+    horizon = f"{args.horizon}d" if getattr(args, "horizon", None) else None
+    confidence = float(args.confidence) if getattr(args, "confidence", None) else 0.80
+
+    preds_df = get_predictions(
+        ticker=ticker,
+        horizon_type=horizon,
+        status="EVALUATED",
+    )
+
+    receipt = evaluate_interval_calibration(preds_df, confidence_level=confidence)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 70)
+    print("  NextOmni Stock: Prediction Interval Calibration & Winkler Report")
+    print("=" * 70)
+    print(f"  Ticker Filter:           {receipt.ticker or 'ALL TICKERS'}")
+    print(f"  Horizon Filter:          {receipt.horizon_type or 'ALL HORIZONS'}")
+    print(f"  Evaluated Samples:       {receipt.sample_size}")
+    print(f"  Nominal Coverage Target: {receipt.nominal_confidence_level * 100:.1f}%")
+    print(f"  Empirical Coverage:      {receipt.empirical_coverage_pct:>6.2f}%")
+    print(f"  Coverage Error:          {receipt.coverage_error_pct:>6.2f}%")
+    print(f"  Under-Breach Rate:       {receipt.under_breach_pct:>6.2f}%")
+    print(f"  Over-Breach Rate:        {receipt.over_breach_pct:>6.2f}%")
+    print(f"  Mean Interval Width:     {receipt.mean_interval_width:>6.2f}")
+    print(f"  Mean Winkler Score:      {receipt.mean_winkler_score:>6.2f} (lower is sharper)")
+    print(f"  Calibration Status:      {receipt.calibration_status}")
+    print("=" * 70 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -1311,6 +1350,35 @@ def main() -> None:
         help="Output portfolio allocation as JSON",
     )
 
+    # Calibration report parser
+    calib_parser = subparsers.add_parser(
+        "calibration-report", help="Audit prediction interval empirical coverage and Winkler sharpness"
+    )
+    calib_parser.add_argument(
+        "--ticker",
+        type=str,
+        default=None,
+        help="Optional ticker symbol to filter evaluated predictions",
+    )
+    calib_parser.add_argument(
+        "--horizon",
+        type=int,
+        choices=[1, 5, 21],
+        default=None,
+        help="Optional forecast horizon filter (1, 5, 21)",
+    )
+    calib_parser.add_argument(
+        "--confidence",
+        type=float,
+        default=0.80,
+        help="Nominal target confidence level (default: 0.80)",
+    )
+    calib_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output calibration report as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1356,6 +1424,8 @@ def main() -> None:
         ic_drift_command(args)
     elif args.command == "portfolio":
         portfolio_command(args)
+    elif args.command == "calibration-report":
+        calibration_report_command(args)
 
 
 if __name__ == "__main__":
