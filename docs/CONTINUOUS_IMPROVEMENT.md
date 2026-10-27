@@ -40,18 +40,23 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Secret Isolation:** Environment variables (`NEXTOMNI_STOCK_*`) never logged to stdout or serialized in database payloads.
 - [x] **Rate Limiter Health:** Token bucket properly bounds requests (max 8 req/min for free tier) and logs warnings on failover.
 - [x] **FSM Idempotency:** Running `evaluate-pending` multiple times produces identical records without duplicating evaluations.
-- [x] **Safe Schema Evolution:** Idempotent `ALTER TABLE` migrations safely evolve SQLite tables (`lower_bound`, `upper_bound`, `confidence_level`).
+- [x] **Safe Schema Evolution:** Idempotent `ALTER TABLE` migrations safely evolve SQLite tables (`lower_bound`, `upper_bound`, `confidence_level`, `audit_hash`).
+- [x] **Cryptographic SHA-256 Audit Trail:** Deterministic canonical hashing protects `predictions` and `prediction_evaluations` records at rest.
+- [x] **Tamper-Evident Verification:** `verify-audit` CLI command verifies database records against unauthorized modification.
 
 ---
 
 ## 3. Architecture & Code Quality Checklist
 
 - [x] **Polymorphic Forecaster Contract:** `BaseForecaster(ABC)` defines polymorphic interface for `fit`, `predict`, `predict_interval`, and serialization.
-- [x] **Uncertainty Quantification:** Calibrated 80% prediction intervals ($[P_{\text{lower}}, P_{\text{upper}}]$) calculated via train-fold return residual standard error ($\sigma_{\epsilon}$).
+- [x] **Uncertainty Quantification:** Calibrated 80% prediction intervals ($[P_{\text{lower}}, P_{\text{upper}}]$) via both train-fold residual standard error and asymmetric quantile tree regression.
+- [x] **Non-Parametric Quantile Regression:** Dual `HistGradientBoostingRegressor(loss="quantile", quantile=0.10/0.90)` models capture empirical fat tails and return skewness.
+- [x] **Automated Session-Aware Daemon:** `EvaluationDaemon` and `daemon-reconcile` CLI command orchestrate market state checks and idempotent price reconciliation.
 - [x] **Interactive Dashboard Architecture:** Dual-architecture selection (`HistGradientBoosting` vs `Linear Ridge`) in Streamlit sidebar, rendering 80% prediction interval cones in Plotly.
-- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code or duplicate subparser definitions.
+- [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code.
 - [x] **Type Annotations:** All public functions include parameter types and return type annotations.
-- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (58/58 tests passing).
+- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (64/64 tests passing).
 - [x] **Docstrings:** Standard Google/NumPy format explaining arguments, return values, and mathematical formulas.
-- [x] **Decoupled Modules:** No circular imports between `src/data`, `src/features`, `src/models`, `src/evaluation`, and `src/dashboard`.
+- [x] **Decoupled Modules:** No circular imports between `src/data`, `src/features`, `src/models`, `src/evaluation`, `src/security`, and `src/dashboard`.
 - [x] **Reproducibility:** Random seeds fixed (`random_state=42`) in all stochastic models or splitters.
+

@@ -88,3 +88,10 @@ def test_gradient_boosting_forecaster_fit_predict_save_load(sample_timeseries_df
     l_pred, l_low, l_up = loaded_forecaster.predict_interval(test_X, test_p_orig, confidence_level=0.80)
     np.testing.assert_allclose(low_p, l_low, rtol=1e-5)
     np.testing.assert_allclose(up_p, l_up, rtol=1e-5)
+    assert getattr(loaded_forecaster, "_quantile_fitted", False) is True
+
+    # Test arbitrary confidence level fallback
+    f_pred, f_low, f_up = loaded_forecaster.predict_interval(test_X, test_p_orig, confidence_level=0.95)
+    assert f_low[0] < l_low[0]
+    assert f_up[0] > l_up[0]
+

@@ -48,10 +48,29 @@ class GradientBoostingForecaster(BaseForecaster):
             max_iter=max_iter,
             random_state=random_state,
         )
+        self.lower_quantile_model = HistGradientBoostingRegressor(
+            loss="quantile",
+            quantile=0.10,
+            max_depth=max_depth,
+            min_samples_leaf=min_samples_leaf,
+            l2_regularization=l2_regularization,
+            max_iter=max_iter,
+            random_state=random_state,
+        )
+        self.upper_quantile_model = HistGradientBoostingRegressor(
+            loss="quantile",
+            quantile=0.90,
+            max_depth=max_depth,
+            min_samples_leaf=min_samples_leaf,
+            l2_regularization=l2_regularization,
+            max_iter=max_iter,
+            random_state=random_state,
+        )
         self.feature_names: List[str] = []
         self._last_X_train_scaled: Optional[np.ndarray] = None
         self._last_y_train: Optional[np.ndarray] = None
         self.residual_std_: float = 0.015
+        self._quantile_fitted: bool = False
 
     @property
     def model_name(self) -> str:
@@ -63,21 +82,29 @@ class GradientBoostingForecaster(BaseForecaster):
         y_target_price: pd.Series,
         p_origin: pd.Series,
     ) -> "GradientBoostingForecaster":
-        """Fit StandardScaler and HistGradientBoostingRegressor strictly on training data."""
+        """Fit StandardScaler, point regressor, and empirical quantile trees on training data."""
         self.feature_names = list(X.columns)
 
         # Target variable: fractional percentage return
         y_return = (y_target_price.values - p_origin.values) / p_origin.values
 
-        # 1. Fit scaler strictly on training features
+        # 1. Fit scaler strictly on training features (ZERO DATA LEAKAGE)
         X_scaled = self.scaler.fit_transform(X)
 
-        # 2. Fit tree ensemble
+        # 2. Fit tree ensemble point predictor
         self.model.fit(X_scaled, y_return)
         residuals = y_return - self.model.predict(X_scaled)
         self.residual_std_ = float(np.std(residuals)) if len(residuals) > 1 else 0.015
-        self._fitted = True
 
+        # 3. Fit non-parametric quantile regressors (10th and 90th percentiles for 80% CI)
+        try:
+            self.lower_quantile_model.fit(X_scaled, y_return)
+            self.upper_quantile_model.fit(X_scaled, y_return)
+            self._quantile_fitted = True
+        except Exception:
+            self._quantile_fitted = False
+
+        self._fitted = True
         self._last_X_train_scaled = X_scaled
         self._last_y_train = y_return
         return self
@@ -107,21 +134,36 @@ class GradientBoostingForecaster(BaseForecaster):
         p_origin: Union[pd.Series, np.ndarray, float],
         confidence_level: float = 0.80,
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Predict price levels and calibrated confidence interval bounds."""
+        """Predict price levels and calibrated confidence interval bounds.
+
+        Leverages non-parametric quantile regression for 80% CI (10th/90th percentiles)
+        to capture asymmetric return skewness, falling back to residual standard error
+        for arbitrary confidence levels.
+        """
         if not self._fitted:
             raise RuntimeError("Model must be fitted before calling predict_interval.")
-
-        from scipy import stats
-        z = float(stats.norm.ppf(0.5 + confidence_level / 2.0))
 
         X_scaled = self.scaler.transform(X[self.feature_names])
         pred_return = self.model.predict(X_scaled)
         p_orig = np.asarray(p_origin, dtype=float)
-
         pred_price = p_orig * (1.0 + pred_return)
+
+        # 1. Use empirical quantile trees when evaluating 80% CI
+        if abs(confidence_level - 0.80) < 1e-4 and getattr(self, "_quantile_fitted", False):
+            q_lower_return = self.lower_quantile_model.predict(X_scaled)
+            q_upper_return = self.upper_quantile_model.predict(X_scaled)
+            lower_price = p_orig * (1.0 + q_lower_return)
+            upper_price = p_orig * (1.0 + q_upper_return)
+            # Enforce monotonicity: lower <= pred <= upper
+            lower_price = np.minimum(lower_price, pred_price)
+            upper_price = np.maximum(upper_price, pred_price)
+            return pred_price, lower_price, upper_price
+
+        # 2. Parametric Gaussian residual fallback for arbitrary confidence levels
+        from scipy import stats
+        z = float(stats.norm.ppf(0.5 + confidence_level / 2.0))
         lower_return = pred_return - (z * self.residual_std_)
         upper_return = pred_return + (z * self.residual_std_)
-
         lower_price = p_orig * (1.0 + lower_return)
         upper_price = p_orig * (1.0 + upper_return)
         return pred_price, lower_price, upper_price
@@ -147,7 +189,7 @@ class GradientBoostingForecaster(BaseForecaster):
         return {name: 0.0 for name in self.feature_names}
 
     def save(self, file_path: Union[str, Path]) -> Path:
-        """Persist trained model, scaler, and hyperparameters to disk."""
+        """Persist trained model, quantile regressors, scaler, and hyperparameters to disk."""
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
@@ -162,6 +204,9 @@ class GradientBoostingForecaster(BaseForecaster):
                 "feature_names": self.feature_names,
                 "scaler": self.scaler,
                 "model": self.model,
+                "lower_quantile_model": getattr(self, "lower_quantile_model", None),
+                "upper_quantile_model": getattr(self, "upper_quantile_model", None),
+                "quantile_fitted": getattr(self, "_quantile_fitted", False),
                 "residual_std": getattr(self, "residual_std_", 0.015),
             },
             path,
@@ -170,7 +215,7 @@ class GradientBoostingForecaster(BaseForecaster):
 
     @classmethod
     def load(cls, file_path: Union[str, Path]) -> "GradientBoostingForecaster":
-        """Load persisted model artifact from disk."""
+        """Load persisted model artifact and quantile regressors from disk."""
         path = Path(file_path)
         data = joblib.load(path)
         instance = cls(
@@ -184,6 +229,11 @@ class GradientBoostingForecaster(BaseForecaster):
         instance.feature_names = data["feature_names"]
         instance.scaler = data["scaler"]
         instance.model = data["model"]
+        if "lower_quantile_model" in data and data["lower_quantile_model"] is not None:
+            instance.lower_quantile_model = data["lower_quantile_model"]
+        if "upper_quantile_model" in data and data["upper_quantile_model"] is not None:
+            instance.upper_quantile_model = data["upper_quantile_model"]
+        instance._quantile_fitted = data.get("quantile_fitted", False)
         instance.residual_std_ = data.get("residual_std", 0.015)
         instance._fitted = True
         return instance

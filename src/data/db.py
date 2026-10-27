@@ -11,6 +11,12 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from src.config import DATABASE_PATH
+from src.security.audit import (
+    compute_evaluation_audit_hash,
+    compute_prediction_audit_hash,
+    verify_evaluation_hash,
+    verify_prediction_hash,
+)
 from src.security.validators import assert_finite_number
 
 
@@ -122,6 +128,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 model_version TEXT NOT NULL,
                 adjustment_convention TEXT NOT NULL,
                 reproducibility_ref TEXT,
+                audit_hash TEXT,
                 status TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (ticker) REFERENCES stocks (ticker) ON DELETE CASCADE
@@ -133,6 +140,11 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 conn.execute(f"ALTER TABLE predictions ADD COLUMN {col} REAL;")
             except sqlite3.OperationalError:
                 pass
+
+        try:
+            conn.execute("ALTER TABLE predictions ADD COLUMN audit_hash TEXT;")
+        except sqlite3.OperationalError:
+            pass
 
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_pred_status_target ON predictions(status, target_session_date);"
@@ -158,11 +170,16 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 actual_direction INTEGER NOT NULL,
                 predicted_direction INTEGER NOT NULL,
                 direction_correct BOOLEAN NOT NULL,
+                audit_hash TEXT,
                 evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (prediction_id) REFERENCES predictions (prediction_id) ON DELETE CASCADE
             );
             """
         )
+        try:
+            conn.execute("ALTER TABLE prediction_evaluations ADD COLUMN audit_hash TEXT;")
+        except sqlite3.OperationalError:
+            pass
     conn.close()
 
 
@@ -381,6 +398,8 @@ def save_prediction(
         else None
     )
 
+    audit_hash = pred.get("audit_hash") or compute_prediction_audit_hash(pred)
+
     conn = get_connection(db_path)
     with conn:
         conn.execute(
@@ -391,8 +410,8 @@ def save_prediction(
                 horizon_type, horizon_sessions, target_session_date,
                 predicted_price, lower_bound, upper_bound, confidence_level,
                 model_name, model_version,
-                adjustment_convention, reproducibility_ref, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                adjustment_convention, reproducibility_ref, audit_hash, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 str(pred["prediction_id"]),
@@ -413,6 +432,7 @@ def save_prediction(
                 str(pred["model_version"]),
                 str(pred.get("adjustment_convention", "ADJUSTED_CLOSE")),
                 str(pred.get("reproducibility_ref", "")),
+                str(audit_hash),
                 str(pred.get("status", "PENDING")),
             ),
         )
@@ -475,6 +495,8 @@ def save_prediction_evaluation(
     absolute_error = assert_finite_number(eval_record["absolute_error"], "absolute_error")
     percentage_error = assert_finite_number(eval_record["percentage_error"], "percentage_error")
 
+    audit_hash = eval_record.get("audit_hash") or compute_evaluation_audit_hash(eval_record)
+
     conn = get_connection(db_path)
     with conn:
         conn.execute(
@@ -482,13 +504,15 @@ def save_prediction_evaluation(
             INSERT INTO prediction_evaluations (
                 prediction_id, actual_price, actual_source,
                 actual_observed_at, absolute_error, percentage_error,
-                actual_direction, predicted_direction, direction_correct
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                actual_direction, predicted_direction, direction_correct,
+                audit_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(prediction_id) DO UPDATE SET
                 actual_price=excluded.actual_price,
                 absolute_error=excluded.absolute_error,
                 percentage_error=excluded.percentage_error,
                 direction_correct=excluded.direction_correct,
+                audit_hash=excluded.audit_hash,
                 evaluated_at=CURRENT_TIMESTAMP;
             """,
             (
@@ -501,6 +525,7 @@ def save_prediction_evaluation(
                 int(eval_record["actual_direction"]),
                 int(eval_record["predicted_direction"]),
                 bool(eval_record["direction_correct"]),
+                str(audit_hash),
             ),
         )
         # Update status in predictions table
@@ -510,4 +535,43 @@ def save_prediction_evaluation(
         )
     conn.close()
     return 1
+
+
+def verify_database_integrity(db_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Cryptographically verify the SHA-256 integrity of all predictions and evaluations at rest.
+
+    Returns summary metrics and lists of any tampered record identifiers.
+    """
+    init_db(db_path)
+    conn = get_connection(db_path)
+    cur = conn.cursor()
+
+    cur.execute("SELECT * FROM predictions WHERE audit_hash IS NOT NULL;")
+    pred_rows = [dict(row) for row in cur.fetchall()]
+
+    cur.execute("SELECT * FROM prediction_evaluations WHERE audit_hash IS NOT NULL;")
+    eval_rows = [dict(row) for row in cur.fetchall()]
+    conn.close()
+
+    tampered_predictions = []
+    for row in pred_rows:
+        expected = row.get("audit_hash", "")
+        if not verify_prediction_hash(row, expected):
+            tampered_predictions.append(row["prediction_id"])
+
+    tampered_evaluations = []
+    for row in eval_rows:
+        expected = row.get("audit_hash", "")
+        if not verify_evaluation_hash(row, expected):
+            tampered_evaluations.append(row["prediction_id"])
+
+    return {
+        "predictions_audited": len(pred_rows),
+        "predictions_valid": len(pred_rows) - len(tampered_predictions),
+        "tampered_predictions": tampered_predictions,
+        "evaluations_audited": len(eval_rows),
+        "evaluations_valid": len(eval_rows) - len(tampered_evaluations),
+        "tampered_evaluations": tampered_evaluations,
+        "is_intact": (len(tampered_predictions) == 0 and len(tampered_evaluations) == 0),
+    }
 

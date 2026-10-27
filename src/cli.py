@@ -516,6 +516,53 @@ def session_status_command(args: argparse.Namespace) -> None:
         print(f"  -> Operational Details: {status_info.details}\n")
 
 
+def daemon_reconcile_command(args: argparse.Namespace) -> None:
+    """Run automated session-aware reconciliation daemon."""
+    from src.evaluation.daemon import EvaluationDaemon
+
+    daemon = EvaluationDaemon(poll_interval_seconds=args.interval)
+    if args.once:
+        print("\nExecuting single reconciliation daemon pass...")
+        res = daemon.run_once()
+        metrics = res["reconciliation_metrics"]
+        print(f"Timestamp:              {res['timestamp']}")
+        print(f"Newly Evaluated:        {metrics.get('evaluated', 0)}")
+        print(f"Awaiting Actual Data:   {metrics.get('awaiting', 0)}")
+        print(f"Pending Future Targets: {metrics.get('pending', 0)}")
+        print(f"Failed Records:         {metrics.get('failed', 0)}\n")
+    else:
+        print(f"\nStarting NextOmni Stock Evaluation Daemon (Poll Interval: {args.interval}s)...")
+        daemon.run_loop(interval_seconds=args.interval, max_iterations=args.max_iterations)
+
+
+def verify_audit_command(args: argparse.Namespace) -> None:
+    """Audit SQLite cryptographic SHA-256 signatures for tamper detection."""
+    from src.data.db import verify_database_integrity
+
+    print("\n" + "=" * 65)
+    print("  NextOmni Stock: Cryptographic Audit Trail Verification")
+    print("=" * 65)
+    report = verify_database_integrity()
+
+    print(f"  Predictions Audited:    {report['predictions_audited']}")
+    print(f"  Valid Predictions:      {report['predictions_valid']}")
+    print(f"  Evaluations Audited:    {report['evaluations_audited']}")
+    print(f"  Valid Evaluations:      {report['evaluations_valid']}")
+    print("-" * 65)
+
+    if report["is_intact"]:
+        print("  ✓ AUDIT STATUS: 100% INTACT. Zero tampering detected.")
+        print("=" * 65 + "\n")
+    else:
+        print("  ✗ AUDIT STATUS: TAMPERING DETECTED!")
+        if report["tampered_predictions"]:
+            print(f"    Tampered Prediction IDs: {report['tampered_predictions']}")
+        if report["tampered_evaluations"]:
+            print(f"    Tampered Evaluation IDs: {report['tampered_evaluations']}")
+        print("=" * 65 + "\n")
+        sys.exit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -661,6 +708,25 @@ def main() -> None:
         "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
     )
 
+    # Daemon reconcile parser
+    daemon_parser = subparsers.add_parser(
+        "daemon-reconcile", help="Run automated session-aware forecast evaluation daemon"
+    )
+    daemon_parser.add_argument(
+        "--once", action="store_true", help="Run a single reconciliation pass and exit"
+    )
+    daemon_parser.add_argument(
+        "--interval", type=int, default=300, help="Polling interval in seconds (default: 300)"
+    )
+    daemon_parser.add_argument(
+        "--max-iterations", type=int, default=None, help="Maximum daemon cycles before stopping"
+    )
+
+    # Verify audit parser
+    subparsers.add_parser(
+        "verify-audit", help="Verify cryptographic SHA-256 integrity of predictions audit trail"
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -684,7 +750,12 @@ def main() -> None:
         monitor_command(args)
     elif args.command == "session-status":
         session_status_command(args)
+    elif args.command == "daemon-reconcile":
+        daemon_reconcile_command(args)
+    elif args.command == "verify-audit":
+        verify_audit_command(args)
 
 
 if __name__ == "__main__":
     main()
+
