@@ -907,7 +907,53 @@ def ic_drift_command(args: argparse.Namespace) -> None:
     print(f"  Alpha Status:        {receipt.decay_status}")
     if receipt.decay_warning:
         print(f"  Alert Warning:       {receipt.decay_warning}")
-    print("=" * 70 + "\n")
+def portfolio_command(args: argparse.Namespace) -> None:
+    """Optimize multi-asset alpha portfolio using Ledoit-Wolf shrinkage covariance."""
+    import json
+    from src.analytics.portfolio import optimize_alpha_portfolio
+    from src.analytics.screener import screen_asset_universe
+
+    exchange = validate_exchange(args.exchange) if args.exchange else None
+    horizon = args.horizon
+    mode = args.mode
+    max_weight = float(args.max_weight)
+
+    records = screen_asset_universe(
+        exchange=exchange,
+        horizon_sessions=horizon,
+        model_family="ensemble",
+    )
+
+    if not records:
+        print("\nNo qualified assets found with sufficient history for portfolio optimization.\n")
+        return
+
+    receipt = optimize_alpha_portfolio(
+        screener_records=records,
+        mode=mode,
+        max_weight=max_weight,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"  NextOmni Stock: Alpha Portfolio Optimizer ({receipt.mode.upper()})")
+    print(f"  Horizon: {receipt.horizon_sessions} Sessions | Exchange: {exchange or 'ALL EXCHANGES'}")
+    print("=" * 80)
+    print(f"  Expected Annual Return:  {receipt.expected_annual_return_pct:>+7.2f}%")
+    print(f"  Annualized Volatility:   {receipt.annualized_volatility_pct:>7.2f}%")
+    print(f"  Sharpe Ratio (Rf=4%):    {receipt.sharpe_ratio:>+7.3f}")
+    print(f"  Ledoit-Wolf Shrinkage:   {receipt.shrinkage_intensity:>7.4f}")
+    print(f"  Effective Asset Count:   {receipt.effective_number_of_assets:>7.2f} / {len(receipt.tickers)}")
+    print("-" * 80)
+    print(f"  {'Ticker':<10} {'Weight %':<12} {'Risk Contribution %':<22}")
+    print("-" * 80)
+    for ticker, w in receipt.weights.items():
+        rc = receipt.risk_contributions_pct.get(ticker, 0.0)
+        print(f"  {ticker:<10} {w * 100:>8.2f}%    {rc:>12.2f}%")
+    print("=" * 80 + "\n")
 
 
 def main() -> None:
@@ -1229,6 +1275,42 @@ def main() -> None:
         help="Output IC drift receipt as JSON",
     )
 
+    # Portfolio parser
+    portfolio_parser = subparsers.add_parser(
+        "portfolio", help="Optimize multi-asset alpha portfolio using Ledoit-Wolf shrinkage"
+    )
+    portfolio_parser.add_argument(
+        "--exchange",
+        type=str,
+        choices=list(SUPPORTED_EXCHANGES.keys()),
+        default=None,
+        help="Optional exchange MIC filter (XNYS, XKLS)",
+    )
+    portfolio_parser.add_argument(
+        "--horizon",
+        type=int,
+        choices=[1, 5, 21],
+        default=5,
+        help="Forecast horizon in sessions (default: 5)",
+    )
+    portfolio_parser.add_argument(
+        "--mode",
+        choices=["max_sharpe", "min_variance", "risk_parity", "equal_weight"],
+        default="max_sharpe",
+        help="Optimization objective mode (default: max_sharpe)",
+    )
+    portfolio_parser.add_argument(
+        "--max-weight",
+        type=float,
+        default=0.40,
+        help="Maximum individual asset allocation weight (default: 0.40)",
+    )
+    portfolio_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output portfolio allocation as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1272,6 +1354,8 @@ def main() -> None:
         screen_command(args)
     elif args.command == "ic-drift":
         ic_drift_command(args)
+    elif args.command == "portfolio":
+        portfolio_command(args)
 
 
 if __name__ == "__main__":

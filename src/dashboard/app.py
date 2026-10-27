@@ -229,6 +229,51 @@ def render_dashboard() -> None:
                             for r in sc_results
                         ])
                         st.dataframe(sc_df, use_container_width=True, hide_index=True)
+
+                        # Portfolio Optimizer Section
+                        if len(sc_results) >= 2:
+                            st.markdown("---")
+                            st.subheader("💼 Optimal Multi-Asset Portfolio Allocation")
+                            st.caption("Analytical Ledoit-Wolf shrinkage covariance estimation with Markowitz long-only optimization.")
+                            opt_c1, opt_c2 = st.columns(2)
+                            with opt_c1:
+                                opt_mode = st.selectbox(
+                                    "Portfolio Objective Mode",
+                                    ["max_sharpe", "min_variance", "risk_parity", "equal_weight"],
+                                    format_func=lambda m: {
+                                        "max_sharpe": "Maximum Sharpe Ratio",
+                                        "min_variance": "Minimum Variance",
+                                        "risk_parity": "Equal Risk Contribution (Risk Parity)",
+                                        "equal_weight": "Equal Weighting (1/N)",
+                                    }[m],
+                                    key="opt_mode",
+                                )
+                            with opt_c2:
+                                opt_max_w = st.slider("Max Single-Asset Weight", 0.10, 1.0, 0.40, step=0.05, key="opt_max_w")
+
+                            from src.analytics.portfolio import optimize_alpha_portfolio
+                            port_rec = optimize_alpha_portfolio(
+                                screener_records=sc_results,
+                                mode=opt_mode,
+                                max_weight=opt_max_w,
+                            )
+
+                            p_kpi1, p_kpi2, p_kpi3, p_kpi4 = st.columns(4)
+                            p_kpi1.metric("Exp Annual Return", f"{port_rec.expected_annual_return_pct:+.2f}%")
+                            p_kpi2.metric("Annualized Volatility", f"{port_rec.annualized_volatility_pct:.2f}%")
+                            p_kpi3.metric("Portfolio Sharpe", f"{port_rec.sharpe_ratio:+.2f}")
+                            p_kpi4.metric("LW Shrinkage (δ)", f"{port_rec.shrinkage_intensity:.4f}")
+
+                            w_df = pd.DataFrame([
+                                {
+                                    "Ticker": t,
+                                    "Weight": f"{w * 100:.1f}%",
+                                    "Risk Contribution": f"{port_rec.risk_contributions_pct.get(t, 0.0):.1f}%",
+                                }
+                                for t, w in port_rec.weights.items()
+                                if w > 0.001
+                            ])
+                            st.dataframe(w_df, use_container_width=True, hide_index=True)
                     else:
                         st.info("No synchronized assets with sufficient observation history found. Synchronize tickers first.")
 
