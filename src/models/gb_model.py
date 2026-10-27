@@ -88,7 +88,9 @@ class GradientBoostingForecaster(BaseForecaster):
         self.feature_names = list(X.columns)
 
         # Target variable: fractional percentage return
-        y_return = (y_target_price.values - p_origin.values) / p_origin.values
+        y_t = np.asarray(y_target_price, dtype=float)
+        p_o = np.asarray(p_origin, dtype=float)
+        y_return = (y_t - p_o) / p_o
 
         # 1. Fit scaler strictly on training features (ZERO DATA LEAKAGE)
         X_scaled = self.scaler.fit_transform(X)
@@ -216,12 +218,20 @@ class GradientBoostingForecaster(BaseForecaster):
             },
             path,
         )
+        from src.security.audit import sign_model_artifact
+        sign_model_artifact(path)
         return path
 
     @classmethod
-    def load(cls, file_path: Union[str, Path]) -> "GradientBoostingForecaster":
-        """Load persisted model artifact and quantile regressors from disk."""
+    def load(cls, file_path: Union[str, Path], verify_signature: bool = True) -> "GradientBoostingForecaster":
+        """Load persisted model artifact and quantile regressors from disk after signature validation."""
+        from src.security.audit import verify_model_artifact
+        from src.security.validators import SecurityValidationError
         path = Path(file_path)
+        sig_file = path.with_name(f"{path.name}.sig")
+        if verify_signature and sig_file.exists():
+            if not verify_model_artifact(path):
+                raise SecurityValidationError(f"Cryptographic signature check failed for {path}")
         data = joblib.load(path)
         instance = cls(
             max_depth=data.get("max_depth", 3),

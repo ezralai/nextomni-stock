@@ -96,8 +96,12 @@ def render_dashboard() -> None:
 
     raw_model = st.sidebar.selectbox(
         "Forecasting Architecture",
-        options=["gradient_boosting", "linear"],
-        format_func=lambda x: "⚡ Gradient Boosting (Non-Linear)" if x == "gradient_boosting" else "📈 Ridge Regression (Linear)",
+        options=["ensemble", "gradient_boosting", "linear"],
+        format_func=lambda x: (
+            "🛡️⚡ Convex Ensemble (Ridge + GBDT)"
+            if x == "ensemble"
+            else ("⚡ Gradient Boosting (Non-Linear)" if x == "gradient_boosting" else "📈 Ridge Regression (Linear)")
+        ),
     )
     selected_model_family = validate_model_family(raw_model)
 

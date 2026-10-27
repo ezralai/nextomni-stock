@@ -123,3 +123,75 @@ def verify_audit_manifest(records: List[Dict[str, Any]], expected_manifest_hash:
     computed = generate_audit_manifest(records)
     return computed.lower() == expected_manifest_hash.strip().lower()
 
+
+def sign_model_artifact(
+    artifact_path: Any,
+    secret_key: Optional[str] = None,
+) -> Any:
+    """Generate an HMAC-SHA256 signature sidecar (.sig) for a serialized model file.
+
+    Args:
+        artifact_path: Path to serialized model file (e.g., model.joblib).
+        secret_key: Optional HMAC key. Defaults to NEXTOMNI_STOCK_HMAC_SECRET or fallback.
+
+    Returns:
+        Path to the generated signature file.
+    """
+    import hmac
+    import os
+    from pathlib import Path
+
+    path = Path(artifact_path).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"Model artifact file not found: {path}")
+
+    key_bytes = (
+        secret_key
+        or os.getenv("NEXTOMNI_STOCK_HMAC_SECRET", "nextomni_stock_sec_hmac_key_v1")
+    ).encode("utf-8")
+
+    file_bytes = path.read_bytes()
+    signature = hmac.new(key_bytes, file_bytes, hashlib.sha256).hexdigest()
+
+    sig_path = path.with_name(f"{path.name}.sig")
+    sig_path.write_text(signature, encoding="utf-8")
+    return sig_path
+
+
+def verify_model_artifact(
+    artifact_path: Any,
+    secret_key: Optional[str] = None,
+) -> bool:
+    """Verify the cryptographic HMAC-SHA256 signature of a serialized model file.
+
+    Args:
+        artifact_path: Path to serialized model file.
+        secret_key: Optional HMAC key.
+
+    Returns:
+        True if the signature exists and exactly matches the model bytes, False otherwise.
+    """
+    import hmac
+    import os
+    from pathlib import Path
+
+    path = Path(artifact_path).resolve()
+    if not path.is_file():
+        return False
+
+    sig_path = path.with_name(f"{path.name}.sig")
+    if not sig_path.is_file():
+        return False
+
+    stored_sig = sig_path.read_text(encoding="utf-8").strip()
+    key_bytes = (
+        secret_key
+        or os.getenv("NEXTOMNI_STOCK_HMAC_SECRET", "nextomni_stock_sec_hmac_key_v1")
+    ).encode("utf-8")
+
+    file_bytes = path.read_bytes()
+    computed_sig = hmac.new(key_bytes, file_bytes, hashlib.sha256).hexdigest()
+
+    return hmac.compare_digest(computed_sig.lower(), stored_sig.lower())
+
+

@@ -53,7 +53,9 @@ class LinearRegressionForecaster(BaseForecaster):
         self.feature_names = list(X.columns)
 
         # Target variable: fractional return from t to t+k
-        y_return = (y_target_price.values - p_origin.values) / p_origin.values
+        y_t = np.asarray(y_target_price, dtype=float)
+        p_o = np.asarray(p_origin, dtype=float)
+        y_return = (y_t - p_o) / p_o
 
         # 1. Fit scaler strictly on training features
         X_scaled = self.scaler.fit_transform(X)
@@ -129,7 +131,8 @@ class LinearRegressionForecaster(BaseForecaster):
         return coef_dict
 
     def save(self, file_path: Union[str, Path]) -> Path:
-        """Persist trained model, scaler, and metadata to disk."""
+        """Persist trained model, scaler, and metadata to disk with HMAC signature."""
+        from src.security.audit import sign_model_artifact
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(
@@ -144,12 +147,19 @@ class LinearRegressionForecaster(BaseForecaster):
             },
             path,
         )
+        sign_model_artifact(path)
         return path
 
     @classmethod
-    def load(cls, file_path: Union[str, Path]) -> "LinearRegressionForecaster":
-        """Load persisted model artifact from disk."""
+    def load(cls, file_path: Union[str, Path], verify_signature: bool = True) -> "LinearRegressionForecaster":
+        """Load persisted model artifact from disk after signature validation."""
+        from src.security.audit import verify_model_artifact
+        from src.security.validators import SecurityValidationError
         path = Path(file_path)
+        sig_file = path.with_name(f"{path.name}.sig")
+        if verify_signature and sig_file.exists():
+            if not verify_model_artifact(path):
+                raise SecurityValidationError(f"Cryptographic signature check failed for {path}")
         data = joblib.load(path)
         instance = cls(alpha=data["alpha"], model_version=data["model_version"])
         instance.feature_names = data["feature_names"]

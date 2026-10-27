@@ -28,8 +28,10 @@ from src.data.db import get_observations
 from src.evaluation.metrics import calculate_all_metrics
 from src.features.builder import FEATURE_COLUMNS, build_feature_matrix
 from src.models.base_model import BaseForecaster
+from src.models.ensemble import ConvexEnsembleForecaster
 from src.models.gb_model import GradientBoostingForecaster
 from src.models.linear_model import LinearRegressionForecaster
+from src.security.audit import sign_model_artifact, verify_model_artifact
 from src.security.validators import validate_model_family
 
 
@@ -81,6 +83,25 @@ class MultiHorizonForecaster:
             return GradientBoostingForecaster(
                 model_version=self.model_version,
                 **kwargs,
+            )
+        if self.model_family == "ensemble":
+            kwargs = dict(self.model_kwargs)
+            if horizon_key == "1_SESSION":
+                kwargs.setdefault("max_depth", 1)
+                kwargs.setdefault("l2_regularization", 20.0)
+                kwargs.setdefault("min_samples_leaf", 30)
+                kwargs.setdefault("max_iter", 20)
+            else:
+                kwargs.setdefault("max_depth", 3)
+                kwargs.setdefault("l2_regularization", 1.0)
+                kwargs.setdefault("min_samples_leaf", 15)
+                kwargs.setdefault("max_iter", 50)
+            lin = LinearRegressionForecaster(alpha=self.alpha, model_version=self.model_version)
+            gb = GradientBoostingForecaster(model_version=self.model_version, **kwargs)
+            return ConvexEnsembleForecaster(
+                linear_forecaster=lin,
+                gb_forecaster=gb,
+                model_version=self.model_version,
             )
         return LinearRegressionForecaster(
             alpha=self.alpha,
@@ -254,13 +275,14 @@ class MultiHorizonForecaster:
         return results
 
     def save_models(self, dir_path: Union[str, Path], ticker: str) -> Path:
-        """Serialize all direct horizon models to directory with path traversal protection."""
+        """Serialize all direct horizon models to directory with path traversal protection and HMAC signatures."""
         from src.security.validators import assert_safe_model_path, sanitize_path_component, validate_ticker
         val_ticker = validate_ticker(ticker)
         base = Path(dir_path).resolve()
         safe_name = f"multi_horizon_{sanitize_path_component(val_ticker)}"
         path = assert_safe_model_path(base / safe_name, base)
         path.mkdir(parents=True, exist_ok=True)
+        meta_file = path / "metadata.joblib"
         joblib.dump(
             {
                 "model_family": self.model_family,
@@ -268,8 +290,9 @@ class MultiHorizonForecaster:
                 "alpha": self.alpha,
                 "model_kwargs": self.model_kwargs,
             },
-            path / "metadata.joblib",
+            meta_file,
         )
+        sign_model_artifact(meta_file)
         for h_key, model in self.models.items():
             model.save(path / f"{h_key}.joblib")
         return path
@@ -289,8 +312,13 @@ class MultiHorizonForecaster:
 
     @classmethod
     def load_models(cls, dir_path: Union[str, Path], ticker: str) -> "MultiHorizonForecaster":
-        """Load all direct horizon models from directory with path traversal protection."""
-        from src.security.validators import assert_safe_model_path, sanitize_path_component, validate_ticker
+        """Load all direct horizon models from directory with path traversal and signature verification."""
+        from src.security.validators import (
+            SecurityValidationError,
+            assert_safe_model_path,
+            sanitize_path_component,
+            validate_ticker,
+        )
         val_ticker = validate_ticker(ticker)
         base = Path(dir_path).resolve()
         safe_name = f"multi_horizon_{sanitize_path_component(val_ticker)}"
@@ -298,6 +326,9 @@ class MultiHorizonForecaster:
 
         meta_file = path / "metadata.joblib"
         if meta_file.exists():
+            sig_file = meta_file.with_name(f"{meta_file.name}.sig")
+            if sig_file.exists() and not verify_model_artifact(meta_file):
+                raise SecurityValidationError(f"Cryptographic signature check failed for {meta_file}")
             meta = joblib.load(meta_file)
             model_family = meta.get("model_family", "linear")
             model_version = meta.get("model_version", "1.0.0")
@@ -312,11 +343,13 @@ class MultiHorizonForecaster:
         else:
             instance = cls(model_family="linear")
 
-        forecaster_cls = (
-            GradientBoostingForecaster
-            if instance.model_family == "gradient_boosting"
-            else LinearRegressionForecaster
-        )
+        if instance.model_family == "gradient_boosting":
+            forecaster_cls = GradientBoostingForecaster
+        elif instance.model_family == "ensemble":
+            forecaster_cls = ConvexEnsembleForecaster
+        else:
+            forecaster_cls = LinearRegressionForecaster
+
         for h_key in instance.horizons_map.keys():
             instance.models[h_key] = forecaster_cls.load(path / f"{h_key}.joblib")
         instance.is_fitted = True

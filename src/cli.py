@@ -676,9 +676,9 @@ def main() -> None:
     )
     multi_parser.add_argument(
         "--model",
-        choices=["linear", "gradient_boosting"],
+        choices=["linear", "gradient_boosting", "ensemble"],
         default="linear",
-        help="Forecasting model family (linear, gradient_boosting)",
+        help="Forecasting model family (linear, gradient_boosting, ensemble)",
     )
     multi_parser.add_argument(
         "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
@@ -699,7 +699,7 @@ def main() -> None:
     )
     predict_parser.add_argument(
         "--model",
-        choices=["linear", "gradient_boosting", "baseline"],
+        choices=["linear", "gradient_boosting", "ensemble", "baseline"],
         default="linear",
         help="Forecasting model family to use",
     )

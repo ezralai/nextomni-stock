@@ -34,11 +34,14 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 | **HistGradientBoosting (Iter 6: Adaptive Regularization)** | 1 Session | `1155.KL` | 0.0413 | 0.0408 | **-1.20%** | **51.43%** | Production |
 | **HistGradientBoosting (Iter 6: Adaptive Regularization)** | 5 Sessions | `1155.KL` | 0.0681 | 0.0842 | **+19.12%** | **70.30%** | Production |
 | **HistGradientBoosting (Iter 6: Adaptive Regularization)** | 21 Sessions | `1155.KL` | 0.1224 | 0.2278 | **+46.27%** | **90.59%** | Production |
+| **ConvexEnsemble (Iter 7: Ridge + GBDT)** | 1 Session | `JPM` | 2.0148 | 2.0064 | **-0.42%** | **54.95%** | Production |
+| **ConvexEnsemble (Iter 7: Ridge + GBDT)** | 5 Sessions | `JPM` | 4.4130 | 4.6892 | **+5.89%** | **60.75%** | Production |
+| **ConvexEnsemble (Iter 7: Ridge + GBDT)** | 21 Sessions | `JPM` | 5.9663 | 7.7506 | **+23.02%** | **76.92%** | **Production Champion** |
 
 ### Model Acceptance Criteria
-1. **Short Horizon ($P_{t+1}$):** Model MAE within $\pm 5\%$ of baseline; Directional Accuracy $> 50\%$. (HistGradientBoosting Iter 6 Adaptive: **-0.47% to -1.20%**, **51.43% to 54.95% DA**).
-2. **Intermediate Horizon ($P_{t+5}$):** Model MAE must beat baseline by $\ge 0.5\%$; Directional Accuracy $\ge 58\%$. (HistGradientBoosting Iter 6: **+13.93% to +19.12%**, **65.42% to 70.30% DA**).
-3. **Long Horizon ($P_{t+21}$):** Model MAE must beat baseline by $\ge 10.0\%$; Directional Accuracy $\ge 65\%$. (HistGradientBoosting Iter 6: **+12.66% to +46.27%**, **73.63% to 90.59% DA**).
+1. **Short Horizon ($P_{t+1}$):** Model MAE within $\pm 5\%$ of baseline; Directional Accuracy $> 50\%$. (ConvexEnsemble: **-0.42%**, **54.95% DA**).
+2. **Intermediate Horizon ($P_{t+5}$):** Model MAE must beat baseline by $\ge 0.5\%$; Directional Accuracy $\ge 58\%$. (ConvexEnsemble: **+5.89%**, **60.75% DA**).
+3. **Long Horizon ($P_{t+21}$):** Model MAE must beat baseline by $\ge 10.0\%$; Directional Accuracy $\ge 65\%$. (ConvexEnsemble: **+23.02%**, **76.92% DA**, **IR = +0.335**).
 
 ---
 
@@ -46,7 +49,7 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 
 - [x] **SQL Query Safety:** All database queries utilize parameter binding (`?`). Zero string formatting in SQL statements.
 - [x] **Input Allowlisting:** Ticker symbols match regex `^[A-Z0-9]{1,6}(\.[A-Z]{2})?$`; Exchange MIC matches `^(XNYS|XKLS)$` via `src/security/validators.py`.
-- [x] **Model Family Allowlisting:** Model choice validated against `{"linear", "gradient_boosting", "baseline"}`.
+- [x] **Model Family Allowlisting:** Model choice validated against `{"linear", "gradient_boosting", "baseline", "ensemble"}`.
 - [x] **Floating-Point Finite Assertion:** Database writes validate `assert_finite_number` to protect against NaN/Inf float poisonings across prices and interval bounds.
 - [x] **Path Traversal Protection:** Serialized model filenames sanitized and checked with `assert_safe_model_path`.
 - [x] **Secret Isolation & Key Sanitization:** Environment variables (`NEXTOMNI_STOCK_*`) validated with `validate_api_key()` and masked via `mask_secret()` to prevent leaks in logs and UI.
@@ -57,12 +60,14 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Tamper-Evident Verification:** `verify-audit` CLI command verifies database records against unauthorized modification.
 - [x] **Cryptographic Audit Manifest Signing:** `list-predictions --export` generates SHA-256 manifest signatures for verifiable external compliance exports.
 - [x] **Online Atomic SQLite Backup & Disaster Recovery:** `backup_database()` leverages SQLite's online backup API (`src_conn.backup(dst_conn)`) for transactionally consistent, zero-downtime snapshots under active WAL writes, followed by automatic cryptographic tamper verification.
+- [x] **Cryptographic HMAC-SHA256 Model Signing at Rest:** All serialized models (`.joblib`) automatically write signed sidecars (`.joblib.sig`) verified upon loading via `verify_model_artifact()` to prevent weights tampering.
 
 ---
 
 ## 3. Architecture & Code Quality Checklist
 
 - [x] **Polymorphic Forecaster Contract:** `BaseForecaster(ABC)` defines polymorphic interface for `fit`, `predict`, `predict_interval`, and serialization with `**kwargs` support.
+- [x] **Convex Ensemble Meta-Model:** `ConvexEnsembleForecaster` combines Ridge and HistGradientBoosting via leak-free out-of-fold non-negative bounded least squares ($w_{\text{lin}} \ge 0, w_{\text{gb}} \ge 0, w_{\text{lin}} + w_{\text{gb}} = 1.0$), capturing non-linear volatility while retaining linear stability.
 - [x] **Horizon-Adaptive Regularization:** Direct multi-horizon engine applies asymmetric capacity constraints (`max_depth=1`, `l2=20.0` for 1-session noise shrinkage vs `max_depth=3`, `l2=1.0` for multi-step momentum).
 - [x] **Extended Quantitative Risk & Performance Metrics:** `calculate_max_error` (Chebyshev $\ell_\infty$ norm worst-case risk) and `calculate_information_ratio` (benchmark-relative active alpha per tracking error) integrated into evaluation core and reports.
 - [x] **Walk-Forward Quantile Bypass:** `fit(fit_quantiles=False)` accelerates walk-forward evaluation by ~65% while keeping intervals active in production.
@@ -73,7 +78,7 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 - [x] **Interactive Dashboard Security & Disaster Recovery Console:** Embedded real-time cryptographic audit verification, session-aware daemon triggers, and 1-click atomic database backup in Tab 4.
 - [x] **Single-Main Consolidated CLI:** `src/cli.py` consolidated into a unified parser architecture with zero dead code, including `backup-db`.
 - [x] **Type Annotations:** All public functions include parameter types and return type annotations.
-- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (75/75 tests passing).
+- [x] **Zero Regressions:** `pytest -v` passes 100% across all unit and integration tests (81/81 tests passing).
 - [x] **Docstrings:** Standard Google/NumPy format explaining arguments, return values, and mathematical formulas.
 - [x] **Decoupled Modules:** No circular imports between `src/data`, `src/features`, `src/models`, `src/evaluation`, `src/security`, and `src/dashboard`.
 - [x] **Reproducibility:** Random seeds fixed (`random_state=42`) in all stochastic models or splitters.

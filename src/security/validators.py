@@ -11,7 +11,7 @@ from typing import Optional, Set
 
 from src.config import SUPPORTED_EXCHANGES
 
-SUPPORTED_MODEL_FAMILIES = {"linear", "gradient_boosting", "baseline"}
+SUPPORTED_MODEL_FAMILIES = {"linear", "gradient_boosting", "baseline", "ensemble"}
 
 # Ticker pattern: 1 to 6 alphanumeric characters, optional exchange suffix (e.g. .KL)
 TICKER_REGEX = re.compile(r"^[A-Z0-9]{1,6}(\.[A-Z]{2})?$")
