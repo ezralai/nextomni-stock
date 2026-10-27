@@ -97,7 +97,60 @@ def init_db(db_path: Optional[Path] = None) -> None:
             );
             """
         )
+
+        # 5. Immutable predictions table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS predictions (
+                prediction_id TEXT PRIMARY KEY,
+                ticker TEXT NOT NULL,
+                exchange TEXT NOT NULL,
+                currency TEXT NOT NULL,
+                forecast_origin_timestamp TIMESTAMP NOT NULL,
+                forecast_origin_session TEXT NOT NULL,
+                origin_price REAL NOT NULL,
+                horizon_type TEXT NOT NULL,
+                horizon_sessions INTEGER NOT NULL,
+                target_session_date TEXT NOT NULL,
+                predicted_price REAL NOT NULL,
+                model_name TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                adjustment_convention TEXT NOT NULL,
+                reproducibility_ref TEXT,
+                status TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (ticker) REFERENCES stocks (ticker) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pred_status_target ON predictions(status, target_session_date);"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pred_ticker_horizon ON predictions(ticker, horizon_type);"
+        )
+
+        # 6. Prediction evaluations table (Stores reconciliation with actual market prices)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS prediction_evaluations (
+                evaluation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prediction_id TEXT NOT NULL UNIQUE,
+                actual_price REAL NOT NULL,
+                actual_source TEXT NOT NULL,
+                actual_observed_at TIMESTAMP NOT NULL,
+                absolute_error REAL NOT NULL,
+                percentage_error REAL NOT NULL,
+                actual_direction INTEGER NOT NULL,
+                predicted_direction INTEGER NOT NULL,
+                direction_correct BOOLEAN NOT NULL,
+                evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (prediction_id) REFERENCES predictions (prediction_id) ON DELETE CASCADE
+            );
+            """
+        )
     conn.close()
+
 
 
 def upsert_stock(
@@ -289,3 +342,132 @@ def save_corporate_actions(
             count += 1
     conn.close()
     return count
+
+
+def save_prediction(
+    pred: Dict[str, Any],
+    db_path: Optional[Path] = None,
+) -> str:
+    """Store an immutable forecast prediction record."""
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO predictions (
+                prediction_id, ticker, exchange, currency,
+                forecast_origin_timestamp, forecast_origin_session, origin_price,
+                horizon_type, horizon_sessions, target_session_date,
+                predicted_price, model_name, model_version,
+                adjustment_convention, reproducibility_ref, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                str(pred["prediction_id"]),
+                str(pred["ticker"]),
+                str(pred["exchange"]),
+                str(pred["currency"]),
+                str(pred["forecast_origin_timestamp"]),
+                str(pred["forecast_origin_session"]),
+                float(pred["origin_price"]),
+                str(pred["horizon_type"]),
+                int(pred["horizon_sessions"]),
+                str(pred["target_session_date"]),
+                float(pred["predicted_price"]),
+                str(pred["model_name"]),
+                str(pred["model_version"]),
+                str(pred.get("adjustment_convention", "ADJUSTED_CLOSE")),
+                str(pred.get("reproducibility_ref", "")),
+                str(pred.get("status", "PENDING")),
+            ),
+        )
+    conn.close()
+    return str(pred["prediction_id"])
+
+
+def get_predictions(
+    status: Optional[str] = None,
+    ticker: Optional[str] = None,
+    horizon_type: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> pd.DataFrame:
+    """Retrieve predictions with optional status, ticker, and horizon filters."""
+    conn = get_connection(db_path)
+    query = """
+        SELECT p.*, e.actual_price, e.absolute_error, e.percentage_error, e.direction_correct, e.evaluated_at
+        FROM predictions p
+        LEFT JOIN prediction_evaluations e ON p.prediction_id = e.prediction_id
+        WHERE 1=1
+    """
+    params: List[Any] = []
+    if status:
+        query += " AND p.status = ?"
+        params.append(status)
+    if ticker:
+        query += " AND p.ticker = ?"
+        params.append(ticker)
+    if horizon_type:
+        query += " AND p.horizon_type = ?"
+        params.append(horizon_type)
+
+    query += " ORDER BY p.created_at DESC;"
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
+
+
+def update_prediction_status(
+    prediction_id: str,
+    new_status: str,
+    db_path: Optional[Path] = None,
+) -> None:
+    """Update prediction lifecycle status."""
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            "UPDATE predictions SET status = ? WHERE prediction_id = ?;",
+            (new_status, prediction_id),
+        )
+    conn.close()
+
+
+def save_prediction_evaluation(
+    eval_record: Dict[str, Any],
+    db_path: Optional[Path] = None,
+) -> int:
+    """Store reconciled evaluation and update prediction status to EVALUATED."""
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO prediction_evaluations (
+                prediction_id, actual_price, actual_source,
+                actual_observed_at, absolute_error, percentage_error,
+                actual_direction, predicted_direction, direction_correct
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(prediction_id) DO UPDATE SET
+                actual_price=excluded.actual_price,
+                absolute_error=excluded.absolute_error,
+                percentage_error=excluded.percentage_error,
+                direction_correct=excluded.direction_correct,
+                evaluated_at=CURRENT_TIMESTAMP;
+            """,
+            (
+                str(eval_record["prediction_id"]),
+                float(eval_record["actual_price"]),
+                str(eval_record["actual_source"]),
+                str(eval_record["actual_observed_at"]),
+                float(eval_record["absolute_error"]),
+                float(eval_record["percentage_error"]),
+                int(eval_record["actual_direction"]),
+                int(eval_record["predicted_direction"]),
+                bool(eval_record["direction_correct"]),
+            ),
+        )
+        # Update status in predictions table
+        conn.execute(
+            "UPDATE predictions SET status = 'EVALUATED' WHERE prediction_id = ?;",
+            (str(eval_record["prediction_id"]),),
+        )
+    conn.close()
+    return 1
+
