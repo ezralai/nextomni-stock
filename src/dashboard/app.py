@@ -440,9 +440,9 @@ def render_dashboard() -> None:
         st.header("Prediction Audit Log & Evaluation")
         st.caption("Auditable tracking finite state machine reconciling predictions with actual settlement prices.")
 
-        # Cryptographic Audit Verification Box
-        with st.expander("🛡️ Cryptographic SHA-256 Audit Trail Integrity", expanded=True):
-            from src.data.db import verify_database_integrity
+        # Cryptographic Audit Verification & Database Backup Box
+        with st.expander("🛡️ Cryptographic SHA-256 Audit Trail Integrity & Disaster Recovery", expanded=True):
+            from src.data.db import backup_database, verify_database_integrity
             audit_rep = verify_database_integrity()
             col_a1, col_a2, col_a3 = st.columns(3)
             col_a1.metric("Audited Predictions", f"{audit_rep['predictions_valid']} / {audit_rep['predictions_audited']}")
@@ -451,6 +451,13 @@ def render_dashboard() -> None:
                 col_a3.success("✓ 100% Cryptographically Intact")
             else:
                 col_a3.error("✗ Tampering Detected")
+
+            col_bk1, col_bk2 = st.columns([2, 3])
+            with col_bk1:
+                if st.button("📦 Create Atomic Database Backup", use_container_width=True):
+                    with st.spinner("Executing non-blocking online SQLite backup..."):
+                        bk_path = backup_database()
+                        st.success(f"Snapshot created: `{bk_path.name}` ({bk_path.stat().st_size} bytes)")
 
         # Action: Reconcile Pending Button
         col_act, col_filter = st.columns([2, 3])
@@ -548,6 +555,8 @@ def render_dashboard() -> None:
                     "Model RMSE": f"{m_m['rmse']:.4f}",
                     "Baseline RMSE": f"{b_m['rmse']:.4f}",
                     "Directional Accuracy": f"{m_m['directional_accuracy_pct']:.2f}%",
+                    "Information Ratio": f"{m_m.get('information_ratio', 0.0):.3f}",
+                    "Max Error": f"{m_m.get('max_error', 0.0):.4f}",
                     "Folds Evaluated": res["walk_forward_steps"],
                 })
 

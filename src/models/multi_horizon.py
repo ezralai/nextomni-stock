@@ -53,16 +53,34 @@ class MultiHorizonForecaster:
             "21_SESSIONS": HORIZON_TWENTY_ONE_SESSIONS,
         }
         self.models: Dict[str, BaseForecaster] = {
-            h_key: self._create_forecaster() for h_key in self.horizons_map
+            h_key: self._create_forecaster(h_key) for h_key in self.horizons_map
         }
         self.is_fitted: bool = False
 
-    def _create_forecaster(self) -> BaseForecaster:
-        """Instantiate forecaster instance according to configured model family."""
+    def _create_forecaster(self, horizon_key: str = "1_SESSION") -> BaseForecaster:
+        """Instantiate forecaster instance according to configured model family and horizon.
+
+        Applies Horizon-Adaptive Regularization:
+        - 1_SESSION: Low signal-to-noise ratio requires strong shrinkage (max_depth=1,
+          l2_regularization=20.0, min_samples_leaf=30, max_iter=20) to prevent overfitting daily noise.
+        - 5_SESSIONS & 21_SESSIONS: Extended horizons capture persistent trend/momentum signals,
+          benefiting from standard tree capacity (max_depth=3, l2=1.0, min_samples_leaf=15, max_iter=50).
+        """
         if self.model_family == "gradient_boosting":
+            kwargs = dict(self.model_kwargs)
+            if horizon_key == "1_SESSION":
+                kwargs.setdefault("max_depth", 1)
+                kwargs.setdefault("l2_regularization", 20.0)
+                kwargs.setdefault("min_samples_leaf", 30)
+                kwargs.setdefault("max_iter", 20)
+            else:
+                kwargs.setdefault("max_depth", 3)
+                kwargs.setdefault("l2_regularization", 1.0)
+                kwargs.setdefault("min_samples_leaf", 15)
+                kwargs.setdefault("max_iter", 50)
             return GradientBoostingForecaster(
                 model_version=self.model_version,
-                **self.model_kwargs,
+                **kwargs,
             )
         return LinearRegressionForecaster(
             alpha=self.alpha,
@@ -198,7 +216,7 @@ class MultiHorizonForecaster:
                 train_part = valid_df.iloc[:t]
                 test_r = valid_df.iloc[t]
 
-                forecaster = self._create_forecaster()
+                forecaster = self._create_forecaster(horizon_key=h_key)
                 forecaster.fit(
                     X=train_part[feat_cols],
                     y_target_price=train_part["target_price"],

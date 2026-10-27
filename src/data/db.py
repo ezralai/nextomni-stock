@@ -7,7 +7,7 @@ time-series observation storage, and raw payload audit records.
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 
 from src.config import DATABASE_PATH
@@ -574,4 +574,54 @@ def verify_database_integrity(db_path: Optional[Path] = None) -> Dict[str, Any]:
         "tampered_evaluations": tampered_evaluations,
         "is_intact": (len(tampered_predictions) == 0 and len(tampered_evaluations) == 0),
     }
+
+
+def backup_database(
+    destination_path: Optional[Union[str, Path]] = None,
+    db_path: Optional[Path] = None,
+) -> Path:
+    """Create an atomic, non-blocking online SQLite backup snapshot and verify integrity.
+
+    Uses SQLite's online backup API to ensure 100% consistency even under active WAL writes,
+    then cryptographically validates the snapshot against tamper detection.
+
+    Args:
+        destination_path: Path to target backup file. If None, saves to data/backups/stock_system_YYYYMMDD_HHMMSS.db.
+        db_path: Source database path.
+
+    Returns:
+        Path to the verified backup file.
+    """
+    from datetime import datetime
+
+    source_path = Path(db_path) if db_path else DATABASE_PATH
+    init_db(source_path)
+
+    if destination_path is None:
+        backup_dir = source_path.parent / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target_path = backup_dir / f"stock_system_backup_{timestamp_str}.db"
+    else:
+        target_path = Path(destination_path)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    src_conn = get_connection(source_path)
+    dst_conn = sqlite3.connect(str(target_path))
+
+    with dst_conn:
+        src_conn.backup(dst_conn, pages=250)
+
+    dst_conn.close()
+    src_conn.close()
+
+    # Cryptographically verify the backup snapshot
+    audit_report = verify_database_integrity(target_path)
+    if not audit_report["is_intact"]:
+        raise RuntimeError(
+            f"Backup verification failed: snapshot at {target_path} failed cryptographic integrity checks."
+        )
+
+    return target_path
+
 

@@ -171,3 +171,22 @@ def test_multi_horizon_feature_importances_and_intervals(multi_horizon_timeserie
             assert p["confidence_level"] == 0.80
 
 
+def test_multi_horizon_adaptive_regularization():
+    """Verify horizon-adaptive regularization parameters for gradient boosting."""
+    forecaster = MultiHorizonForecaster(model_family="gradient_boosting")
+    m1 = forecaster.models["1_SESSION"]
+    m5 = forecaster.models["5_SESSIONS"]
+    m21 = forecaster.models["21_SESSIONS"]
+
+    # 1_SESSION should have strong shrinkage (decision stumps, high l2)
+    assert m1.max_depth == 1
+    assert m1.l2_regularization == 20.0
+
+    # 5_SESSIONS & 21_SESSIONS should have standard capacity
+    assert m5.max_depth == 3
+    assert m5.l2_regularization == 1.0
+    assert m21.max_depth == 3
+    assert m21.l2_regularization == 1.0
+
+
+

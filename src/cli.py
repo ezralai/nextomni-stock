@@ -265,22 +265,24 @@ def train_all_horizons_command(args: argparse.Namespace) -> None:
     forecaster = MultiHorizonForecaster(model_family=model_family, alpha=args.alpha)
     validation_results = forecaster.evaluate_walk_forward_all(df, min_train_sessions=args.min_train)
 
-    print("\n" + "=" * 90)
+    print("\n" + "=" * 114)
     print(f"  Multi-Horizon Out-of-Sample Performance Comparison ({ticker}) [{model_family}]")
-    print("=" * 90)
-    print(f"{'Horizon':<15} {'Steps':<8} {'Model MAE':<14} {'Baseline MAE':<15} {'Improvement':<13} {'Dir Acc (%)':<12}")
-    print("-" * 90)
+    print("=" * 114)
+    print(f"{'Horizon':<15} {'Steps':<8} {'Model MAE':<12} {'Base MAE':<12} {'Improvement':<13} {'Dir Acc (%)':<13} {'Info Ratio':<12} {'Max Error':<12}")
+    print("-" * 114)
 
     for h_key, res in validation_results.items():
         m_m = res["model_metrics"]
         b_m = res["baseline_metrics"]
         mae_imp = f"{res['mae_improvement_pct']:>+6.2f}%"
         da = f"{m_m['directional_accuracy_pct']:.2f}%"
+        ir = f"{m_m.get('information_ratio', 0.0):.3f}"
+        me = f"{m_m.get('max_error', 0.0):.4f}"
         print(
             f"{h_key:<15} {res['walk_forward_steps']:<8} "
-            f"{m_m['mae']:<14.4f} {b_m['mae']:<15.4f} {mae_imp:<13} {da:<12}"
+            f"{m_m['mae']:<12.4f} {b_m['mae']:<12.4f} {mae_imp:<13} {da:<13} {ir:<12} {me:<12}"
         )
-    print("-" * 90)
+    print("-" * 114)
 
     # Train final models on full feature sets and save
     forecaster.fit(df)
@@ -581,6 +583,25 @@ def verify_audit_command(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def backup_db_command(args: argparse.Namespace) -> None:
+    """Execute online atomic SQLite backup snapshot with cryptographic verification."""
+    from src.data.db import backup_database
+
+    print("\n" + "=" * 65)
+    print("  NextOmni Stock: Online Atomic Database Backup")
+    print("=" * 65)
+    try:
+        dest = args.dest if getattr(args, "dest", None) else None
+        saved_path = backup_database(destination_path=dest)
+        print(f"  ✓ Snapshot Created & Verified: {saved_path}")
+        print("  ✓ Cryptographic Integrity:      100% INTACT")
+        print("=" * 65 + "\n")
+    except Exception as e:
+        print(f"  ✗ Backup Failed: {e}")
+        print("=" * 65 + "\n")
+        sys.exit(1)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -751,6 +772,14 @@ def main() -> None:
         "verify-audit", help="Verify cryptographic SHA-256 integrity of predictions audit trail"
     )
 
+    # Backup DB parser
+    backup_parser = subparsers.add_parser(
+        "backup-db", help="Create an atomic verified online SQLite database backup"
+    )
+    backup_parser.add_argument(
+        "--dest", type=str, default=None, help="Target destination file path for backup"
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -778,6 +807,8 @@ def main() -> None:
         daemon_reconcile_command(args)
     elif args.command == "verify-audit":
         verify_audit_command(args)
+    elif args.command == "backup-db":
+        backup_db_command(args)
 
 
 if __name__ == "__main__":
