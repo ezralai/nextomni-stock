@@ -19,6 +19,9 @@ FEATURE_COLUMNS = [
     "price_to_sma_20",
     "rolling_vol_21",
     "volume_ratio_20",
+    "gk_vol_21",
+    "rsi_14",
+    "bb_pct_b_20",
 ]
 
 
@@ -30,7 +33,7 @@ def build_feature_matrix(
 ) -> Tuple[pd.DataFrame, List[str]]:
     """Construct leak-free features for time-series forecasting.
 
-    Features generated at session t:
+    Features generated at session t (strictly backward-looking P_{<= t}):
     1. lag_return_1: Daily return from session t-1 to t: (P_t - P_{t-1}) / P_{t-1}
     2. lag_return_2: Daily return from session t-2 to t-1: (P_{t-1} - P_{t-2}) / P_{t-2}
     3. lag_return_5: 5-session momentum: (P_t - P_{t-5}) / P_{t-5}
@@ -38,6 +41,9 @@ def build_feature_matrix(
     5. price_to_sma_20: Ratio of closing price to its 20-session SMA: P_t / SMA_20(P_t)
     6. rolling_vol_21: 21-session rolling standard deviation of daily returns
     7. volume_ratio_20: Ratio of current volume to 20-session average volume: V_t / SMA_20(V_t)
+    8. gk_vol_21: 21-session Garman-Klass intra-day volatility estimator (Open, High, Low, Close)
+    9. rsi_14: 14-session Relative Strength Index normalized to [0, 1]
+    10. bb_pct_b_20: 20-session Bollinger Band %B normalized position
 
     All rolling metrics strictly include observations up to index t, with ZERO forward leakage.
 
@@ -79,10 +85,36 @@ def build_feature_matrix(
 
     # 4. Volume pressure
     avg_vol_20 = data["volume"].rolling(window=20, min_periods=20).mean()
-    # Guard against zero volume in denominator
     data["volume_ratio_20"] = data["volume"] / np.maximum(avg_vol_20, 1.0)
 
-    # 5. Target alignment
+    # 5. Garman-Klass Volatility (lower-variance intra-day estimator)
+    # sigma_GK^2 = 0.5 * (ln(H/L))^2 - (2*ln(2) - 1) * (ln(C/O))^2
+    high_clean = np.maximum(data.get("high", data[price_col]), 1e-4)
+    low_clean = np.maximum(data.get("low", data[price_col]), 1e-4)
+    close_clean = np.maximum(data.get("close", data[price_col]), 1e-4)
+    open_clean = np.maximum(data.get("open", data[price_col]), 1e-4)
+
+    log_hl = np.log(high_clean / low_clean)
+    log_co = np.log(close_clean / open_clean)
+    gk_variance = 0.5 * (log_hl ** 2) - (2.0 * np.log(2) - 1.0) * (log_co ** 2)
+    data["gk_vol_21"] = np.sqrt(np.maximum(gk_variance.rolling(window=21, min_periods=21).mean(), 0.0))
+
+    # 6. Relative Strength Index (RSI 14, normalized to [0, 1])
+    gain = np.where(daily_returns > 0, daily_returns, 0.0)
+    loss = np.where(daily_returns < 0, -daily_returns, 0.0)
+    roll_gain = pd.Series(gain, index=data.index).rolling(window=14, min_periods=14).mean()
+    roll_loss = pd.Series(loss, index=data.index).rolling(window=14, min_periods=14).mean()
+    rs = roll_gain / np.maximum(roll_loss, 1e-8)
+    data["rsi_14"] = (100.0 - (100.0 / (1.0 + rs))) / 100.0
+
+    # 7. Bollinger Band %B (20 sessions, 2 standard deviations)
+    std_20 = data[price_col].rolling(window=20, min_periods=20).std()
+    upper_b = sma_20 + (2.0 * std_20)
+    lower_b = sma_20 - (2.0 * std_20)
+    band_width = np.maximum(upper_b - lower_b, 1e-8)
+    data["bb_pct_b_20"] = (data[price_col] - lower_b) / band_width
+
+    # 8. Target alignment
     if include_target:
         data = align_forecasting_target(
             data, horizon_sessions=horizon_sessions, price_col=price_col

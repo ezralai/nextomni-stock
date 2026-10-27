@@ -10,12 +10,12 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 
 | Model Architecture | Horizon | Test Ticker | Model MAE | Baseline MAE | MAE Delta % | Directional Accuracy | Status |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Ridge (Current)** | 1 Session | `JPM` | 2.0531 | 1.9993 | -2.69% | 51.82% | Benchmark |
-| **Ridge (Current)** | 5 Sessions | `JPM` | 4.6062 | 4.6367 | **+0.66%** | 59.43% | Production |
-| **Ridge (Current)** | 21 Sessions | `JPM` | 9.0703 | 10.3134 | **+12.05%** | 68.89% | Production |
-| **Ridge (Current)** | 1 Session | `1155.KL` | 0.0543 | 0.0522 | -3.92% | 47.62% | Benchmark |
-| **Ridge (Current)** | 5 Sessions | `1155.KL` | 0.1065 | 0.1163 | **+8.43%** | 69.31% | Production |
-| **Ridge (Current)** | 21 Sessions | `1155.KL` | 0.1477 | 0.2440 | **+39.46%** | 95.29% | Production |
+| **Ridge (Iter 1: 10 Feats)** | 1 Session | `JPM` | 2.0365 | 1.9813 | -2.79% | 50.91% | Benchmark |
+| **Ridge (Iter 1: 10 Feats)** | 5 Sessions | `JPM` | 4.5732 | 4.7168 | **+3.04%** | 55.66% | Production |
+| **Ridge (Iter 1: 10 Feats)** | 21 Sessions | `JPM` | 6.2018 | 7.7491 | **+19.97%** | **73.33%** | Production |
+| **Ridge (Iter 1: 10 Feats)** | 1 Session | `1155.KL` | 0.0424 | 0.0408 | -3.92% | 47.62% | Benchmark |
+| **Ridge (Iter 1: 10 Feats)** | 5 Sessions | `1155.KL` | 0.0756 | 0.0842 | **+10.21%** | **64.36%** | Production |
+| **Ridge (Iter 1: 10 Feats)** | 21 Sessions | `1155.KL` | 0.1703 | 0.2278 | **+25.24%** | **88.24%** | Production |
 
 ### Model Acceptance Criteria
 1. **Short Horizon ($P_{t+1}$):** Model MAE within $\pm 3\%$ of baseline; Directional Accuracy $> 50\%$.
@@ -26,12 +26,12 @@ Before adopting any new machine learning model (e.g., LightGBM, Random Forest, X
 
 ## 2. System Security Verification Checklist
 
-- [ ] **SQL Query Safety:** All database queries utilize parameter binding (`?`). Zero string formatting in SQL statements.
-- [ ] **Input Allowlisting:** Ticker symbols match regex `^[A-Z0-9]{1,6}(\.[A-Z]{2})?$`; Exchange MIC matches `^(XNYS|XKLS)$`.
-- [ ] **Path Traversal Protection:** Serialized model filenames are generated from sanitized ticker strings without path manipulation characters (`../`, `/`).
-- [ ] **Secret Isolation:** Environment variables (`NEXTOMNI_STOCK_*`) never logged to stdout or serialized in database payloads.
-- [ ] **Rate Limiter Health:** Token bucket properly bounds requests (max 8 req/min for free tier) and logs warnings on failover.
-- [ ] **FSM Idempotency:** Running `evaluate-pending` multiple times produces identical records without duplicating evaluations.
+- [x] **SQL Query Safety:** All database queries utilize parameter binding (`?`). Zero string formatting in SQL statements.
+- [x] **Input Allowlisting:** Ticker symbols match regex `^[A-Z0-9]{1,6}(\.[A-Z]{2})?$`; Exchange MIC matches `^(XNYS|XKLS)$` via `src/security/validators.py`.
+- [x] **Path Traversal Protection:** Serialized model filenames sanitized and checked with `assert_safe_model_path`.
+- [x] **Secret Isolation:** Environment variables (`NEXTOMNI_STOCK_*`) never logged to stdout or serialized in database payloads.
+- [x] **Rate Limiter Health:** Token bucket properly bounds requests (max 8 req/min for free tier) and logs warnings on failover.
+- [x] **FSM Idempotency:** Running `evaluate-pending` multiple times produces identical records without duplicating evaluations.
 
 ---
 

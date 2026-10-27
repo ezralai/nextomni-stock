@@ -204,8 +204,12 @@ class MultiHorizonForecaster:
         return results
 
     def save_models(self, dir_path: Union[str, Path], ticker: str) -> Path:
-        """Serialize all direct horizon models to directory."""
-        path = Path(dir_path) / f"multi_horizon_{ticker.replace('.', '_')}"
+        """Serialize all direct horizon models to directory with path traversal protection."""
+        from src.security.validators import assert_safe_model_path, sanitize_path_component, validate_ticker
+        val_ticker = validate_ticker(ticker)
+        base = Path(dir_path).resolve()
+        safe_name = f"multi_horizon_{sanitize_path_component(val_ticker)}"
+        path = assert_safe_model_path(base / safe_name, base)
         path.mkdir(parents=True, exist_ok=True)
         for h_key, model in self.models.items():
             model.save(path / f"{h_key}.joblib")
@@ -213,8 +217,12 @@ class MultiHorizonForecaster:
 
     @classmethod
     def load_models(cls, dir_path: Union[str, Path], ticker: str) -> "MultiHorizonForecaster":
-        """Load all direct horizon models from directory."""
-        path = Path(dir_path) / f"multi_horizon_{ticker.replace('.', '_')}"
+        """Load all direct horizon models from directory with path traversal protection."""
+        from src.security.validators import assert_safe_model_path, sanitize_path_component, validate_ticker
+        val_ticker = validate_ticker(ticker)
+        base = Path(dir_path).resolve()
+        safe_name = f"multi_horizon_{sanitize_path_component(val_ticker)}"
+        path = assert_safe_model_path(base / safe_name, base)
         instance = cls()
         for h_key in instance.horizons_map.keys():
             instance.models[h_key] = LinearRegressionForecaster.load(path / f"{h_key}.joblib")

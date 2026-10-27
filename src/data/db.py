@@ -19,6 +19,7 @@ def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA busy_timeout = 5000;")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -128,6 +129,9 @@ def init_db(db_path: Optional[Path] = None) -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_pred_ticker_horizon ON predictions(ticker, horizon_type);"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pred_status_created ON predictions(status, created_at);"
         )
 
         # 6. Prediction evaluations table (Stores reconciliation with actual market prices)
