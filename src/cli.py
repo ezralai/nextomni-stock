@@ -485,6 +485,50 @@ def list_predictions_command(args: argparse.Namespace) -> None:
     print("-" * 115 + "\n")
 
 
+def monitor_command(args: argparse.Namespace) -> None:
+    """Monitor real-time quotes with session status and latency badges."""
+    from src.data.monitor import MarketMonitorService
+    service = MarketMonitorService()
+    quotes = service.get_multi_quotes(
+        tickers=[args.ticker] if args.ticker else None,
+        exchange=args.exchange,
+        force_refresh=args.refresh,
+    )
+
+    print("\nNextOmni Stock Market Monitor:")
+    print(f"{'Ticker':<10} {'Exchange':<8} {'Price':<14} {'Change':<10} {'Change %':<10} {'Status':<14} {'Latency Badge':<16} {'Cached':<8}")
+    print("-" * 96)
+    for q in quotes:
+        chg_str = f"{q.change:+.2f}"
+        pct_str = f"{q.pct_change:+.2f}%"
+        price_str = f"{q.last_price:.2f} {q.currency}"
+        print(f"{q.ticker:<10} {q.exchange:<8} {price_str:<14} {chg_str:<10} {pct_str:<10} {q.session_status:<14} {q.latency_badge:<16} {str(q.cached):<8}")
+    print("-" * 96)
+    for q in quotes:
+        print(f"[{q.ticker} ({q.exchange})]: Local Time: {q.local_time} | Status: {q.next_event}")
+        if q.note:
+            print(f"  Note: {q.note}")
+    print()
+
+
+def session_status_command(args: argparse.Namespace) -> None:
+    """Display real-time operational status of supported exchanges."""
+    from src.data.session_status import ExchangeSessionEngine
+    exchanges = [args.exchange] if args.exchange else list(SUPPORTED_EXCHANGES.keys())
+
+    print("\nNextOmni Stock Exchange Session Status:")
+    print(f"{'Exchange':<8} {'Name':<26} {'Status':<14} {'Open?':<8} {'Local Time':<30}")
+    print("-" * 90)
+    for exc in exchanges:
+        status_info = ExchangeSessionEngine.get_status(exc)
+        print(f"{status_info.exchange:<8} {status_info.name:<26} {status_info.status:<14} {str(status_info.is_open):<8} {status_info.local_time:<30}")
+        if status_info.is_open and status_info.next_close:
+            print(f"  -> Active Session: Scheduled Close at {status_info.next_close}")
+        elif not status_info.is_open and status_info.next_open:
+            print(f"  -> Closed Session: Scheduled Re-open at {status_info.next_open}")
+        print(f"  -> Operational Details: {status_info.details}\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -718,6 +762,26 @@ def main() -> None:
         help="Filter by status",
     )
 
+    # Monitor parser
+    monitor_parser = subparsers.add_parser(
+        "monitor", help="Monitor real-time quotes, session status, and feed latency"
+    )
+    monitor_parser.add_argument("--ticker", type=str, default=None, help="Stock ticker (e.g. JPM, 1155.KL)")
+    monitor_parser.add_argument(
+        "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
+    )
+    monitor_parser.add_argument(
+        "--refresh", action="store_true", help="Bypass cache and force live fetch"
+    )
+
+    # Session status parser
+    session_parser = subparsers.add_parser(
+        "session-status", help="Display current exchange operational state and calendar countdown"
+    )
+    session_parser.add_argument(
+        "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -737,6 +801,10 @@ def main() -> None:
         evaluate_pending_command(args)
     elif args.command == "list-predictions":
         list_predictions_command(args)
+    elif args.command == "monitor":
+        monitor_command(args)
+    elif args.command == "session-status":
+        session_status_command(args)
 
 
 

@@ -99,8 +99,13 @@ python -m src.cli predict --ticker 1155.KL --model linear
 # Reconcile past predictions with confirmed exchange actual prices
 python -m src.cli evaluate-pending
 
-# Inspect predictions audit log
-python -m src.cli list-predictions
+# Inspect exchange operational status and calendar countdowns
+python -m src.cli session-status
+
+# Monitor real-time quotes with session status and latency badges
+python -m src.cli monitor
+python -m src.cli monitor --ticker JPM --exchange XNYS
+python -m src.cli monitor --ticker 1155.KL --exchange XKLS
 ```
 
 ---
@@ -114,7 +119,7 @@ python -m src.cli list-predictions
 - [x] **Phase 4:** First machine learning model (Linear Regression) with walk-forward validation.
 - [x] **Phase 5:** Prediction tracking finite state machine & idempotent actual-price evaluation.
 - [x] **Phase 6:** Multi-horizon expansion ($P_{t+5}$, $P_{t+21}$).
-- [ ] **Phase 7:** Market monitoring & data latency labeling (`REALTIME`, `DELAYED_15MIN`, `END_OF_DAY`).
+- [x] **Phase 7:** Market monitoring & data latency labeling (`REALTIME`, `DELAYED_15MIN`, `END_OF_DAY`).
 - [ ] **Phase 8:** Interactive Streamlit Dashboard.
 - [ ] **Phase 9:** Portfolio audit, performance documentation & reproducibility checks.
 
