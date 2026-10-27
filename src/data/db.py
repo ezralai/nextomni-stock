@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from src.config import DATABASE_PATH
+from src.security.validators import assert_finite_number
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -353,6 +354,9 @@ def save_prediction(
     db_path: Optional[Path] = None,
 ) -> str:
     """Store an immutable forecast prediction record."""
+    origin_price = assert_finite_number(pred["origin_price"], "origin_price")
+    predicted_price = assert_finite_number(pred["predicted_price"], "predicted_price")
+
     conn = get_connection(db_path)
     with conn:
         conn.execute(
@@ -372,11 +376,11 @@ def save_prediction(
                 str(pred["currency"]),
                 str(pred["forecast_origin_timestamp"]),
                 str(pred["forecast_origin_session"]),
-                float(pred["origin_price"]),
+                origin_price,
                 str(pred["horizon_type"]),
                 int(pred["horizon_sessions"]),
                 str(pred["target_session_date"]),
-                float(pred["predicted_price"]),
+                predicted_price,
                 str(pred["model_name"]),
                 str(pred["model_version"]),
                 str(pred.get("adjustment_convention", "ADJUSTED_CLOSE")),
@@ -439,6 +443,10 @@ def save_prediction_evaluation(
     db_path: Optional[Path] = None,
 ) -> int:
     """Store reconciled evaluation and update prediction status to EVALUATED."""
+    actual_price = assert_finite_number(eval_record["actual_price"], "actual_price")
+    absolute_error = assert_finite_number(eval_record["absolute_error"], "absolute_error")
+    percentage_error = assert_finite_number(eval_record["percentage_error"], "percentage_error")
+
     conn = get_connection(db_path)
     with conn:
         conn.execute(
@@ -457,11 +465,11 @@ def save_prediction_evaluation(
             """,
             (
                 str(eval_record["prediction_id"]),
-                float(eval_record["actual_price"]),
+                actual_price,
                 str(eval_record["actual_source"]),
                 str(eval_record["actual_observed_at"]),
-                float(eval_record["absolute_error"]),
-                float(eval_record["percentage_error"]),
+                absolute_error,
+                percentage_error,
                 int(eval_record["actual_direction"]),
                 int(eval_record["predicted_direction"]),
                 bool(eval_record["direction_correct"]),

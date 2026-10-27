@@ -85,3 +85,44 @@ def test_assert_safe_model_path_containment(tmp_path):
     unsafe_target = base_dir / ".." / "evil.joblib"
     with pytest.raises(SecurityValidationError):
         assert_safe_model_path(unsafe_target, base_dir)
+
+
+def test_validate_model_family_valid_and_invalid():
+    """Verify validation against supported model families."""
+    from src.security.validators import validate_model_family
+
+    assert validate_model_family("linear") == "linear"
+    assert validate_model_family("LINEAR") == "linear"
+    assert validate_model_family("gradient_boosting") == "gradient_boosting"
+    assert validate_model_family("  GRADIENT_BOOSTING  ") == "gradient_boosting"
+
+    with pytest.raises(SecurityValidationError):
+        validate_model_family("arima")
+
+    with pytest.raises(SecurityValidationError):
+        validate_model_family("random_forest")
+
+    with pytest.raises(SecurityValidationError):
+        validate_model_family("")
+
+
+def test_assert_finite_number_valid_and_invalid():
+    """Verify numeric finite assertion prevents NaN and infinite values."""
+    from src.security.validators import assert_finite_number
+
+    assert assert_finite_number(100.5, "price") == 100.5
+    assert assert_finite_number(0.0, "return") == 0.0
+    assert assert_finite_number(-12.34, "error") == -12.34
+
+    with pytest.raises(ValueError):
+        assert_finite_number(float("nan"), "nan_price")
+
+    with pytest.raises(ValueError):
+        assert_finite_number(float("inf"), "inf_price")
+
+    with pytest.raises(ValueError):
+        assert_finite_number(float("-inf"), "neg_inf_price")
+
+    with pytest.raises(ValueError):
+        assert_finite_number("not_a_number", "invalid_type")
+

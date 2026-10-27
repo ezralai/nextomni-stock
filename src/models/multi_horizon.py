@@ -27,26 +27,47 @@ from src.config import (
 from src.data.db import get_observations
 from src.evaluation.metrics import calculate_all_metrics
 from src.features.builder import FEATURE_COLUMNS, build_feature_matrix
+from src.models.base_model import BaseForecaster
+from src.models.gb_model import GradientBoostingForecaster
 from src.models.linear_model import LinearRegressionForecaster
+from src.security.validators import validate_model_family
 
 
 class MultiHorizonForecaster:
     """Manages dedicated direct forecasting models across multiple trading horizons."""
 
-    def __init__(self, alpha: float = 1.0, model_version: str = "1.0.0"):
+    def __init__(
+        self,
+        model_family: str = "linear",
+        alpha: float = 1.0,
+        model_version: str = "1.0.0",
+        **model_kwargs: Any,
+    ):
+        self.model_family = validate_model_family(model_family)
         self.alpha = alpha
         self.model_version = model_version
-        self.models: Dict[str, LinearRegressionForecaster] = {
-            "1_SESSION": LinearRegressionForecaster(alpha=alpha, model_version=model_version),
-            "5_SESSIONS": LinearRegressionForecaster(alpha=alpha, model_version=model_version),
-            "21_SESSIONS": LinearRegressionForecaster(alpha=alpha, model_version=model_version),
-        }
+        self.model_kwargs = model_kwargs
         self.horizons_map = {
             "1_SESSION": HORIZON_NEXT_SESSION,
             "5_SESSIONS": HORIZON_FIVE_SESSIONS,
             "21_SESSIONS": HORIZON_TWENTY_ONE_SESSIONS,
         }
+        self.models: Dict[str, BaseForecaster] = {
+            h_key: self._create_forecaster() for h_key in self.horizons_map
+        }
         self.is_fitted: bool = False
+
+    def _create_forecaster(self) -> BaseForecaster:
+        """Instantiate forecaster instance according to configured model family."""
+        if self.model_family == "gradient_boosting":
+            return GradientBoostingForecaster(
+                model_version=self.model_version,
+                **self.model_kwargs,
+            )
+        return LinearRegressionForecaster(
+            alpha=self.alpha,
+            model_version=self.model_version,
+        )
 
     def fit(self, df: pd.DataFrame) -> "MultiHorizonForecaster":
         """Fit separate direct models for 1-session, 5-session, and 21-session horizons."""
@@ -167,7 +188,7 @@ class MultiHorizonForecaster:
                 train_part = valid_df.iloc[:t]
                 test_r = valid_df.iloc[t]
 
-                forecaster = LinearRegressionForecaster(alpha=self.alpha)
+                forecaster = self._create_forecaster()
                 forecaster.fit(
                     X=train_part[feat_cols],
                     y_target_price=train_part["target_price"],
@@ -211,6 +232,15 @@ class MultiHorizonForecaster:
         safe_name = f"multi_horizon_{sanitize_path_component(val_ticker)}"
         path = assert_safe_model_path(base / safe_name, base)
         path.mkdir(parents=True, exist_ok=True)
+        joblib.dump(
+            {
+                "model_family": self.model_family,
+                "model_version": self.model_version,
+                "alpha": self.alpha,
+                "model_kwargs": self.model_kwargs,
+            },
+            path / "metadata.joblib",
+        )
         for h_key, model in self.models.items():
             model.save(path / f"{h_key}.joblib")
         return path
@@ -223,8 +253,29 @@ class MultiHorizonForecaster:
         base = Path(dir_path).resolve()
         safe_name = f"multi_horizon_{sanitize_path_component(val_ticker)}"
         path = assert_safe_model_path(base / safe_name, base)
-        instance = cls()
+
+        meta_file = path / "metadata.joblib"
+        if meta_file.exists():
+            meta = joblib.load(meta_file)
+            model_family = meta.get("model_family", "linear")
+            model_version = meta.get("model_version", "1.0.0")
+            alpha = meta.get("alpha", 1.0)
+            model_kwargs = meta.get("model_kwargs", {})
+            instance = cls(
+                model_family=model_family,
+                alpha=alpha,
+                model_version=model_version,
+                **model_kwargs,
+            )
+        else:
+            instance = cls(model_family="linear")
+
+        forecaster_cls = (
+            GradientBoostingForecaster
+            if instance.model_family == "gradient_boosting"
+            else LinearRegressionForecaster
+        )
         for h_key in instance.horizons_map.keys():
-            instance.models[h_key] = LinearRegressionForecaster.load(path / f"{h_key}.joblib")
+            instance.models[h_key] = forecaster_cls.load(path / f"{h_key}.joblib")
         instance.is_fitted = True
         return instance

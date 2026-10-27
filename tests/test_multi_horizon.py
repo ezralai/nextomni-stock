@@ -101,3 +101,48 @@ def test_multi_horizon_walk_forward(multi_horizon_timeseries_df: pd.DataFrame):
         assert "model_metrics" in res[h]
         assert "baseline_metrics" in res[h]
         assert res[h]["walk_forward_steps"] > 0
+
+
+def test_multi_horizon_gradient_boosting_fit_predict_save_load(
+    tmp_path: Path, multi_horizon_timeseries_df: pd.DataFrame
+):
+    """Verify MultiHorizonForecaster with model_family='gradient_boosting'."""
+    forecaster = MultiHorizonForecaster(
+        model_family="gradient_boosting", max_iter=20, min_samples_leaf=5
+    )
+    assert forecaster.model_family == "gradient_boosting"
+    assert forecaster.is_fitted is False
+
+    forecaster.fit(multi_horizon_timeseries_df)
+    assert forecaster.is_fitted is True
+
+    predictions = forecaster.predict_all_horizons(
+        multi_horizon_timeseries_df, ticker="TEST", exchange="XNYS"
+    )
+    for h_key in ["1_SESSION", "5_SESSIONS", "21_SESSIONS"]:
+        pred = predictions[h_key]
+        assert "HistGradientBoosting" in pred["model_name"]
+        assert pred["predicted_price"] > 0
+
+    # Save and reload
+    save_dir = forecaster.save_models(tmp_path, ticker="TEST")
+    assert (save_dir / "metadata.joblib").exists()
+
+    loaded = MultiHorizonForecaster.load_models(tmp_path, ticker="TEST")
+    assert loaded.model_family == "gradient_boosting"
+    assert loaded.is_fitted is True
+
+    loaded_preds = loaded.predict_all_horizons(
+        multi_horizon_timeseries_df, ticker="TEST", exchange="XNYS"
+    )
+    for h in ["1_SESSION", "5_SESSIONS", "21_SESSIONS"]:
+        assert predictions[h]["predicted_price"] == loaded_preds[h]["predicted_price"]
+
+
+def test_multi_horizon_invalid_model_family():
+    """Verify SecurityValidationError when invalid model family requested."""
+    from src.security.validators import SecurityValidationError
+
+    with pytest.raises(SecurityValidationError):
+        MultiHorizonForecaster(model_family="unsupported_deep_net")
+

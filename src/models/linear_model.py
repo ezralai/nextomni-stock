@@ -13,9 +13,10 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
 from src.config import PRICE_COLUMN
+from src.models.base_model import BaseForecaster
 
 
-class LinearRegressionForecaster:
+class LinearRegressionForecaster(BaseForecaster):
     """Interpretable Linear Regression / Ridge model for stock price forecasting.
 
     Predicts expected future return r_{t+k} = (P_{t+k} - P_t) / P_t from normalized features,
@@ -25,13 +26,15 @@ class LinearRegressionForecaster:
     """
 
     def __init__(self, alpha: float = 1.0, model_version: str = "1.0.0"):
-        self.model_name = "LinearRegression_Ridge"
-        self.model_version = model_version
+        super().__init__(model_version=model_version)
         self.alpha = alpha
         self.scaler = StandardScaler()
         self.model = Ridge(alpha=alpha, random_state=42)
         self.feature_names: List[str] = []
-        self.is_fitted: bool = False
+
+    @property
+    def model_name(self) -> str:
+        return "LinearRegression_Ridge"
 
     def fit(
         self,
@@ -56,7 +59,7 @@ class LinearRegressionForecaster:
 
         # 2. Fit Ridge regression on scaled features and target return
         self.model.fit(X_scaled, y_return)
-        self.is_fitted = True
+        self._fitted = True
         return self
 
     def predict(
@@ -120,9 +123,8 @@ class LinearRegressionForecaster:
         path = Path(file_path)
         data = joblib.load(path)
         instance = cls(alpha=data["alpha"], model_version=data["model_version"])
-        instance.model_name = data["model_name"]
         instance.feature_names = data["feature_names"]
         instance.scaler = data["scaler"]
         instance.model = data["model"]
-        instance.is_fitted = True
+        instance._fitted = True
         return instance

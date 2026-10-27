@@ -1,20 +1,30 @@
 """Command-line interface for NextOmni Stock (nextomni-stock).
 
 Allows syncing historical stock data, inspecting database state,
-and testing data providers directly from the terminal.
+running quantitative analytics, training multi-horizon models,
+generating forecast predictions, and monitoring live market feeds.
 """
 
 import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
+from typing import Optional
+
 import pandas as pd
-
-
 
 from src.config import INITIAL_TICKERS, SUPPORTED_EXCHANGES
 from src.data.db import get_connection, get_observations, init_db
 from src.data.pipeline import DataPipeline
+from src.security.validators import (
+    SUPPORTED_MODEL_FAMILIES,
+    assert_safe_model_path,
+    sanitize_path_component,
+    validate_exchange,
+    validate_model_family,
+    validate_session_date,
+    validate_ticker,
+)
 
 
 def sync_command(args: argparse.Namespace) -> None:
@@ -41,12 +51,17 @@ def sync_command(args: argparse.Namespace) -> None:
         print("Error: --ticker and --exchange are required unless --all is specified.")
         sys.exit(1)
 
-    print(f"Syncing {args.ticker} on {args.exchange} from {args.start} to {args.end}...")
+    ticker = validate_ticker(args.ticker)
+    exchange = validate_exchange(args.exchange)
+    start_date = validate_session_date(args.start)
+    end_date = validate_session_date(args.end)
+
+    print(f"Syncing {ticker} on {exchange} from {start_date} to {end_date}...")
     result = pipeline.sync_stock(
-        ticker=args.ticker,
-        exchange=args.exchange,
-        start_date=args.start,
-        end_date=args.end,
+        ticker=ticker,
+        exchange=exchange,
+        start_date=start_date,
+        end_date=end_date,
         company_name=args.name,
     )
     print("\nSync Result:")
@@ -90,42 +105,14 @@ def status_command(args: argparse.Namespace) -> None:
     conn.close()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="nextomni-stock",
-        description="NextOmni Stock Intelligence & Forecasting CLI",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # Sync parser
-    sync_parser = subparsers.add_parser("sync", help="Synchronize historical market data")
-    sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
-    sync_parser.add_argument(
-        "--exchange",
-        type=str,
-        choices=list(SUPPORTED_EXCHANGES.keys()),
-        help="Exchange MIC (XNYS, XKLS)",
-    )
-    sync_parser.add_argument("--name", type=str, default=None, help="Company name")
-    default_end = datetime.now().strftime("%Y-%m-%d")
-    default_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-    sync_parser.add_argument(
-        "--start", type=str, default=default_start, help="Start date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--end", type=str, default=default_end, help="End date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--all", action="store_true", help="Sync all default initial tickers"
-    )
-
 def analyze_command(args: argparse.Namespace) -> None:
     """Run exploratory data analysis and export interactive visual report."""
     from src.analytics.eda import export_eda_report
 
-    print(f"\nRunning Exploratory Data Analysis for {args.ticker}...")
+    ticker = validate_ticker(args.ticker)
+    print(f"\nRunning Exploratory Data Analysis for {ticker}...")
     try:
-        stats, report_path = export_eda_report(ticker=args.ticker)
+        stats, report_path = export_eda_report(ticker=ticker)
     except Exception as e:
         print(f"Error during analysis: {e}")
         sys.exit(1)
@@ -145,48 +132,18 @@ def analyze_command(args: argparse.Namespace) -> None:
     print(f"\nInteractive visual report generated at: {report_path.resolve()}\n")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="nextomni-stock",
-        description="NextOmni Stock Intelligence & Forecasting CLI",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # Sync parser
-    sync_parser = subparsers.add_parser("sync", help="Synchronize historical market data")
-    sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
-    sync_parser.add_argument(
-        "--exchange",
-        choices=list(SUPPORTED_EXCHANGES.keys()),
-        help="Exchange MIC (XNYS, XKLS)",
-    )
-    sync_parser.add_argument("--name", type=str, default=None, help="Company name")
-    default_end = datetime.now().strftime("%Y-%m-%d")
-    default_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-    sync_parser.add_argument(
-        "--start", type=str, default=default_start, help="Start date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--end", type=str, default=default_end, help="End date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--all", action="store_true", help="Sync all default initial tickers"
-    )
-
-    # Status parser
-    subparsers.add_parser("status", help="Show database status and tracked stocks")
-
 def forecast_baseline_command(args: argparse.Namespace) -> None:
     """Generate persistence baseline forecast for next trading session and evaluate test performance."""
     from src.data.db import get_observations
     from src.models.baseline import PersistenceBaselineModel
 
-    df = get_observations(args.ticker)
+    ticker = validate_ticker(args.ticker)
+    df = get_observations(ticker)
     if df.empty:
-        print(f"Error: No observations found for {args.ticker}. Run 'sync' first.")
+        print(f"Error: No observations found for {ticker}. Run 'sync' first.")
         sys.exit(1)
 
-    exchange = args.exchange or df["exchange"].iloc[0]
+    exchange = validate_exchange(args.exchange) if args.exchange else df["exchange"].iloc[0]
     model = PersistenceBaselineModel()
 
     # 1. Evaluate historical performance
@@ -194,7 +151,7 @@ def forecast_baseline_command(args: argparse.Namespace) -> None:
     metrics = eval_result["metrics"]
 
     # 2. Generate future forecast
-    future = model.generate_future_forecast(args.ticker, exchange, horizon_sessions=1)
+    future = model.generate_future_forecast(ticker, exchange, horizon_sessions=1)
 
     print(f"\n=======================================================")
     print(f"  NextOmni Stock: Next-Session Persistence Baseline")
@@ -217,45 +174,6 @@ def forecast_baseline_command(args: argparse.Namespace) -> None:
     print(f"\nEducational Context:\n  {eval_result['educational_note']}\n")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="nextomni-stock",
-        description="NextOmni Stock Intelligence & Forecasting CLI",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # Sync parser
-    sync_parser = subparsers.add_parser("sync", help="Synchronize historical market data")
-    sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
-    sync_parser.add_argument(
-        "--exchange",
-        choices=list(SUPPORTED_EXCHANGES.keys()),
-        help="Exchange MIC (XNYS, XKLS)",
-    )
-    sync_parser.add_argument("--name", type=str, default=None, help="Company name")
-    default_end = datetime.now().strftime("%Y-%m-%d")
-    default_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-    sync_parser.add_argument(
-        "--start", type=str, default=default_start, help="Start date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--end", type=str, default=default_end, help="End date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--all", action="store_true", help="Sync all default initial tickers"
-    )
-
-    # Status parser
-    subparsers.add_parser("status", help="Show database status and tracked stocks")
-
-    # Analyze parser
-    analyze_parser = subparsers.add_parser(
-        "analyze", help="Run exploratory data analysis and export charts"
-    )
-    analyze_parser.add_argument(
-        "--ticker", type=str, required=True, help="Stock ticker to analyze (e.g. JPM, 1155.KL)"
-    )
-
 def train_linear_command(args: argparse.Namespace) -> None:
     """Execute walk-forward validation and train linear regression model."""
     from src.data.db import get_observations
@@ -263,15 +181,16 @@ def train_linear_command(args: argparse.Namespace) -> None:
     from src.features.builder import build_feature_matrix
     from src.models.linear_model import LinearRegressionForecaster
 
-    df = get_observations(args.ticker)
+    ticker = validate_ticker(args.ticker)
+    df = get_observations(ticker)
     if df.empty:
-        print(f"Error: No observations found for {args.ticker}. Run 'sync' first.")
+        print(f"Error: No observations found for {ticker}. Run 'sync' first.")
         sys.exit(1)
 
     currency = "USD" if df["exchange"].iloc[0] == "XNYS" else "MYR"
     validator = WalkForwardValidator(min_train_sessions=args.min_train, step_size=1)
 
-    print(f"\nRunning Chronological Walk-Forward Validation for {args.ticker}...")
+    print(f"\nRunning Chronological Walk-Forward Validation for {ticker}...")
     result = validator.evaluate(df, horizon_sessions=1, alpha=args.alpha)
 
     m_mod = result["model_metrics"]
@@ -297,15 +216,15 @@ def train_linear_command(args: argparse.Namespace) -> None:
     print(f"{'Directional Acc (%)':<25} {mod_da_str:<20} {base_da_str:<20}")
     print("-" * 75)
 
-
     print("\nFeature Coefficients (Interpretable Model Drivers):")
     for feat, coef in result["linear_model_coefficients"].items():
         print(f"  {feat:<22}: {coef:>+10.6f}")
 
     # Persist model artifact
-    models_dir = Path("models")
+    models_dir = Path("models").resolve()
     models_dir.mkdir(exist_ok=True)
-    model_path = models_dir / f"linear_{args.ticker.replace('.', '_')}.joblib"
+    safe_name = f"linear_{sanitize_path_component(ticker)}.joblib"
+    model_path = assert_safe_model_path(models_dir / safe_name, models_dir)
 
     # Train final production model on full feature set
     feature_df, feat_cols = build_feature_matrix(df, include_target=True, horizon_sessions=1)
@@ -320,44 +239,67 @@ def train_linear_command(args: argparse.Namespace) -> None:
     print(f"\nModel artifact saved to: {model_path.resolve()}\n")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="nextomni-stock",
-        description="NextOmni Stock Intelligence & Forecasting CLI",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def train_all_horizons_command(args: argparse.Namespace) -> None:
+    """Train direct models for 1-session, 5-session, and 21-session horizons with walk-forward validation."""
+    from src.data.db import get_observations
+    from src.models.multi_horizon import MultiHorizonForecaster
 
-    # Sync parser
-    sync_parser = subparsers.add_parser("sync", help="Synchronize historical market data")
-    sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
-    sync_parser.add_argument(
-        "--exchange",
-        choices=list(SUPPORTED_EXCHANGES.keys()),
-        help="Exchange MIC (XNYS, XKLS)",
-    )
-    sync_parser.add_argument("--name", type=str, default=None, help="Company name")
-    default_end = datetime.now().strftime("%Y-%m-%d")
-    default_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-    sync_parser.add_argument(
-        "--start", type=str, default=default_start, help="Start date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--end", type=str, default=default_end, help="End date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--all", action="store_true", help="Sync all default initial tickers"
-    )
+    ticker = validate_ticker(args.ticker)
+    df = get_observations(ticker)
+    if df.empty:
+        print(f"Error: No observations found for {ticker}. Run 'sync' first.")
+        sys.exit(1)
 
-    # Status parser
-    subparsers.add_parser("status", help="Show database status and tracked stocks")
+    exchange = validate_exchange(args.exchange) if args.exchange else df["exchange"].iloc[0]
+    model_family = validate_model_family(getattr(args, "model", "linear"))
 
-    # Analyze parser
-    analyze_parser = subparsers.add_parser(
-        "analyze", help="Run exploratory data analysis and export charts"
-    )
-    analyze_parser.add_argument(
-        "--ticker", type=str, required=True, help="Stock ticker to analyze (e.g. JPM, 1155.KL)"
-    )
+    print(f"\n==========================================================================")
+    print(f"  NextOmni Stock: Multi-Horizon Direct Model Training ({ticker}) [{model_family}]")
+    print(f"==========================================================================")
+    print("Training dedicated direct models for:")
+    print("  • 1 Session  (P_{t+1})  - Next Trading Day")
+    print("  • 5 Sessions (P_{t+5})  - Next Trading Week (1 Calendar Week)")
+    print("  • 21 Sessions (P_{t+21}) - Next Trading Month (~1 Calendar Month)")
+    print("\nRunning Walk-Forward Out-of-Sample Validation across all horizons...")
+
+    forecaster = MultiHorizonForecaster(model_family=model_family, alpha=args.alpha)
+    validation_results = forecaster.evaluate_walk_forward_all(df, min_train_sessions=args.min_train)
+
+    print("\n" + "=" * 90)
+    print(f"  Multi-Horizon Out-of-Sample Performance Comparison ({ticker}) [{model_family}]")
+    print("=" * 90)
+    print(f"{'Horizon':<15} {'Steps':<8} {'Model MAE':<14} {'Baseline MAE':<15} {'Improvement':<13} {'Dir Acc (%)':<12}")
+    print("-" * 90)
+
+    for h_key, res in validation_results.items():
+        m_m = res["model_metrics"]
+        b_m = res["baseline_metrics"]
+        mae_imp = f"{res['mae_improvement_pct']:>+6.2f}%"
+        da = f"{m_m['directional_accuracy_pct']:.2f}%"
+        print(
+            f"{h_key:<15} {res['walk_forward_steps']:<8} "
+            f"{m_m['mae']:<14.4f} {b_m['mae']:<15.4f} {mae_imp:<13} {da:<12}"
+        )
+    print("-" * 90)
+
+    # Train final models on full feature sets and save
+    forecaster.fit(df)
+    models_dir = Path("models").resolve()
+    save_path = forecaster.save_models(models_dir, ticker)
+    print(f"\nMulti-horizon models saved to: {save_path.resolve()}")
+
+    # Generate current future predictions
+    future_forecasts = forecaster.predict_all_horizons(df, ticker, exchange)
+    print("\nCurrent Multi-Horizon Forecasts (from latest observed session):")
+    print(f"{'Horizon':<15} {'Target Date':<14} {'Origin Price':<14} {'Predicted Price':<16} {'Exp Return':<12}")
+    print("-" * 75)
+    for h_key, fc in future_forecasts.items():
+        print(
+            f"{h_key:<15} {fc['target_session_date']:<14} "
+            f"{fc['origin_price']:<14.4f} {fc['predicted_price']:<16.4f} {fc['expected_return_pct']:>+6.2f}%"
+        )
+    print("-" * 75 + "\n")
+
 
 def predict_command(args: argparse.Namespace) -> None:
     """Generate and record a live forecast prediction into SQLite."""
@@ -365,16 +307,19 @@ def predict_command(args: argparse.Namespace) -> None:
     from src.data.db import get_observations
     from src.evaluation.tracker import PredictionTracker
     from src.features.builder import build_feature_matrix
+    from src.models.base_model import BaseForecaster
     from src.models.baseline import PersistenceBaselineModel
     from src.models.linear_model import LinearRegressionForecaster
+    from src.models.multi_horizon import MultiHorizonForecaster
 
-    df = get_observations(args.ticker)
+    ticker = validate_ticker(args.ticker)
+    df = get_observations(ticker)
     if df.empty:
-        print(f"Error: No observations found for {args.ticker}. Run 'sync' first.")
+        print(f"Error: No observations found for {ticker}. Run 'sync' first.")
         sys.exit(1)
 
-    exchange = args.exchange or df["exchange"].iloc[0]
-    horizon = args.horizon
+    exchange = validate_exchange(args.exchange) if args.exchange else df["exchange"].iloc[0]
+    horizon = int(args.horizon)
     tracker = PredictionTracker()
 
     latest_obs = df.iloc[-1]
@@ -392,26 +337,41 @@ def predict_command(args: argparse.Namespace) -> None:
         target_ts = cal.next_session(origin_ts)
     target_date_str = target_ts.strftime("%Y-%m-%d")
 
+    safe_ticker = sanitize_path_component(ticker)
+    models_dir = Path("models").resolve()
+    multi_dir = models_dir / f"multi_horizon_{safe_ticker}"
+    linear_file = models_dir / f"linear_{safe_ticker}.joblib"
+
     if args.model == "baseline":
         model_name = "PersistenceBaseline"
         model_version = "1.0.0"
         pred_price = origin_price
         repro_ref = "persistence_t"
-    else:
-        model_path = Path("models") / f"linear_{args.ticker.replace('.', '_')}.joblib"
-        if not model_path.exists():
-            print(f"Model artifact not found for {args.ticker}. Run 'train-linear --ticker {args.ticker}' first.")
-            sys.exit(1)
-        forecaster = LinearRegressionForecaster.load(model_path)
+    elif multi_dir.exists():
+        multi_forecaster = MultiHorizonForecaster.load_models(models_dir, ticker)
+        horizon_map = {1: "1_SESSION", 5: "5_SESSIONS", 21: "21_SESSIONS"}
+        h_key = horizon_map.get(horizon, "1_SESSION")
+        forecaster = multi_forecaster.models[h_key]
+        feature_df, feat_cols = build_feature_matrix(df, include_target=False)
+        latest_features = feature_df.iloc[-1][feat_cols].to_frame().T
+        pred_price = float(forecaster.predict(latest_features, p_origin=origin_price)[0])
+        model_name = f"{forecaster.model_name}_Direct_{h_key}"
+        model_version = forecaster.model_version
+        repro_ref = str(multi_dir / f"{h_key}.joblib")
+    elif linear_file.exists():
+        forecaster = LinearRegressionForecaster.load(linear_file)
         feature_df, feat_cols = build_feature_matrix(df, include_target=False)
         latest_features = feature_df.iloc[-1][feat_cols].to_frame().T
         pred_price = float(forecaster.predict(latest_features, p_origin=origin_price)[0])
         model_name = forecaster.model_name
         model_version = forecaster.model_version
-        repro_ref = str(model_path)
+        repro_ref = str(linear_file)
+    else:
+        print(f"Model artifact not found for {ticker}. Run 'train-all-horizons --ticker {ticker}' first.")
+        sys.exit(1)
 
     record = tracker.record_prediction(
-        ticker=args.ticker,
+        ticker=ticker,
         exchange=exchange,
         forecast_origin_session=origin_session,
         origin_price=origin_price,
@@ -457,7 +417,8 @@ def list_predictions_command(args: argparse.Namespace) -> None:
     """Display table of recorded predictions and evaluations."""
     from src.data.db import get_predictions
 
-    df = get_predictions(status=args.status, ticker=args.ticker)
+    ticker = validate_ticker(args.ticker) if args.ticker else None
+    df = get_predictions(status=args.status, ticker=ticker)
     if df.empty:
         print("\nNo prediction records found.\n")
         return
@@ -488,10 +449,14 @@ def list_predictions_command(args: argparse.Namespace) -> None:
 def monitor_command(args: argparse.Namespace) -> None:
     """Monitor real-time quotes with session status and latency badges."""
     from src.data.monitor import MarketMonitorService
+
+    ticker = validate_ticker(args.ticker) if args.ticker else None
+    exchange = validate_exchange(args.exchange) if args.exchange else None
+
     service = MarketMonitorService()
     quotes = service.get_multi_quotes(
-        tickers=[args.ticker] if args.ticker else None,
-        exchange=args.exchange,
+        tickers=[ticker] if ticker else None,
+        exchange=exchange,
         force_refresh=args.refresh,
     )
 
@@ -514,7 +479,9 @@ def monitor_command(args: argparse.Namespace) -> None:
 def session_status_command(args: argparse.Namespace) -> None:
     """Display real-time operational status of supported exchanges."""
     from src.data.session_status import ExchangeSessionEngine
-    exchanges = [args.exchange] if args.exchange else list(SUPPORTED_EXCHANGES.keys())
+
+    exchange = validate_exchange(args.exchange) if args.exchange else None
+    exchanges = [exchange] if exchange else list(SUPPORTED_EXCHANGES.keys())
 
     print("\nNextOmni Stock Exchange Session Status:")
     print(f"{'Exchange':<8} {'Name':<26} {'Status':<14} {'Open?':<8} {'Local Time':<30}")
@@ -541,124 +508,7 @@ def main() -> None:
     sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
     sync_parser.add_argument(
         "--exchange",
-        choices=list(SUPPORTED_EXCHANGES.keys()),
-        help="Exchange MIC (XNYS, XKLS)",
-    )
-    sync_parser.add_argument("--name", type=str, default=None, help="Company name")
-    default_end = datetime.now().strftime("%Y-%m-%d")
-    default_start = (datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d")
-    sync_parser.add_argument(
-        "--start", type=str, default=default_start, help="Start date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--end", type=str, default=default_end, help="End date YYYY-MM-DD"
-    )
-    sync_parser.add_argument(
-        "--all", action="store_true", help="Sync all default initial tickers"
-    )
-
-    # Status parser
-    subparsers.add_parser("status", help="Show database status and tracked stocks")
-
-    # Analyze parser
-    analyze_parser = subparsers.add_parser(
-        "analyze", help="Run exploratory data analysis and export charts"
-    )
-    analyze_parser.add_argument(
-        "--ticker", type=str, required=True, help="Stock ticker to analyze (e.g. JPM, 1155.KL)"
-    )
-
-    # Forecast Baseline parser
-    baseline_parser = subparsers.add_parser(
-        "forecast-baseline", help="Generate next-session persistence forecast & evaluate benchmark"
-    )
-    baseline_parser.add_argument(
-        "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
-    )
-    baseline_parser.add_argument(
-        "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
-    )
-
-    # Train Linear parser
-    linear_parser = subparsers.add_parser(
-        "train-linear", help="Train Linear Regression model with walk-forward validation"
-    )
-    linear_parser.add_argument(
-        "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
-    )
-def train_all_horizons_command(args: argparse.Namespace) -> None:
-    """Train direct models for 1-session, 5-session, and 21-session horizons with walk-forward validation."""
-    from src.data.db import get_observations
-    from src.models.multi_horizon import MultiHorizonForecaster
-
-    df = get_observations(args.ticker)
-    if df.empty:
-        print(f"Error: No observations found for {args.ticker}. Run 'sync' first.")
-        sys.exit(1)
-
-    exchange = args.exchange or df["exchange"].iloc[0]
-    currency = "USD" if exchange == "XNYS" else "MYR"
-
-    print(f"\n==========================================================================")
-    print(f"  NextOmni Stock: Multi-Horizon Direct Model Training ({args.ticker})")
-    print(f"==========================================================================")
-    print("Training dedicated direct models for:")
-    print("  • 1 Session  (P_{t+1})  - Next Trading Day")
-    print("  • 5 Sessions (P_{t+5})  - Next Trading Week (1 Calendar Week)")
-    print("  • 21 Sessions (P_{t+21}) - Next Trading Month (~1 Calendar Month)")
-    print("\nRunning Walk-Forward Out-of-Sample Validation across all horizons...")
-
-    forecaster = MultiHorizonForecaster(alpha=args.alpha)
-    validation_results = forecaster.evaluate_walk_forward_all(df, min_train_sessions=args.min_train)
-
-    print("\n" + "=" * 90)
-    print(f"  Multi-Horizon Out-of-Sample Performance Comparison ({args.ticker})")
-    print("=" * 90)
-    print(f"{'Horizon':<15} {'Steps':<8} {'Model MAE':<14} {'Baseline MAE':<15} {'Improvement':<13} {'Dir Acc (%)':<12}")
-    print("-" * 90)
-
-    for h_key, res in validation_results.items():
-        m_m = res["model_metrics"]
-        b_m = res["baseline_metrics"]
-        mae_imp = f"{res['mae_improvement_pct']:>+6.2f}%"
-        da = f"{m_m['directional_accuracy_pct']:.2f}%"
-        print(
-            f"{h_key:<15} {res['walk_forward_steps']:<8} "
-            f"{m_m['mae']:<14.4f} {b_m['mae']:<15.4f} {mae_imp:<13} {da:<12}"
-        )
-    print("-" * 90)
-
-    # Train final models on full feature sets and save
-    forecaster.fit(df)
-    models_dir = Path("models")
-    save_path = forecaster.save_models(models_dir, args.ticker)
-    print(f"\nMulti-horizon models saved to: {save_path.resolve()}")
-
-    # Generate current future predictions
-    future_forecasts = forecaster.predict_all_horizons(df, args.ticker, exchange)
-    print("\nCurrent Multi-Horizon Forecasts (from latest observed session):")
-    print(f"{'Horizon':<15} {'Target Date':<14} {'Origin Price':<14} {'Predicted Price':<16} {'Exp Return':<12}")
-    print("-" * 75)
-    for h_key, fc in future_forecasts.items():
-        print(
-            f"{h_key:<15} {fc['target_session_date']:<14} "
-            f"{fc['origin_price']:<14.4f} {fc['predicted_price']:<16.4f} {fc['expected_return_pct']:>+6.2f}%"
-        )
-    print("-" * 75 + "\n")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="nextomni-stock",
-        description="NextOmni Stock Intelligence & Forecasting CLI",
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # Sync parser
-    sync_parser = subparsers.add_parser("sync", help="Synchronize historical market data")
-    sync_parser.add_argument("--ticker", type=str, help="Stock ticker (e.g. JPM, 1155.KL)")
-    sync_parser.add_argument(
-        "--exchange",
+        type=str,
         choices=list(SUPPORTED_EXCHANGES.keys()),
         help="Exchange MIC (XNYS, XKLS)",
     )
@@ -719,13 +569,19 @@ def main() -> None:
         "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
     )
     multi_parser.add_argument(
+        "--model",
+        choices=["linear", "gradient_boosting"],
+        default="linear",
+        help="Forecasting model family (linear, gradient_boosting)",
+    )
+    multi_parser.add_argument(
         "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
     )
     multi_parser.add_argument(
         "--min-train", type=int, default=120, help="Minimum initial training sessions"
     )
     multi_parser.add_argument(
-        "--alpha", type=float, default=1.0, help="Ridge regularization strength alpha"
+        "--alpha", type=float, default=1.0, help="Ridge regularization strength alpha (linear only)"
     )
 
     # Predict parser
@@ -736,7 +592,10 @@ def main() -> None:
         "--ticker", type=str, required=True, help="Stock ticker (e.g. JPM, 1155.KL)"
     )
     predict_parser.add_argument(
-        "--model", choices=["linear", "baseline"], default="linear", help="Forecasting model to use"
+        "--model",
+        choices=["linear", "gradient_boosting", "baseline"],
+        default="linear",
+        help="Forecasting model family to use",
     )
     predict_parser.add_argument(
         "--horizon", type=int, default=1, choices=[1, 5, 21], help="Forecast horizon sessions"
@@ -807,10 +666,5 @@ def main() -> None:
         session_status_command(args)
 
 
-
 if __name__ == "__main__":
     main()
-
-
-
-

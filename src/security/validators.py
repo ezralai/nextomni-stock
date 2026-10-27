@@ -11,6 +11,8 @@ from typing import Set
 
 from src.config import SUPPORTED_EXCHANGES
 
+SUPPORTED_MODEL_FAMILIES = {"linear", "gradient_boosting", "baseline"}
+
 # Ticker pattern: 1 to 6 alphanumeric characters, optional exchange suffix (e.g. .KL)
 TICKER_REGEX = re.compile(r"^[A-Z0-9]{1,6}(\.[A-Z]{2})?$")
 ISO_DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -142,3 +144,30 @@ def assert_safe_model_path(target_path: Path, base_dir: Path) -> Path:
         )
 
     return resolved_target
+
+
+def validate_model_family(model: str) -> str:
+    """Validate model family choice against approved allowlist."""
+    if not model or not isinstance(model, str):
+        raise SecurityValidationError("Model family must be a non-empty string.")
+
+    cleaned = model.strip().lower()
+    if cleaned not in SUPPORTED_MODEL_FAMILIES:
+        raise SecurityValidationError(
+            f"Unsupported model family '{model}'. Must be one of {sorted(list(SUPPORTED_MODEL_FAMILIES))}"
+        )
+    return cleaned
+
+
+def assert_finite_number(val: float, field_name: str = "Value") -> float:
+    """Validate that a numeric value is a valid finite float (rejecting NaN, Inf, -Inf)."""
+    import math
+    try:
+        f_val = float(val)
+    except (TypeError, ValueError):
+        raise SecurityValidationError(f"{field_name} must be a valid float, got {type(val)}: {val}")
+
+    if not math.isfinite(f_val):
+        raise SecurityValidationError(f"{field_name} must be finite (got {val}).")
+
+    return f_val
