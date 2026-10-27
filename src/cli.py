@@ -808,6 +808,54 @@ def system_health_command(args: argparse.Namespace) -> None:
     print("=" * 65 + "\n")
 
 
+def screen_command(args: argparse.Namespace) -> None:
+    """Run cross-sectional alpha universe screener and display ranked asset leaderboard."""
+    import json
+    from src.analytics.screener import screen_asset_universe
+
+    exchange = validate_exchange(args.exchange) if args.exchange else None
+    model_family = validate_model_family(args.model)
+    horizon = args.horizon
+    top_n = int(args.top) if getattr(args, "top", None) else None
+
+    records = screen_asset_universe(
+        exchange=exchange,
+        horizon_sessions=horizon,
+        model_family=model_family,
+    )
+
+    if getattr(args, "json", False):
+        data = [r.to_dict() for r in records[:top_n]] if records else []
+        print(json.dumps(data, indent=2))
+        return
+
+    if not records:
+        print("\nNo qualified assets found with sufficient history for screening.\n")
+        return
+
+    display_records = records[:top_n] if top_n else records
+    print("\n" + "=" * 105)
+    print(f"  NextOmni Stock: Cross-Sectional Alpha Universe Screener ({len(display_records)} Assets)")
+    print(f"  Horizon: {horizon} Session(s) | Model: {model_family.upper()} | Filter: {exchange or 'ALL EXCHANGES'}")
+    print("=" * 105)
+    print(
+        f"{'Rank':<5} {'Ticker':<8} {'Exchange':<8} {'Price':<14} {'Exp Return':<12} "
+        f"{'Win Prob':<10} {'Conviction':<16} {'95% CF-VaR':<12} {'Sharpe':<8}"
+    )
+    print("-" * 105)
+
+    for r in display_records:
+        price_str = f"{r.latest_price:.2f} {r.currency}"
+        ret_str = f"{r.expected_return_pct:>+6.2f}%"
+        prob_str = f"{r.directional_win_probability * 100:.1f}%"
+        var_str = f"-{r.cornish_fisher_var_pct:.2f}%"
+        print(
+            f"{r.rank:<5} {r.ticker:<8} {r.exchange:<8} {price_str:<14} {ret_str:<12} "
+            f"{prob_str:<10} {r.conviction_label:<16} {var_str:<12} {r.predicted_sharpe:>+6.2f}"
+        )
+    print("=" * 105 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -1062,6 +1110,42 @@ def main() -> None:
         "--json", action="store_true", help="Output audit receipt as JSON"
     )
 
+    # Screener parser
+    screen_parser = subparsers.add_parser(
+        "screen", help="Scan and rank asset universe cross-sectionally"
+    )
+    screen_parser.add_argument(
+        "--exchange",
+        type=str,
+        choices=list(SUPPORTED_EXCHANGES.keys()),
+        default=None,
+        help="Optional exchange MIC filter (XNYS, XKLS)",
+    )
+    screen_parser.add_argument(
+        "--horizon",
+        type=int,
+        choices=[1, 5, 21],
+        default=5,
+        help="Forecast horizon in sessions (default: 5)",
+    )
+    screen_parser.add_argument(
+        "--model",
+        choices=["ensemble", "linear", "gradient_boosting"],
+        default="ensemble",
+        help="Forecasting model family (default: ensemble)",
+    )
+    screen_parser.add_argument(
+        "--top",
+        type=int,
+        default=None,
+        help="Limit output to top N ranked assets",
+    )
+    screen_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output screener rankings as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1101,6 +1185,8 @@ def main() -> None:
         backtest_command(args)
     elif args.command == "system-health":
         system_health_command(args)
+    elif args.command == "screen":
+        screen_command(args)
 
 
 if __name__ == "__main__":

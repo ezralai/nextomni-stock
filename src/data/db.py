@@ -210,6 +210,31 @@ def upsert_stock(
     conn.close()
 
 
+def get_all_stocks(
+    exchange: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> pd.DataFrame:
+    """Retrieve registered stocks with optional exchange filter.
+
+    Uses 100% parameter-bound queries (?).
+    """
+    conn = get_connection(db_path)
+    if exchange:
+        query = (
+            "SELECT ticker, exchange, company_name, currency, timezone "
+            "FROM stocks WHERE exchange = ? ORDER BY ticker ASC;"
+        )
+        df = pd.read_sql_query(query, conn, params=[exchange])
+    else:
+        query = (
+            "SELECT ticker, exchange, company_name, currency, timezone "
+            "FROM stocks ORDER BY ticker ASC;"
+        )
+        df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
+
+
 def save_observations(
     df: pd.DataFrame,
     db_path: Optional[Path] = None,

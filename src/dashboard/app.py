@@ -196,6 +196,42 @@ def render_dashboard() -> None:
         df_quotes = pd.DataFrame(records)
         st.dataframe(df_quotes, use_container_width=True, hide_index=True)
 
+        st.markdown("---")
+        with st.expander("⚡ Cross-Sectional Alpha Universe Screener", expanded=False):
+            st.markdown(
+                "Scan all synchronized stocks across NYSE and Bursa Malaysia, ranking assets cross-sectionally by expected return, "
+                "calibrated directional win probability, Cornish-Fisher 95% downside tail risk, and expected Sharpe ratio."
+            )
+            col_sc1, col_sc2 = st.columns(2)
+            with col_sc1:
+                sc_horizon = st.selectbox("Screener Horizon", [1, 5, 21], index=1, format_func=lambda h: f"{h} Session(s)", key="sc_h")
+            with col_sc2:
+                sc_model = st.selectbox("Screener Model Family", ["ensemble", "linear", "gradient_boosting"], index=0, key="sc_m")
+
+            if st.button("🔍 Scan & Rank Asset Universe", use_container_width=True):
+                with st.spinner("Screening cross-sectional asset universe..."):
+                    from src.analytics.screener import screen_asset_universe
+                    sc_results = screen_asset_universe(horizon_sessions=sc_horizon, model_family=sc_model)
+                    if sc_results:
+                        sc_df = pd.DataFrame([
+                            {
+                                "Rank": r.rank,
+                                "Ticker": r.ticker,
+                                "Exchange": r.exchange,
+                                "Company": r.company_name,
+                                "Price": f"{r.latest_price:.2f} {r.currency}",
+                                "Expected Return": f"{r.expected_return_pct:+.2f}%",
+                                "Win Prob": f"{r.directional_win_probability * 100:.1f}%",
+                                "Conviction": r.conviction_label,
+                                "95% CF-VaR": f"-{r.cornish_fisher_var_pct:.2f}%",
+                                "Sharpe Score": f"{r.predicted_sharpe:+.2f}",
+                            }
+                            for r in sc_results
+                        ])
+                        st.dataframe(sc_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No synchronized assets with sufficient observation history found. Synchronize tickers first.")
+
     # =========================================================================
     # TAB 2: Stock Analytics & EDA
     # =========================================================================
