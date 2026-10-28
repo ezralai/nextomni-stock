@@ -565,6 +565,26 @@ def render_dashboard() -> None:
                                 else:
                                     st.info(f"ℹ️ {coint_rec.summary}")
 
+            # Market Microstructure & Liquidity Profile
+            with st.expander("💧 Market Microstructure & Liquidity Profile", expanded=False):
+                st.markdown(
+                    "Evaluate high-frequency liquidity friction and price impact metrics derived from daily OHLCV quotes: "
+                    "Amihud Illiquidity Ratio (price impact per $1M traded) and Corwin-Schultz High-Low bid-ask spread %."
+                )
+                from src.features.microstructure import evaluate_liquidity_profile
+                liq_rec = evaluate_liquidity_profile(df_obs, ticker=selected_ticker)
+
+                col_l1, col_l2, col_l3, col_l4 = st.columns(4)
+                col_l1.metric("Corwin-Schultz Spread", f"{liq_rec.latest_corwin_schultz_spread_pct:.2f}%", delta=f"{liq_rec.mean_corwin_schultz_spread_pct:.2f}% mean")
+                col_l2.metric("Amihud Illiquidity", f"{liq_rec.latest_amihud_illiq:.4f}", delta=f"{liq_rec.mean_amihud_illiq:.4f} mean")
+                col_l3.metric("Daily Turnover ($)", f"${liq_rec.mean_dollar_volume:,.0f}")
+                col_l4.metric("Liquidity Regime", liq_rec.liquidity_regime)
+
+                if liq_rec.is_liquid:
+                    st.success(f"💧 {liq_rec.summary}")
+                else:
+                    st.warning(f"⚠️ {liq_rec.summary}")
+
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
     # =========================================================================

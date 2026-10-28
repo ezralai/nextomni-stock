@@ -11,7 +11,7 @@ import pandas as pd
 from src.config import PRICE_COLUMN
 from src.models.splitter import align_forecasting_target
 
-FEATURE_COLUMNS = [
+BASE_FEATURE_COLUMNS = [
     "lag_return_1",
     "lag_return_2",
     "lag_return_5",
@@ -26,12 +26,21 @@ FEATURE_COLUMNS = [
     "macd_norm",
 ]
 
+MICROSTRUCTURE_COLUMNS = [
+    "amihud_illiq_21",
+    "cs_spread_21",
+]
+
+ALL_FEATURE_COLUMNS = BASE_FEATURE_COLUMNS + MICROSTRUCTURE_COLUMNS
+FEATURE_COLUMNS = BASE_FEATURE_COLUMNS
+
 
 def build_feature_matrix(
     df: pd.DataFrame,
     include_target: bool = True,
     horizon_sessions: int = 1,
     price_col: str = PRICE_COLUMN,
+    include_microstructure: bool = False,
 ) -> Tuple[pd.DataFrame, List[str]]:
     """Construct leak-free features for time-series forecasting.
 
@@ -129,13 +138,27 @@ def build_feature_matrix(
     macd_signal = macd_line.ewm(span=9, adjust=False).mean()
     data["macd_norm"] = macd_line - macd_signal
 
-    # 10. Target alignment
+    # 10. Market Microstructure Liquidity Signals (21-session rolling)
+    from src.features.microstructure import (
+        compute_amihud_illiquidity,
+        compute_corwin_schultz_spread,
+    )
+    data["amihud_illiq_21"] = compute_amihud_illiquidity(
+        daily_returns, data[price_col], data["volume"], window=21
+    )
+    data["cs_spread_21"] = compute_corwin_schultz_spread(
+        data.get("high", data[price_col]), data.get("low", data[price_col]), window=21
+    )
+
+    # 11. Target alignment
     if include_target:
         data = align_forecasting_target(
             data, horizon_sessions=horizon_sessions, price_col=price_col
         )
 
-    # Drop the initial warm-up rows where rolling windows are NaN (first 21 sessions)
-    feature_ready = data.dropna(subset=FEATURE_COLUMNS).copy().reset_index(drop=True)
+    active_columns = ALL_FEATURE_COLUMNS if include_microstructure else FEATURE_COLUMNS
 
-    return feature_ready, FEATURE_COLUMNS
+    # Drop the initial warm-up rows where rolling windows are NaN (first 21 sessions)
+    feature_ready = data.dropna(subset=active_columns).copy().reset_index(drop=True)
+
+    return feature_ready, active_columns

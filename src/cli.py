@@ -1098,6 +1098,41 @@ def cointegrate_command(args: argparse.Namespace) -> None:
     print("=" * 75 + "\n")
 
 
+def liquidity_report_command(args: argparse.Namespace) -> None:
+    """Evaluate market microstructure liquidity and price impact diagnostics."""
+    import json
+    from src.data.db import get_observations
+    from src.features.microstructure import evaluate_liquidity_profile
+
+    ticker = validate_ticker(args.ticker)
+    window = int(args.window) if getattr(args, "window", None) else 21
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observations found for {ticker}. Please synchronize data first.\n")
+        return
+
+    receipt = evaluate_liquidity_profile(df_obs, ticker=ticker, window=window)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 70)
+    print("  NextOmni Stock: Market Microstructure & Liquidity Profile")
+    print("=" * 70)
+    print(f"  Ticker Symbol:             {receipt.ticker}")
+    print(f"  Sample Size:               {receipt.sample_size} sessions")
+    print(f"  Latest Corwin-Schultz Sprd:{receipt.latest_corwin_schultz_spread_pct:>6.2f}%")
+    print(f"  Mean Corwin-Schultz Spread:{receipt.mean_corwin_schultz_spread_pct:>6.2f}%")
+    print(f"  Latest Amihud Illiquidity: {receipt.latest_amihud_illiq:>7.4f}")
+    print(f"  Mean Amihud Illiquidity:   {receipt.mean_amihud_illiq:>7.4f}")
+    print(f"  Mean Daily Turnover:       ${receipt.mean_dollar_volume:>13,.0f}")
+    print(f"  Liquidity Regime:          {receipt.liquidity_regime}")
+    print(f"  Summary:                   {receipt.summary}")
+    print("=" * 70 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -1532,6 +1567,28 @@ def main() -> None:
         help="Output cointegration receipt as JSON",
     )
 
+    # Liquidity report parser
+    liq_parser = subparsers.add_parser(
+        "liquidity-report", help="Audit market microstructure liquidity and price impact"
+    )
+    liq_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol to audit (e.g. JPM, 1155.KL)",
+    )
+    liq_parser.add_argument(
+        "--window",
+        type=int,
+        default=21,
+        help="Rolling observation window in sessions (default: 21)",
+    )
+    liq_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output liquidity receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1583,6 +1640,8 @@ def main() -> None:
         lead_lag_command(args)
     elif args.command == "cointegrate":
         cointegrate_command(args)
+    elif args.command == "liquidity-report":
+        liquidity_report_command(args)
 
 
 if __name__ == "__main__":
