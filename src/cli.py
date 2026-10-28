@@ -1365,6 +1365,51 @@ def tail_dependence_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def factor_attribution_command(args: argparse.Namespace) -> None:
+    """Evaluate multi-factor risk attribution and style factor exposures."""
+    import json
+    import math
+    from src.analytics.factor_attribution import evaluate_factor_attribution
+    from src.security.validators import validate_exchange, validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    exchange = validate_exchange(args.exchange) if getattr(args, "exchange", None) else "XNYS"
+
+    receipt = evaluate_factor_attribution(ticker=ticker, exchange=exchange)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Multi-Factor Risk Attribution & Style Exposure Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:         {receipt.ticker} ({receipt.exchange})")
+    print(f"  Sample History:            {receipt.sample_sessions} aligned sessions")
+    print(f"  Regression Fit (R²):       {receipt.r_squared * 100:.1f}% (Adj R²: {receipt.adj_r_squared * 100:.1f}%)")
+    print(f"  Annualized Alpha (α):      {receipt.annualized_alpha_pct:+.2f}% (t={receipt.alpha_t_stat:.2f}, p={receipt.alpha_p_value:.3f})")
+    print("-" * 80)
+    print("  Euler Variance Decomposition:")
+    sys_vol = receipt.total_volatility_ann_pct * math.sqrt(receipt.systemic_risk_share_pct / 100.0) if receipt.total_volatility_ann_pct > 0 else 0.0
+    print(f"    - Systematic Factor Risk: {receipt.systemic_risk_share_pct:>5.1f}% (Ann Vol: {sys_vol:.1f}%)")
+    print(f"    - Idiosyncratic Specific: {receipt.specific_risk_share_pct:>5.1f}% (Ann Vol: {receipt.idiosyncratic_volatility_ann_pct:.1f}%)")
+    print(f"    - Total Asset Volatility: {receipt.total_volatility_ann_pct:>5.1f}% annualized")
+    print("-" * 80)
+    print("  Style Factor Loadings (Newey-West HAC Robust Estimator):")
+    header = f"    {'Factor':<10} {'Beta (β)':>10} {'t-stat':>10} {'p-value':>10} {'% Risk Contrib':>16}"
+    print(header)
+    print("    " + "-" * 60)
+    for f, beta in receipt.factor_betas.items():
+        t_stat = receipt.factor_t_stats.get(f, 0.0)
+        p_val = receipt.factor_p_values.get(f, 1.0)
+        p_pct = receipt.factor_risk_contributions_pct.get(f, 0.0)
+        print(f"    {f:<10} {beta:>10.4f} {t_stat:>10.2f} {p_val:>10.3f} {p_pct:>15.1f}%")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):       {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -1943,6 +1988,29 @@ def main() -> None:
         help="Output tail dependence receipt as JSON",
     )
 
+    # Factor attribution parser
+    factor_parser = subparsers.add_parser(
+        "factor-attribution", help="Evaluate multi-factor risk attribution and style exposures"
+    )
+    factor_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. JPM, MSFT)",
+    )
+    factor_parser.add_argument(
+        "--exchange",
+        type=str,
+        choices=list(SUPPORTED_EXCHANGES.keys()),
+        default="XNYS",
+        help="Exchange MIC code (default: XNYS)",
+    )
+    factor_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output factor attribution receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2006,6 +2074,8 @@ def main() -> None:
         toxicity_report_command(args)
     elif args.command == "tail-dependence":
         tail_dependence_command(args)
+    elif args.command == "factor-attribution":
+        factor_attribution_command(args)
 
 
 if __name__ == "__main__":

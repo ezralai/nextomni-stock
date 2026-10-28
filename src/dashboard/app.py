@@ -707,6 +707,41 @@ def render_dashboard() -> None:
                     ])
                     st.dataframe(df_breaks, use_container_width=True, hide_index=True)
 
+            # Multi-Factor Risk Attribution & Style Exposure
+            with st.expander("🔬 Multi-Factor Risk Attribution & Style Exposure", expanded=False):
+                st.markdown(
+                    "Decompose asset volatility into **Systematic Factor Risk** and **Idiosyncratic Specific Risk** "
+                    "using leak-free universe style factors (Market, Momentum, Low Volatility, and Short-Term Reversal) "
+                    "with **Newey-West HAC** robust standard errors."
+                )
+                from src.analytics.factor_attribution import evaluate_factor_attribution
+                fa_rec = evaluate_factor_attribution(ticker=selected_ticker, exchange=selected_exchange)
+
+                if fa_rec.sample_sessions >= 15:
+                    col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+                    col_f1.metric("Regression Fit (R²)", f"{fa_rec.r_squared * 100:.1f}%", delta=f"{fa_rec.adj_r_squared * 100:.1f}% Adj")
+                    col_f2.metric("Annualized Alpha (α)", f"{fa_rec.annualized_alpha_pct:+.2f}%", delta=f"t={fa_rec.alpha_t_stat:.2f}")
+                    col_f3.metric("Systematic Factor Risk", f"{fa_rec.systemic_risk_share_pct:.1f}%")
+                    col_f4.metric("Idiosyncratic Specific Risk", f"{fa_rec.specific_risk_share_pct:.1f}%")
+
+                    if fa_rec.factor_betas:
+                        st.markdown("**Style Factor Loadings (Newey-West HAC Robust Estimator):**")
+                        fa_df = pd.DataFrame([
+                            {
+                                "Factor": f,
+                                "Beta (β)": f"{fa_rec.factor_betas.get(f, 0.0):.4f}",
+                                "t-stat": f"{fa_rec.factor_t_stats.get(f, 0.0):.2f}",
+                                "p-value": f"{fa_rec.factor_p_values.get(f, 1.0):.4f}",
+                                "Risk Contrib (%)": f"{fa_rec.factor_risk_contributions_pct.get(f, 0.0):.1f}%",
+                            }
+                            for f in fa_rec.factor_betas.keys()
+                        ])
+                        st.dataframe(fa_df, use_container_width=True, hide_index=True)
+
+                    st.caption(f"🛡️ **Factor Summary:** {fa_rec.summary} | **HMAC Digest:** `{fa_rec.signature[:16]}...` (Verified: `{fa_rec.verify_integrity()}`)")
+                else:
+                    st.info(f"ℹ️ {fa_rec.summary}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
