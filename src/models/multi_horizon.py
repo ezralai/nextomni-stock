@@ -34,6 +34,7 @@ from src.models.base_model import BaseForecaster
 from src.models.ensemble import ConvexEnsembleForecaster
 from src.models.gb_model import GradientBoostingForecaster
 from src.models.linear_model import LinearRegressionForecaster
+from src.models.stacking import StackingForecaster
 from src.security.audit import sign_model_artifact, verify_model_artifact
 from src.security.validators import validate_model_family
 
@@ -122,6 +123,25 @@ class MultiHorizonForecaster:
             lin = LinearRegressionForecaster(alpha=self.alpha, model_version=self.model_version)
             gb = GradientBoostingForecaster(model_version=self.model_version, **kwargs)
             return RegimeAdaptiveForecaster(
+                linear_forecaster=lin,
+                gb_forecaster=gb,
+                model_version=self.model_version,
+            )
+        if self.model_family == "stacking":
+            kwargs = dict(self.model_kwargs)
+            if horizon_key == "1_SESSION":
+                kwargs.setdefault("max_depth", 1)
+                kwargs.setdefault("l2_regularization", 20.0)
+                kwargs.setdefault("min_samples_leaf", 30)
+                kwargs.setdefault("max_iter", 20)
+            else:
+                kwargs.setdefault("max_depth", 3)
+                kwargs.setdefault("l2_regularization", 1.0)
+                kwargs.setdefault("min_samples_leaf", 15)
+                kwargs.setdefault("max_iter", 50)
+            lin = LinearRegressionForecaster(alpha=self.alpha, model_version=self.model_version)
+            gb = GradientBoostingForecaster(model_version=self.model_version, **kwargs)
+            return StackingForecaster(
                 linear_forecaster=lin,
                 gb_forecaster=gb,
                 model_version=self.model_version,
@@ -429,6 +449,8 @@ class MultiHorizonForecaster:
             forecaster_cls = ConvexEnsembleForecaster
         elif instance.model_family == "adaptive_ensemble":
             forecaster_cls = RegimeAdaptiveForecaster
+        elif instance.model_family == "stacking":
+            forecaster_cls = StackingForecaster
         else:
             forecaster_cls = LinearRegressionForecaster
 

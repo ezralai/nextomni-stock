@@ -13,7 +13,7 @@ import pandas as pd
 
 from src.config import SUPPORTED_EXCHANGES
 
-SUPPORTED_MODEL_FAMILIES = {"linear", "gradient_boosting", "baseline", "ensemble", "adaptive_ensemble"}
+SUPPORTED_MODEL_FAMILIES = {"linear", "gradient_boosting", "baseline", "ensemble", "adaptive_ensemble", "stacking"}
 
 
 # Ticker pattern: 1 to 6 alphanumeric characters, optional exchange suffix (e.g. .KL)

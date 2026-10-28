@@ -1401,9 +1401,9 @@ def main() -> None:
     )
     multi_parser.add_argument(
         "--model",
-        choices=["linear", "gradient_boosting", "ensemble", "adaptive_ensemble"],
+        choices=["linear", "gradient_boosting", "ensemble", "adaptive_ensemble", "stacking"],
         default="linear",
-        help="Forecasting model family (linear, gradient_boosting, ensemble, adaptive_ensemble)",
+        help="Forecasting model family (linear, gradient_boosting, ensemble, adaptive_ensemble, stacking)",
     )
     multi_parser.add_argument(
         "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
@@ -1424,7 +1424,7 @@ def main() -> None:
     )
     predict_parser.add_argument(
         "--model",
-        choices=["linear", "gradient_boosting", "ensemble", "adaptive_ensemble", "baseline"],
+        choices=["linear", "gradient_boosting", "ensemble", "adaptive_ensemble", "stacking", "baseline"],
         default="linear",
         help="Forecasting model family to use",
     )
@@ -1545,7 +1545,7 @@ def main() -> None:
     )
     backtest_parser.add_argument(
         "--model",
-        choices=["ensemble", "adaptive_ensemble", "linear", "gradient_boosting"],
+        choices=["ensemble", "adaptive_ensemble", "stacking", "linear", "gradient_boosting"],
         default="ensemble",
         help="Forecasting model family (default: ensemble)",
     )
@@ -1605,7 +1605,7 @@ def main() -> None:
     )
     screen_parser.add_argument(
         "--model",
-        choices=["ensemble", "adaptive_ensemble", "linear", "gradient_boosting"],
+        choices=["ensemble", "adaptive_ensemble", "stacking", "linear", "gradient_boosting"],
         default="ensemble",
         help="Forecasting model family (default: ensemble)",
     )
@@ -1830,7 +1830,7 @@ def main() -> None:
     )
     crps_parser.add_argument(
         "--model",
-        choices=["ensemble", "adaptive_ensemble", "linear", "gradient_boosting"],
+        choices=["ensemble", "adaptive_ensemble", "stacking", "linear", "gradient_boosting"],
         default=None,
         help="Optional model family filter",
     )

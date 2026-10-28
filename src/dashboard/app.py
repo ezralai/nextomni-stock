@@ -96,8 +96,9 @@ def render_dashboard() -> None:
 
     raw_model = st.sidebar.selectbox(
         "Forecasting Architecture",
-        options=["adaptive_ensemble", "ensemble", "gradient_boosting", "linear"],
+        options=["stacking", "adaptive_ensemble", "ensemble", "gradient_boosting", "linear"],
         format_func=lambda x: {
+            "stacking": "🏆 Stacking Meta-Learner (Out-of-Fold Super Learner)",
             "adaptive_ensemble": "🧠 Dynamic Regime-Adaptive (Market-State Conditional)",
             "ensemble": "🛡️⚡ Convex Ensemble (Ridge + GBDT)",
             "gradient_boosting": "⚡ Gradient Boosting (Non-Linear)",
