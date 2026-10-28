@@ -615,6 +615,42 @@ def render_dashboard() -> None:
                     ])
                     st.dataframe(df_ts, use_container_width=True, hide_index=True)
 
+            # Bayesian Online Change-Point Detection (BOCPD) Engine
+            with st.expander("🔮 Bayesian Online Change-Point Detection (BOCPD)", expanded=False):
+                st.markdown(
+                    "Adams & MacKay (2007) exact Bayesian change-point inference on run-length posterior distribution "
+                    "$P(r_t | x_{1:t})$ using conjugate Student-t predictive updates. Identifies structural regime shifts "
+                    "and mean/volatility breaks in online $O(1)$ memory without moving average lag."
+                )
+                from src.analytics.changepoints import detect_bayesian_changepoints
+
+                col_cp_cfg, _ = st.columns([2, 4])
+                with col_cp_cfg:
+                    hazard_val = st.slider("Hazard Timescale (λ Sessions)", min_value=20, max_value=250, value=100, step=10, key="bocpd_lambda_slider")
+
+                cp_receipt = detect_bayesian_changepoints(df_obs, ticker=selected_ticker, hazard_lambda=hazard_val)
+
+                col_cp1, col_cp2, col_cp3, col_cp4 = st.columns(4)
+                col_cp1.metric("Current Run-Length", f"{cp_receipt.current_run_length} sessions")
+                col_cp2.metric("Break Probability", f"{cp_receipt.current_change_point_prob * 100:.1f}%")
+                col_cp3.metric("Regime Stability", cp_receipt.regime_stability_status)
+                col_cp4.metric("Breaks Detected", f"{len(cp_receipt.detected_break_dates)}")
+
+                if cp_receipt.regime_stability_status == "STRUCTURAL_BREAK_DETECTED":
+                    st.error(f"🚨 **Structural Break Detected:** {cp_receipt.summary}")
+                elif cp_receipt.regime_stability_status == "REGIME_UNCERTAINTY":
+                    st.warning(f"⚠️ **Regime Uncertainty:** {cp_receipt.summary}")
+                else:
+                    st.success(f"🛡️ **Regime Stability:** {cp_receipt.summary}")
+
+                if cp_receipt.detected_break_dates:
+                    st.markdown("**Historical Structural Break Sessions:**")
+                    df_breaks = pd.DataFrame([
+                        {"Event #": i + 1, "Break Session Date": d}
+                        for i, d in enumerate(cp_receipt.detected_break_dates)
+                    ])
+                    st.dataframe(df_breaks, use_container_width=True, hide_index=True)
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

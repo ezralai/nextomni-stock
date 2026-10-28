@@ -1224,8 +1224,47 @@ def crps_eval_command(args: argparse.Namespace) -> None:
     print("=" * 75 + "\n")
 
 
+def changepoint_detect_command(args: argparse.Namespace) -> None:
+    """Detect structural breaks and regime change points using Bayesian Online Change-Point Detection."""
+    import json
+    from src.data.db import get_observations
+    from src.analytics.changepoints import detect_bayesian_changepoints
+
+    ticker = validate_ticker(args.ticker)
+    hazard = int(args.hazard) if getattr(args, "hazard", None) else 100
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observations found for {ticker}. Please synchronize data first.\n")
+        return
+
+    receipt = detect_bayesian_changepoints(df_obs, ticker=ticker, hazard_lambda=hazard)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 75)
+    print("  NextOmni Stock: Bayesian Online Change-Point & Structural Break Audit")
+    print("=" * 75)
+    print(f"  Ticker Symbol:             {receipt.ticker}")
+    print(f"  Sample Size:               {receipt.sample_sessions} sessions")
+    print(f"  Hazard Timescale (λ):      {receipt.hazard_lambda} sessions")
+    print("-" * 75)
+    print(f"  Current Run-Length:        {receipt.current_run_length} sessions since last break")
+    print(f"  Change-Point Probability:  {receipt.current_change_point_prob * 100:>6.2f}%")
+    print(f"  Regime Stability Status:   {receipt.regime_stability_status}")
+    if receipt.detected_break_dates:
+        breaks_str = ", ".join(receipt.detected_break_dates[-5:])
+        print(f"  Recent Structural Breaks:  {breaks_str}")
+    print("-" * 75)
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 75 + "\n")
+
+
 
 def main() -> None:
+
 
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -1731,10 +1770,26 @@ def main() -> None:
         help="Optional model family filter",
     )
 
-    crps_parser.add_argument(
+    # Changepoint detection parser
+    changepoint_parser = subparsers.add_parser(
+        "changepoint-detect", help="Detect structural breaks and regime shifts using Bayesian Online Change-Point Detection"
+    )
+    changepoint_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol to audit (e.g. JPM, 1155.KL)",
+    )
+    changepoint_parser.add_argument(
+        "--hazard",
+        type=int,
+        default=100,
+        help="Expected timescale between regime shifts in trading sessions (default: 100)",
+    )
+    changepoint_parser.add_argument(
         "--json",
         action="store_true",
-        help="Output probabilistic evaluation receipt as JSON",
+        help="Output change-point receipt as JSON",
     )
 
     args = parser.parse_args()
@@ -1794,6 +1849,8 @@ def main() -> None:
         volatility_report_command(args)
     elif args.command == "crps-eval":
         crps_eval_command(args)
+    elif args.command == "changepoint-detect":
+        changepoint_detect_command(args)
 
 
 if __name__ == "__main__":
