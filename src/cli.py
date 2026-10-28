@@ -1324,6 +1324,47 @@ def toxicity_report_command(args: argparse.Namespace) -> None:
     print("=" * 75 + "\n")
 
 
+def tail_dependence_command(args: argparse.Namespace) -> None:
+    """Evaluate multi-asset asymmetric lower-tail dependence and joint crash fragility."""
+    import json
+    from src.analytics.copula import evaluate_universe_tail_dependence
+    from src.security.validators import validate_exchange
+
+    exchange = validate_exchange(args.exchange) if getattr(args, "exchange", None) else None
+    threshold = float(args.threshold) if getattr(args, "threshold", None) else 0.05
+
+    receipt = evaluate_universe_tail_dependence(exchange=exchange, threshold=threshold)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Asymmetric Lower-Tail Dependence & Joint Crash Fragility")
+    print("=" * 80)
+    print(f"  Assets Evaluated:          {len(receipt.tickers)} securities ({', '.join(receipt.tickers)})")
+    print(f"  Overlapping Sessions:      {receipt.sample_sessions} sessions")
+    print(f"  Tail Quantile Cutoff (q):  {receipt.tail_threshold * 100:.1f}% extreme tail")
+    print("-" * 80)
+    print(f"  Market Joint Crash Regime: {receipt.market_joint_crash_regime}")
+    p1, p2, val = receipt.highest_risk_pair
+    print(f"  Highest Co-Crash Pair:     {p1} & {p2} (λ_L = {val * 100:.1f}%)")
+    print("-" * 80)
+    print("  Systemic Joint Fragility Scores (Mean Off-Diagonal Co-Crash Risk):")
+    for t, score in receipt.systemic_fragility_scores.items():
+        print(f"    - {t:<10}: {score * 100:>5.1f}%")
+    print("-" * 80)
+    print("  Lower-Tail Dependence Matrix (λ_L):")
+    header = "  " + f"{'':<8}" + "".join(f"{t:>10}" for t in receipt.tickers)
+    print(header)
+    for t1 in receipt.tickers:
+        row_str = "  " + f"{t1:<8}" + "".join(f"{receipt.tail_dependence_matrix.loc[t1, t2] * 100:>9.1f}%" for t2 in receipt.tickers)
+        print(row_str)
+    print("-" * 80)
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -1879,6 +1920,29 @@ def main() -> None:
         help="Output toxicity receipt as JSON",
     )
 
+    # Tail dependence parser
+    tail_parser = subparsers.add_parser(
+        "tail-dependence", help="Evaluate multi-asset lower-tail dependence and joint crash fragility"
+    )
+    tail_parser.add_argument(
+        "--exchange",
+        type=str,
+        choices=list(SUPPORTED_EXCHANGES.keys()),
+        default=None,
+        help="Optional exchange MIC filter (XNYS, XKLS)",
+    )
+    tail_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.05,
+        help="Lower-tail quantile cutoff q (default: 0.05 for 5% extreme crash tail)",
+    )
+    tail_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output tail dependence receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1940,6 +2004,8 @@ def main() -> None:
         changepoint_detect_command(args)
     elif args.command == "toxicity-report":
         toxicity_report_command(args)
+    elif args.command == "tail-dependence":
+        tail_dependence_command(args)
 
 
 if __name__ == "__main__":

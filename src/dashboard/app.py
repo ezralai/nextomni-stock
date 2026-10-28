@@ -279,6 +279,31 @@ def render_dashboard() -> None:
                                 if w > 0.001
                             ])
                             st.dataframe(w_df, use_container_width=True, hide_index=True)
+
+                            # Asymmetric Lower-Tail Dependence & Joint Crash Fragility
+                            st.markdown("---")
+                            st.subheader("📉 Asymmetric Lower-Tail Dependence Matrix (λ_L) & Joint Crash Fragility")
+                            st.caption(
+                                "Empirical quantile co-exceedance and Clayton copula lower-tail dependence (q=5%). "
+                                "Measures extreme downside co-crash probability where diversification breaks down."
+                            )
+                            from src.analytics.copula import evaluate_universe_tail_dependence
+                            tail_rec = evaluate_universe_tail_dependence(tickers=list(port_rec.weights.keys()), threshold=0.05)
+                            if tail_rec.sample_sessions >= 15:
+                                tk1, tk2, tk3 = st.columns(3)
+                                tk1.metric("Market Joint Crash State", tail_rec.market_joint_crash_regime)
+                                p1, p2, val = tail_rec.highest_risk_pair
+                                tk2.metric("Highest Co-Crash Pair", f"{p1} & {p2}", delta=f"λ_L = {val * 100:.1f}%")
+                                avg_fragility = float(np.mean(list(tail_rec.systemic_fragility_scores.values()))) if tail_rec.systemic_fragility_scores else 0.0
+                                tk3.metric("Mean Tail Dependence", f"{avg_fragility * 100:.1f}%")
+
+                                disp_tail = tail_rec.tail_dependence_matrix.copy()
+                                if hasattr(disp_tail, "map"):
+                                    disp_tail = disp_tail.map(lambda v: f"{v * 100:.1f}%")
+                                else:
+                                    disp_tail = disp_tail.applymap(lambda v: f"{v * 100:.1f}%")
+                                st.dataframe(disp_tail, use_container_width=True)
+                                st.caption(f"🛡️ **Tail Dependence Summary:** {tail_rec.summary}")
                     else:
                         st.info("No synchronized assets with sufficient observation history found. Synchronize tickers first.")
 
