@@ -180,7 +180,7 @@ pytest -v
 
 ---
 
-## Command-Line Interface (CLI) Guide
+## Command-Line Interface (CLI) Guides
 
 ```bash
 # 1. Sync historical data for default NYSE and Bursa Malaysia stocks
