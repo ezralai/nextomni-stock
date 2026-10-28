@@ -1175,8 +1175,58 @@ def volatility_report_command(args: argparse.Namespace) -> None:
     print("=" * 75 + "\n")
 
 
+def crps_eval_command(args: argparse.Namespace) -> None:
+    """Evaluate probabilistic forecasts using proper scoring rules (CRPS, Pinball Loss, Winkler Score)."""
+    import json
+    from src.data.db import get_predictions
+    from src.evaluation.probabilistic import evaluate_probabilistic_forecasts
+
+    ticker = validate_ticker(args.ticker) if getattr(args, "ticker", None) else None
+    horizon = int(args.horizon) if getattr(args, "horizon", None) else None
+    model_family = getattr(args, "model", None)
+
+    preds_df = get_predictions(ticker=ticker)
+    if preds_df.empty:
+        msg = f"No predictions recorded in database" + (f" for {ticker}" if ticker else "")
+        print(f"\nError: {msg}.\n")
+        return
+
+    receipt = evaluate_probabilistic_forecasts(
+        preds_df,
+        horizon_sessions=horizon,
+        model_family=model_family,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 75)
+    print("  NextOmni Stock: Probabilistic Forecast Quality & CRPS Scorecard")
+    print("=" * 75)
+    if receipt.ticker:
+        print(f"  Ticker Filter:             {receipt.ticker}")
+    if receipt.horizon_sessions:
+        print(f"  Horizon Filter:            {receipt.horizon_sessions} sessions")
+    if receipt.model_family:
+        print(f"  Model Family Filter:       {receipt.model_family}")
+    print(f"  Sample Reconciled Folds:   {receipt.sample_size}")
+    print("-" * 75)
+    print(f"  Continuous Ranked Prob (CRPS): {receipt.mean_crps:>8.4f}  (Proper continuous scoring rule)")
+    print(f"  Mean Absolute Error (MAE):     {receipt.mean_mae:>8.4f}  (Deterministic point baseline)")
+    print(f"  Quantile Pinball Loss (10%):   {receipt.mean_pinball_loss_q10:>8.4f}  (Downside tail risk loss)")
+    print(f"  Quantile Pinball Loss (50%):   {receipt.mean_pinball_loss_q50:>8.4f}  (Median check loss)")
+    print(f"  Quantile Pinball Loss (90%):   {receipt.mean_pinball_loss_q90:>8.4f}  (Upside tail opportunity loss)")
+    print(f"  Winkler Sharpness (80% CI):    {receipt.mean_winkler_score_80:>8.4f}  (Width + breach penalty)")
+    print(f"  Empirical 80% Coverage:        {receipt.empirical_coverage_80_pct:>7.2f}%")
+    print("-" * 75)
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 75 + "\n")
+
+
 
 def main() -> None:
+
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
         description="NextOmni Stock Intelligence & Forecasting CLI",
@@ -1655,6 +1705,35 @@ def main() -> None:
         help="Output volatility diagnostics receipt as JSON",
     )
 
+    # CRPS evaluation parser
+    crps_parser = subparsers.add_parser(
+        "crps-eval", help="Evaluate probabilistic forecasting quality (CRPS, Pinball Loss, Winkler Score)"
+    )
+    crps_parser.add_argument(
+        "--ticker",
+        type=str,
+        default=None,
+        help="Optional stock ticker filter (e.g. JPM, 1155.KL)",
+    )
+    crps_parser.add_argument(
+        "--horizon",
+        type=int,
+        choices=[1, 5, 21],
+        default=None,
+        help="Optional forecast horizon filter (1, 5, 21)",
+    )
+    crps_parser.add_argument(
+        "--model",
+        choices=["ensemble", "linear", "gradient_boosting"],
+        default=None,
+        help="Optional model family filter",
+    )
+    crps_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output probabilistic evaluation receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1710,9 +1789,12 @@ def main() -> None:
         liquidity_report_command(args)
     elif args.command == "volatility-report":
         volatility_report_command(args)
+    elif args.command == "crps-eval":
+        crps_eval_command(args)
 
 
 if __name__ == "__main__":
     main()
+
 
 

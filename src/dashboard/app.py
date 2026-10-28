@@ -1022,7 +1022,22 @@ def render_dashboard() -> None:
                     c_col3.metric("Mean Winkler Score", f"{calib_rec.mean_winkler_score:.2f}")
                     c_col4.metric("Calibration Status", calib_rec.calibration_status)
 
+                # Probabilistic Quality & CRPS Scorecard
+                from src.evaluation.probabilistic import evaluate_probabilistic_forecasts
+                prob_rec = evaluate_probabilistic_forecasts(evaluated_preds, nominal_confidence=0.80)
+                if prob_rec.sample_size >= 3:
+                    st.markdown("---")
+                    st.subheader("📊 Probabilistic Quality & CRPS Scorecard")
+                    st.caption("Proper scoring rules penalizing predictive dispersion and tail inaccuracy.")
+                    p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+                    p_col1.metric("CRPS", f"{prob_rec.mean_crps:.4f}", delta=f"{prob_rec.mean_crps - prob_rec.mean_mae:+.4f} vs MAE")
+                    p_col2.metric("Pinball 10% (Downside)", f"{prob_rec.mean_pinball_loss_q10:.4f}")
+                    p_col3.metric("Pinball 50% (Median)", f"{prob_rec.mean_pinball_loss_q50:.4f}")
+                    p_col4.metric("Pinball 90% (Upside)", f"{prob_rec.mean_pinball_loss_q90:.4f}")
+                    st.info(f"📊 **Probabilistic Scoring Audit:** {prob_rec.summary}")
+
             st.markdown("---")
+
 
             # Quantitative Feature Importance
             st.subheader(f"Quantitative Feature Signals ({selected_model_family})")
