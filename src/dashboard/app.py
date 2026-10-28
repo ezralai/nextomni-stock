@@ -409,7 +409,18 @@ def render_dashboard() -> None:
                         }
                         for k, v in risk_profile.items()
                     ]
-                    st.dataframe(pd.DataFrame(risk_rows), use_container_width=True, hide_index=True)
+                    # Path-Dependent Drawdown & Conditional Drawdown-at-Risk (CDaR)
+                    from src.analytics.risk import compute_path_risk_profile
+                    path_profile = compute_path_risk_profile(df_obs, ticker=selected_ticker)
+                    if path_profile.sample_sessions >= 5:
+                        st.markdown("---")
+                        st.markdown("**Path-Dependent Cumulative Drawdown & Conditional Drawdown-at-Risk (CDaR):**")
+                        p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+                        p_col1.metric("Historical Max Drawdown", f"{path_profile.max_drawdown_pct:.2f}%", delta=f"{path_profile.current_drawdown_pct:.2f}% current")
+                        p_col2.metric("95% CDaR (Chekhlov et al.)", f"{path_profile.cdar_95_pct:.2f}%", delta=f"95% DaR: {path_profile.dar_95_pct:.2f}%")
+                        p_col3.metric("Peter Martin's Ulcer Index", f"{path_profile.ulcer_index_pct:.2f}%")
+                        p_col4.metric("Underwater Duration", f"{path_profile.current_underwater_sessions} sessions", delta=f"Max: {path_profile.max_underwater_sessions} sessions")
+                        st.caption(f"🛡️ **Path Risk Summary:** {path_profile.summary}")
 
                     # Macro Stress-Testing Simulation
                     from src.analytics.risk import simulate_macro_stress_scenarios

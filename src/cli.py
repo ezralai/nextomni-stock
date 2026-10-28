@@ -647,7 +647,7 @@ def backup_db_command(args: argparse.Namespace) -> None:
 
 def risk_report_command(args: argparse.Namespace) -> None:
     """Generate comprehensive Value-at-Risk (VaR) and Expected Shortfall (CVaR) report."""
-    from src.analytics.risk import compute_multi_horizon_risk_profile
+    from src.analytics.risk import compute_multi_horizon_risk_profile, compute_path_risk_profile
     from src.data.db import get_observations
 
     ticker = validate_ticker(args.ticker)
@@ -656,14 +656,32 @@ def risk_report_command(args: argparse.Namespace) -> None:
         print(f"Error: No observations found for {ticker}. Run 'sync' first.")
         sys.exit(1)
 
-    print("\n" + "=" * 116)
-    print(f"  NextOmni Stock: Multi-Horizon Quantitative Tail Risk Report ({ticker})")
-    print("=" * 116)
     risk_summary = compute_multi_horizon_risk_profile(df, horizons=[1, 5, 21])
-
     if not risk_summary:
         print(f"Error: Insufficient data to compute risk distribution for {ticker}.")
         sys.exit(1)
+
+    path_rec = compute_path_risk_profile(df, ticker=ticker)
+
+    stress_results = []
+    if getattr(args, "stress_test", False):
+        from src.analytics.risk import simulate_macro_stress_scenarios
+        stress_results = simulate_macro_stress_scenarios(df)
+
+    if getattr(args, "json", False):
+        import json
+        payload = {
+            "ticker": ticker,
+            "multi_horizon_var": risk_summary,
+            "path_risk_profile": path_rec.to_dict(),
+            "stress_scenarios": stress_results if stress_results else None,
+        }
+        print(json.dumps(payload, indent=2))
+        return
+
+    print("\n" + "=" * 116)
+    print(f"  NextOmni Stock: Multi-Horizon Quantitative Tail Risk Report ({ticker})")
+    print("=" * 116)
 
     print(
         f"{'Horizon':<15} {'VaR 95% (G)':<14} {'VaR 95% (CF)':<14} {'VaR 99% (CF)':<14} "
@@ -690,25 +708,31 @@ def risk_report_command(args: argparse.Namespace) -> None:
     print(f"Latest Settlement Price: {latest_price:.2f}")
     print(f"1-Day Maximum Expected Loss (95% Cornish-Fisher VaR): {var95_1d:.2f}% (~{latest_price * var95_1d / 100:.2f})")
     print(f"1-Day Extreme Tail Shortfall (95% Historical CVaR):     {cvar95_1d:.2f}% (~{latest_price * cvar95_1d / 100:.2f})")
+    print("-" * 116)
+    print("  Path-Dependent Cumulative Drawdown & CDaR Risk Profile:")
+    print(f"  Current Price / High-Water Mark: {path_rec.current_price:.2f} / {path_rec.high_water_mark:.2f} (Current Drawdown: {path_rec.current_drawdown_pct:.2f}%)")
+    print(f"  Historical Maximum Drawdown:     {path_rec.max_drawdown_pct:.2f}%")
+    print(f"  Drawdown-at-Risk (95% DaR):      {path_rec.dar_95_pct:.2f}%")
+    print(f"  Conditional DaR (95% CDaR):      {path_rec.cdar_95_pct:.2f}%  (Expected tail drawdown depth)")
+    print(f"  Conditional DaR (99% CDaR):      {path_rec.cdar_99_pct:.2f}%")
+    print(f"  Peter Martin's Ulcer Index:      {path_rec.ulcer_index_pct:.2f}%  (Quadratic depth & duration penalty)")
+    print(f"  Underwater Sessions:             Current = {path_rec.current_underwater_sessions} sessions | Historical Max = {path_rec.max_underwater_sessions} sessions")
 
-    if getattr(args, "stress_test", False):
-        from src.analytics.risk import simulate_macro_stress_scenarios
-        stress_results = simulate_macro_stress_scenarios(df)
-        if stress_results:
-            print("\n  Historical Macroeconomic Stress-Testing Scenarios ($10,000 Portfolio Base):")
-            print("  " + "-" * 112)
+    if stress_results:
+        print("\n  Historical Macroeconomic Stress-Testing Scenarios ($10,000 Portfolio Base):")
+        print("  " + "-" * 112)
+        print(
+            f"  {'Scenario':<36} {'Severity':<14} {'Benchmark':<12} {'Ticker Beta':<14} "
+            f"{'Est. Loss %':<14} {'Est. Loss ($)':<15} {'Post-Stress Price'}"
+        )
+        print("  " + "-" * 112)
+        for s in stress_results:
             print(
-                f"  {'Scenario':<36} {'Severity':<14} {'Benchmark':<12} {'Ticker Beta':<14} "
-                f"{'Est. Loss %':<14} {'Est. Loss ($)':<15} {'Post-Stress Price'}"
+                f"  {s['scenario_name']:<36} {s['severity']:<14} {s['benchmark_shock_pct']:>+6.1f}%     "
+                f"{s['ticker_vol_beta']:>8.2f}       {s['estimated_loss_pct']:>8.2f}%     "
+                f"${s['estimated_loss_dollars']:>9.2f}      {s['post_stress_price']:>10.2f}"
             )
-            print("  " + "-" * 112)
-            for s in stress_results:
-                print(
-                    f"  {s['scenario_name']:<36} {s['severity']:<14} {s['benchmark_shock_pct']:>+6.1f}%     "
-                    f"{s['ticker_vol_beta']:>8.2f}       {s['estimated_loss_pct']:>8.2f}%     "
-                    f"${s['estimated_loss_dollars']:>9.2f}      {s['post_stress_price']:>10.2f}"
-                )
-            print("  " + "-" * 112)
+        print("  " + "-" * 112)
 
     print("=" * 116 + "\n")
 
@@ -1456,6 +1480,9 @@ def main() -> None:
     )
     risk_parser.add_argument(
         "--stress-test", action="store_true", help="Simulate historical macroeconomic stress scenarios"
+    )
+    risk_parser.add_argument(
+        "--json", action="store_true", help="Output risk report and path profile as JSON"
     )
 
     # Prune DB parser
