@@ -1300,9 +1300,9 @@ def main() -> None:
     )
     multi_parser.add_argument(
         "--model",
-        choices=["linear", "gradient_boosting", "ensemble"],
+        choices=["linear", "gradient_boosting", "ensemble", "adaptive_ensemble"],
         default="linear",
-        help="Forecasting model family (linear, gradient_boosting, ensemble)",
+        help="Forecasting model family (linear, gradient_boosting, ensemble, adaptive_ensemble)",
     )
     multi_parser.add_argument(
         "--exchange", choices=list(SUPPORTED_EXCHANGES.keys()), default=None, help="Exchange MIC"
@@ -1323,10 +1323,11 @@ def main() -> None:
     )
     predict_parser.add_argument(
         "--model",
-        choices=["linear", "gradient_boosting", "ensemble", "baseline"],
+        choices=["linear", "gradient_boosting", "ensemble", "adaptive_ensemble", "baseline"],
         default="linear",
         help="Forecasting model family to use",
     )
+
     predict_parser.add_argument(
         "--horizon", type=int, default=1, choices=[1, 5, 21], help="Forecast horizon sessions"
     )
@@ -1440,7 +1441,7 @@ def main() -> None:
     )
     backtest_parser.add_argument(
         "--model",
-        choices=["ensemble", "linear", "gradient_boosting"],
+        choices=["ensemble", "adaptive_ensemble", "linear", "gradient_boosting"],
         default="ensemble",
         help="Forecasting model family (default: ensemble)",
     )
@@ -1500,10 +1501,11 @@ def main() -> None:
     )
     screen_parser.add_argument(
         "--model",
-        choices=["ensemble", "linear", "gradient_boosting"],
+        choices=["ensemble", "adaptive_ensemble", "linear", "gradient_boosting"],
         default="ensemble",
         help="Forecasting model family (default: ensemble)",
     )
+
     screen_parser.add_argument(
         "--top",
         type=int,
@@ -1724,10 +1726,11 @@ def main() -> None:
     )
     crps_parser.add_argument(
         "--model",
-        choices=["ensemble", "linear", "gradient_boosting"],
+        choices=["ensemble", "adaptive_ensemble", "linear", "gradient_boosting"],
         default=None,
         help="Optional model family filter",
     )
+
     crps_parser.add_argument(
         "--json",
         action="store_true",

@@ -96,13 +96,15 @@ def render_dashboard() -> None:
 
     raw_model = st.sidebar.selectbox(
         "Forecasting Architecture",
-        options=["ensemble", "gradient_boosting", "linear"],
-        format_func=lambda x: (
-            "🛡️⚡ Convex Ensemble (Ridge + GBDT)"
-            if x == "ensemble"
-            else ("⚡ Gradient Boosting (Non-Linear)" if x == "gradient_boosting" else "📈 Ridge Regression (Linear)")
-        ),
+        options=["adaptive_ensemble", "ensemble", "gradient_boosting", "linear"],
+        format_func=lambda x: {
+            "adaptive_ensemble": "🧠 Dynamic Regime-Adaptive (Market-State Conditional)",
+            "ensemble": "🛡️⚡ Convex Ensemble (Ridge + GBDT)",
+            "gradient_boosting": "⚡ Gradient Boosting (Non-Linear)",
+            "linear": "📈 Ridge Regression (Linear)",
+        }.get(x, x),
     )
+
     selected_model_family = validate_model_family(raw_model)
 
     st.sidebar.markdown("---")
