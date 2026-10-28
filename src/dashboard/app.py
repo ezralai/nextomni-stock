@@ -242,13 +242,15 @@ def render_dashboard() -> None:
                             with opt_c1:
                                 opt_mode = st.selectbox(
                                     "Portfolio Objective Mode",
-                                    ["max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp"],
+                                    ["max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp", "cvar_min", "cvar_parity"],
                                     format_func=lambda m: {
                                         "max_sharpe": "Maximum Sharpe Ratio",
                                         "min_variance": "Minimum Variance",
                                         "risk_parity": "Equal Risk Contribution (Risk Parity)",
                                         "equal_weight": "Equal Weighting (1/N)",
                                         "hrp": "Hierarchical Risk Parity (HRP)",
+                                        "cvar_min": "Minimum Expected Shortfall (CVaR 95%)",
+                                        "cvar_parity": "Tail Risk Parity (Equal CVaR Contribution)",
                                     }[m],
                                     key="opt_mode",
                                 )
@@ -263,11 +265,12 @@ def render_dashboard() -> None:
                                 max_weight=opt_max_w,
                             )
 
-                            p_kpi1, p_kpi2, p_kpi3, p_kpi4 = st.columns(4)
+                            p_kpi1, p_kpi2, p_kpi3, p_kpi4, p_kpi5 = st.columns(5)
                             p_kpi1.metric("Exp Annual Return", f"{port_rec.expected_annual_return_pct:+.2f}%")
                             p_kpi2.metric("Annualized Volatility", f"{port_rec.annualized_volatility_pct:.2f}%")
                             p_kpi3.metric("Portfolio Sharpe", f"{port_rec.sharpe_ratio:+.2f}")
                             p_kpi4.metric("LW Shrinkage (δ)", f"{port_rec.shrinkage_intensity:.4f}")
+                            p_kpi5.metric("95% CVaR (Tail Loss)", f"{port_rec.cvar_95_pct:.2f}%")
 
                             w_df = pd.DataFrame([
                                 {

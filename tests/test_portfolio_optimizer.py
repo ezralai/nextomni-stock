@@ -121,7 +121,7 @@ def test_compute_ledoit_wolf_covariance_properties(sample_returns_df):
 
 def test_optimize_alpha_portfolio_modes_and_constraints(sample_screener_records, sample_returns_df):
     """Verify weight constraints (sum=1.0, 0 <= w <= max_weight) across optimization modes."""
-    modes = ["max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp"]
+    modes = ["max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp", "cvar_min", "cvar_parity"]
 
     for m in modes:
         receipt = optimize_alpha_portfolio(
@@ -222,4 +222,77 @@ def test_cli_portfolio_command(capsys, sample_screener_records, sample_returns_d
     assert data["mode"] == "hrp"
     assert "weights" in data
     assert "sharpe_ratio" in data
+    assert "cvar_95_pct" in data
+
+
+def test_cvar_and_marginal_contributions_properties():
+    """Verify Euler homogenous property of CVaR marginal tail risk contributions."""
+    from src.analytics.portfolio import compute_cvar_and_marginal_contributions
+
+    np.random.seed(55)
+    returns = np.random.normal(0.0005, 0.02, size=(100, 3))
+    weights = np.array([0.5, 0.3, 0.2])
+
+    cvar_pct, var_pct, marginal_cvar, tail_rc_pct = compute_cvar_and_marginal_contributions(
+        weights, returns, alpha=0.95
+    )
+
+    assert cvar_pct > 0.0
+    assert var_pct > 0.0
+    assert cvar_pct >= var_pct  # Expected shortfall strictly >= VaR
+    assert len(marginal_cvar) == 3
+    assert np.isclose(np.sum(tail_rc_pct), 100.0, atol=1e-3)
+
+
+def test_cvar_min_and_tail_risk_parity_mathematical_properties():
+    """Verify Rockafellar-Uryasev CVaR minimization and smooth Tail Risk Parity."""
+    from src.analytics.portfolio import compute_cvar_min_weights, compute_tail_risk_parity_weights
+
+    np.random.seed(123)
+    n_sessions = 120
+    # Asset 0: calm, low volatility, no tail events
+    r0 = np.random.normal(0.0005, 0.008, size=n_sessions)
+    # Asset 1: moderate volatility
+    r1 = np.random.normal(0.0005, 0.015, size=n_sessions)
+    # Asset 2: extreme fat-tail downside crashes
+    r2 = np.random.normal(0.0005, 0.02, size=n_sessions)
+    r2[10] = -0.15
+    r2[45] = -0.18
+    r2[80] = -0.22
+
+    returns_matrix = np.column_stack([r0, r1, r2])
+
+    # 1. CVaR Minimization
+    w_cvar = compute_cvar_min_weights(returns_matrix, alpha=0.95, max_weight=0.70)
+    assert len(w_cvar) == 3
+    assert np.isclose(np.sum(w_cvar), 1.0, atol=1e-4)
+    assert (w_cvar >= -1e-6).all()
+    # The crash-prone asset 2 should receive significantly lower weight than the safe asset 0
+    assert w_cvar[0] > w_cvar[2]
+
+    # 2. Tail Risk Parity
+    w_trp = compute_tail_risk_parity_weights(returns_matrix, alpha=0.95, max_weight=0.70)
+    assert len(w_trp) == 3
+    assert np.isclose(np.sum(w_trp), 1.0, atol=1e-4)
+    assert (w_trp >= 0.0).all()
+    # Tail Risk Parity penalizes high-tail-loss assets by reducing their weight to equalize contribution
+    assert w_trp[0] > w_trp[2]
+
+
+def test_cli_portfolio_cvar_modes(capsys, sample_screener_records, sample_returns_df):
+    """Verify CLI nextomni portfolio command with cvar_min and cvar_parity modes."""
+    from src.cli import main
+    import sys
+
+    for mode in ["cvar_min", "cvar_parity"]:
+        with patch("src.analytics.screener.screen_asset_universe", return_value=sample_screener_records), \
+             patch("src.analytics.portfolio.build_aligned_returns_matrix", return_value=sample_returns_df), \
+             patch.object(sys, "argv", ["nextomni", "portfolio", "--mode", mode, "--json"]):
+            main()
+
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        assert data["mode"] == mode
+        assert "cvar_95_pct" in data
+        assert data["cvar_95_pct"] > 0.0
 

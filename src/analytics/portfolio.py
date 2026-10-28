@@ -54,6 +54,7 @@ class PortfolioReceipt:
     risk_contributions_pct: Dict[str, float]
     effective_number_of_assets: float  # Herfindahl inverse: 1 / sum(w_i^2)
     horizon_sessions: int
+    cvar_95_pct: float = 0.0  # Conditional Value-at-Risk (Expected Shortfall at 95%)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -285,6 +286,212 @@ def compute_hrp_weights(
     return w
 
 
+def compute_cvar_and_marginal_contributions(
+    weights: np.ndarray,
+    returns_matrix: np.ndarray,
+    alpha: float = 0.95,
+) -> Tuple[float, float, np.ndarray, np.ndarray]:
+    """Compute portfolio Conditional Value-at-Risk (CVaR) and Euler marginal risk contributions.
+
+    By Euler's homogeneous theorem:
+        CVaR_alpha(w) = sum_i w_i * (d CVaR / d w_i)
+        where d CVaR / d w_i = E[ -r_{i,t} | -w^T r_t >= VaR_alpha(w) ]
+
+    Args:
+        weights: 1D array of portfolio weights (n elements).
+        returns_matrix: 2D array of asset daily returns (T x n).
+        alpha: Confidence level (default: 0.95).
+
+    Returns:
+        Tuple of (cvar_pct, var_pct, marginal_cvar, tail_risk_contributions_pct).
+    """
+    t_obs, n_assets = returns_matrix.shape
+    if t_obs < 5 or n_assets == 0:
+        return 0.0, 0.0, np.zeros(n_assets), np.zeros(n_assets)
+
+    w = np.asarray(weights, dtype=float)
+    port_losses = - (returns_matrix @ w)  # loss = -return
+
+    var_val = float(np.percentile(port_losses, alpha * 100.0))
+    tail_mask = port_losses >= var_val
+
+    if not np.any(tail_mask):
+        tail_mask = port_losses >= np.median(port_losses)
+
+    cvar_val = float(np.mean(port_losses[tail_mask]))
+
+    # Marginal CVaR: E[-r_{i,t} | tail]
+    tail_asset_losses = - returns_matrix[tail_mask, :]
+    marginal_cvar = np.mean(tail_asset_losses, axis=0)
+
+    # Tail risk contribution: w_i * marginal_cvar_i
+    tail_rc = w * marginal_cvar
+    total_trc = float(np.sum(tail_rc))
+
+    if total_trc > 1e-12:
+        tail_rc_pct = (tail_rc / total_trc) * 100.0
+    else:
+        tail_rc_pct = np.ones(n_assets) * (100.0 / n_assets)
+
+    return float(cvar_val * 100.0), float(var_val * 100.0), marginal_cvar, tail_rc_pct
+
+
+def compute_cvar_min_weights(
+    returns_matrix: np.ndarray,
+    alpha: float = 0.95,
+    max_weight: Optional[float] = None,
+    target_return: Optional[float] = None,
+    expected_returns: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Optimize portfolio weights minimizing Conditional Value-at-Risk (Rockafellar & Uryasev 2000).
+
+    Solves the convex optimization problem:
+        min_{w, zeta} { zeta + 1 / ((1 - alpha) * T) * sum_t max(0, -w^T r_t - zeta) }
+        s.t. sum w_i = 1, 0 <= w_i <= max_weight
+
+    Args:
+        returns_matrix: 2D array of aligned asset returns (T x n).
+        alpha: Confidence level (default: 0.95).
+        max_weight: Upper bound on individual asset weights.
+        target_return: Optional minimum required expected return.
+        expected_returns: Optional expected return vector corresponding to target_return.
+
+    Returns:
+        1D array of optimal asset weights summing to 1.0.
+    """
+    t_obs, n_assets = returns_matrix.shape
+    if n_assets == 0:
+        return np.array([])
+    if n_assets == 1:
+        return np.array([1.0])
+
+    upper_bound = max(1.0 / n_assets, max_weight) if max_weight is not None else 1.0
+    w0 = np.ones(n_assets) / n_assets
+    init_losses = - (returns_matrix @ w0)
+    zeta0 = float(np.percentile(init_losses, alpha * 100.0))
+
+    # Parameter vector: theta = [w_0, ..., w_{n-1}, zeta]
+    theta0 = np.append(w0, zeta0)
+    bounds = [(0.0, upper_bound) for _ in range(n_assets)] + [(-2.0, 2.0)]
+
+    def cvar_objective(theta: np.ndarray) -> float:
+        w = theta[:n_assets]
+        zeta = theta[n_assets]
+        losses = - (returns_matrix @ w)
+        tail_excess = np.maximum(0.0, losses - zeta)
+        cvar = zeta + np.mean(tail_excess) / (1.0 - alpha)
+        return float(cvar)
+
+    constraints = [{"type": "eq", "fun": lambda theta: np.sum(theta[:n_assets]) - 1.0}]
+
+    if target_return is not None and expected_returns is not None:
+        constraints.append({
+            "type": "ineq",
+            "fun": lambda theta: float(theta[:n_assets].T @ expected_returns) - target_return,
+        })
+
+    res = minimize(
+        cvar_objective,
+        theta0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": 200, "ftol": 1e-8},
+    )
+
+    if res.success:
+        opt_w = np.maximum(0.0, res.x[:n_assets])
+    else:
+        opt_w = w0
+
+    sum_w = float(np.sum(opt_w))
+    return opt_w / sum_w if sum_w > 0 else w0
+
+
+def compute_tail_risk_parity_weights(
+    returns_matrix: np.ndarray,
+    alpha: float = 0.95,
+    max_weight: Optional[float] = None,
+) -> np.ndarray:
+    """Optimize portfolio weights such that each asset contributes equally to extreme CVaR.
+
+    Solves:
+        min_w sum_i ( TRC_i / sum_j TRC_j - 1/n )^2
+        where TRC_i = w_i * E[ -r_{i,t} | -w^T r_t >= VaR_alpha(w) ]
+
+    Uses smooth logistic weighting for tail identification to guarantee continuous gradients.
+
+    Args:
+        returns_matrix: 2D array of aligned asset returns (T x n).
+        alpha: Confidence level (default: 0.95).
+        max_weight: Upper bound on individual asset weights.
+
+    Returns:
+        1D array of tail risk parity weights summing to 1.0.
+    """
+    t_obs, n_assets = returns_matrix.shape
+    if n_assets == 0:
+        return np.array([])
+    if n_assets == 1:
+        return np.array([1.0])
+
+    upper_bound = max(1.0 / n_assets, max_weight) if max_weight is not None else 1.0
+    w0 = np.ones(n_assets) / n_assets
+    bounds = tuple((1e-4, upper_bound) for _ in range(n_assets))
+    constraints = ({"type": "eq", "fun": lambda w: np.sum(w) - 1.0},)
+
+    # Temperature parameter for smooth tail indicator
+    tau = 0.003
+
+    def tail_risk_parity_objective(w: np.ndarray) -> float:
+        w_norm = np.maximum(1e-6, w)
+        w_norm = w_norm / np.sum(w_norm)
+
+        port_losses = - (returns_matrix @ w_norm)
+        var_q = float(np.percentile(port_losses, alpha * 100.0))
+
+        # Smooth sigmoid tail probabilities
+        scaled_diff = np.clip((port_losses - var_q) / tau, -50.0, 50.0)
+        weights_t = 1.0 / (1.0 + np.exp(-scaled_diff))
+        sum_wt = float(np.sum(weights_t))
+        if sum_wt < 1e-6:
+            weights_t = (port_losses >= var_q).astype(float)
+            sum_wt = max(1.0, float(np.sum(weights_t)))
+
+        prob_t = weights_t / sum_wt  # (T,)
+        # Marginal CVaR: sum_t prob_t * (-r_{i,t})
+        asset_losses = - returns_matrix  # (T, n)
+        marginal_cvar = prob_t @ asset_losses  # (n,)
+        marginal_cvar = np.maximum(1e-6, marginal_cvar)
+
+        tail_rc = w_norm * marginal_cvar
+        total_trc = float(np.sum(tail_rc))
+        if total_trc <= 1e-9:
+            return 1e4
+
+        rc_shares = tail_rc / total_trc
+        target_share = 1.0 / n_assets
+        loss = float(np.sum((rc_shares - target_share) ** 2))
+        return loss
+
+    res = minimize(
+        tail_risk_parity_objective,
+        w0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": 200, "ftol": 1e-8},
+    )
+
+    if res.success:
+        opt_w = np.maximum(0.0, res.x)
+    else:
+        opt_w = w0
+
+    sum_w = float(np.sum(opt_w))
+    return opt_w / sum_w if sum_w > 0 else w0
+
+
 def optimize_alpha_portfolio(
     screener_records: List[ScreenerRecord],
     returns_df: Optional[pd.DataFrame] = None,
@@ -298,7 +505,7 @@ def optimize_alpha_portfolio(
     Args:
         screener_records: List of ScreenerRecord objects from screen_asset_universe.
         returns_df: Optional precomputed aligned returns DataFrame.
-        mode: Allocation mode ('max_sharpe', 'min_variance', 'risk_parity', 'equal_weight', 'hrp').
+        mode: Allocation mode ('max_sharpe', 'min_variance', 'risk_parity', 'equal_weight', 'hrp', 'cvar_min', 'cvar_parity').
         risk_free_rate: Annualized risk-free benchmark rate (default: 0.04).
         max_weight: Maximum allowable weight per asset in long-only allocation.
         db_path: Optional SQLite database path.
@@ -306,10 +513,9 @@ def optimize_alpha_portfolio(
     Returns:
         PortfolioReceipt containing optimal weights, risk/return metrics, and diagnostics.
     """
-    valid_modes = {"max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp"}
+    valid_modes = {"max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp", "cvar_min", "cvar_parity"}
     if mode not in valid_modes:
         raise ValueError(f"Invalid mode '{mode}'. Expected one of {valid_modes}")
-
 
     if not screener_records:
         raise ValueError("screener_records cannot be empty.")
@@ -326,8 +532,15 @@ def optimize_alpha_portfolio(
         t = tickers[0]
         obs = get_observations(t, db_path=db_path)
         vol = 0.20
+        cvar_val = 2.5
         if not obs.empty and len(obs) > 10:
-            vol = float(obs[PRICE_COLUMN].pct_change().std() * math.sqrt(252))
+            prices = obs[PRICE_COLUMN].astype(float)
+            r_series = prices.pct_change().dropna()
+            vol = float(r_series.std() * math.sqrt(252))
+            losses = -r_series.values
+            v_cut = np.percentile(losses, 95.0)
+            tail = losses[losses >= v_cut]
+            cvar_val = float(np.mean(tail) * 100.0) if len(tail) > 0 else 2.5
         vol = max(vol, 0.01)
         ret_pct = float(exp_returns[0] * 100.0)
         sharpe = (exp_returns[0] - risk_free_rate) / vol
@@ -342,6 +555,7 @@ def optimize_alpha_portfolio(
             risk_contributions_pct={t: 100.0},
             effective_number_of_assets=1.0,
             horizon_sessions=horizon,
+            cvar_95_pct=round(cvar_val, 2),
         )
 
     # Build aligned returns matrix if not supplied
@@ -366,6 +580,7 @@ def optimize_alpha_portfolio(
             risk_contributions_pct={t: round(100.0 / n, 2) for t in tickers},
             effective_number_of_assets=float(n),
             horizon_sessions=horizon,
+            cvar_95_pct=2.5,
         )
 
     # Reindex expected returns to common tickers
@@ -413,6 +628,18 @@ def optimize_alpha_portfolio(
 
         res = minimize(risk_parity_objective, w0, method="SLSQP", bounds=bounds, constraints=constraints)
         opt_weights = res.x if res.success else w0
+    elif mode == "cvar_min":
+        opt_weights = compute_cvar_min_weights(
+            returns_matrix=sub_returns.values,
+            alpha=0.95,
+            max_weight=upper_bound,
+        )
+    elif mode == "cvar_parity":
+        opt_weights = compute_tail_risk_parity_weights(
+            returns_matrix=sub_returns.values,
+            alpha=0.95,
+            max_weight=upper_bound,
+        )
     else:  # max_sharpe
         def neg_sharpe(w: np.ndarray) -> float:
             p_ret = float(w.T @ mu)
@@ -435,8 +662,17 @@ def optimize_alpha_portfolio(
     herfindahl = float(np.sum(opt_weights ** 2))
     effective_n = float(1.0 / herfindahl) if herfindahl > 0 else float(n)
 
+    # Compute 95% CVaR and marginal tail risk contributions
+    cvar_val_pct, _, _, tail_rc_pct = compute_cvar_and_marginal_contributions(
+        opt_weights, sub_returns.values, alpha=0.95
+    )
+
     weights_dict = {t: round(float(opt_weights[i]), 4) for i, t in enumerate(common_tickers)}
-    rc_dict = {t: round(float(risk_contribs[i] * 100.0), 2) for i, t in enumerate(common_tickers)}
+
+    if mode in ("cvar_min", "cvar_parity"):
+        rc_dict = {t: round(float(tail_rc_pct[i]), 2) for i, t in enumerate(common_tickers)}
+    else:
+        rc_dict = {t: round(float(risk_contribs[i] * 100.0), 2) for i, t in enumerate(common_tickers)}
 
     return PortfolioReceipt(
         mode=mode,
@@ -449,4 +685,5 @@ def optimize_alpha_portfolio(
         risk_contributions_pct=rc_dict,
         effective_number_of_assets=round(effective_n, 2),
         horizon_sessions=horizon,
+        cvar_95_pct=round(cvar_val_pct, 2),
     )

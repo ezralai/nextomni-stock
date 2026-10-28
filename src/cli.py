@@ -969,6 +969,7 @@ def portfolio_command(args: argparse.Namespace) -> None:
     print(f"  Expected Annual Return:  {receipt.expected_annual_return_pct:>+7.2f}%")
     print(f"  Annualized Volatility:   {receipt.annualized_volatility_pct:>7.2f}%")
     print(f"  Sharpe Ratio (Rf=4%):    {receipt.sharpe_ratio:>+7.3f}")
+    print(f"  Expected Shortfall (CVaR 95%): {receipt.cvar_95_pct:>6.2f}% daily")
     print(f"  Ledoit-Wolf Shrinkage:   {receipt.shrinkage_intensity:>7.4f}")
     print(f"  Effective Asset Count:   {receipt.effective_number_of_assets:>7.2f} / {len(receipt.tickers)}")
     print("-" * 80)
@@ -1757,7 +1758,7 @@ def main() -> None:
     )
     portfolio_parser.add_argument(
         "--mode",
-        choices=["max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp"],
+        choices=["max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp", "cvar_min", "cvar_parity"],
         default="max_sharpe",
         help="Optimization objective mode (default: max_sharpe)",
     )
