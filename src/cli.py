@@ -1133,6 +1133,49 @@ def liquidity_report_command(args: argparse.Namespace) -> None:
     print("=" * 70 + "\n")
 
 
+def volatility_report_command(args: argparse.Namespace) -> None:
+    """Evaluate multi-estimator realized volatility and extreme value diagnostics."""
+    import json
+    from src.data.db import get_observations
+    from src.analytics.volatility import evaluate_volatility_profile
+
+    ticker = validate_ticker(args.ticker)
+    window = int(args.window) if getattr(args, "window", None) else 20
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observations found for {ticker}. Please synchronize data first.\n")
+        return
+
+    receipt = evaluate_volatility_profile(df_obs, ticker=ticker, window=window)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 75)
+    print("  NextOmni Stock: Multi-Estimator Realized Volatility Diagnostics")
+    print("=" * 75)
+    print(f"  Ticker Symbol:             {receipt.ticker}")
+    print(f"  Sample Size:               {receipt.sample_sessions} sessions")
+    print(f"  Estimation Window:         {receipt.window} sessions")
+    print("-" * 75)
+    print(f"  Close-to-Close (Standard): {receipt.close_to_close_ann_pct:>6.2f}% ann.  (Efficiency:  1.0x baseline)")
+    print(f"  Parkinson (1980 High-Low): {receipt.parkinson_ann_pct:>6.2f}% ann.  (Efficiency: ~5.2x baseline)")
+    print(f"  Garman-Klass (1980 OHLC):  {receipt.garman_klass_ann_pct:>6.2f}% ann.  (Efficiency: ~7.4x baseline)")
+    print(f"  Rogers-Satchell (1991):    {receipt.rogers_satchell_ann_pct:>6.2f}% ann.  (Drift-independent)")
+    print(f"  Yang-Zhang (2000 Optimal): {receipt.yang_zhang_ann_pct:>6.2f}% ann.  (Efficiency: ~14.0x baseline)")
+    print(f"  RiskMetrics EWMA (λ=0.94): {receipt.ewma_ann_pct:>6.2f}% ann.  (Exponential clustering)")
+    print("-" * 75)
+    print(f"  Volatility Ratio (YZ / CC):{receipt.volatility_ratio_yz_cc:>7.3f}")
+    print(f"  Regime Classification:     {receipt.regime_signal}")
+    if receipt.term_structure_yang_zhang:
+        ts_str = ", ".join(f"{k}: {v:.1f}%" for k, v in receipt.term_structure_yang_zhang.items())
+        print(f"  Term Structure (YZ):       {ts_str}")
+    print("=" * 75 + "\n")
+
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -1589,6 +1632,28 @@ def main() -> None:
         help="Output liquidity receipt as JSON",
     )
 
+    # Volatility report parser
+    vol_parser = subparsers.add_parser(
+        "volatility-report", help="Multi-estimator realized volatility diagnostics (Yang-Zhang, GK, Parkinson, EWMA)"
+    )
+    vol_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol to audit (e.g. JPM, 1155.KL)",
+    )
+    vol_parser.add_argument(
+        "--window",
+        type=int,
+        default=20,
+        help="Rolling observation window in sessions (default: 20)",
+    )
+    vol_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output volatility diagnostics receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1642,8 +1707,11 @@ def main() -> None:
         cointegrate_command(args)
     elif args.command == "liquidity-report":
         liquidity_report_command(args)
+    elif args.command == "volatility-report":
+        volatility_report_command(args)
 
 
 if __name__ == "__main__":
     main()
+
 

@@ -585,6 +585,33 @@ def render_dashboard() -> None:
                 else:
                     st.warning(f"⚠️ {liq_rec.summary}")
 
+            # Multi-Estimator Realized Volatility Engine
+            with st.expander("⚡ Multi-Estimator Realized Volatility & Extreme Value Engine", expanded=False):
+                st.markdown(
+                    r"Compare benchmark realized volatility estimators: **Yang-Zhang (2000)** (minimum-variance, jump & drift unbiased, ~14x CC efficiency), "
+                    r"**Garman-Klass (1980)** (~7.4x efficiency), **Parkinson (1980)** (~5.2x efficiency), **RiskMetrics EWMA** ($\lambda=0.94$), and **Close-to-Close**."
+                )
+
+                from src.analytics.volatility import evaluate_volatility_profile
+                vol_rec = evaluate_volatility_profile(df_obs, ticker=selected_ticker, window=20)
+
+                col_v1, col_v2, col_v3, col_v4, col_v5 = st.columns(5)
+                col_v1.metric("Yang-Zhang (Optimal)", f"{vol_rec.yang_zhang_ann_pct:.2f}%", delta=f"{vol_rec.volatility_ratio_yz_cc:.2f}x CC")
+                col_v2.metric("Garman-Klass (OHLC)", f"{vol_rec.garman_klass_ann_pct:.2f}%")
+                col_v3.metric("Parkinson (High-Low)", f"{vol_rec.parkinson_ann_pct:.2f}%")
+                col_v4.metric("Close-to-Close", f"{vol_rec.close_to_close_ann_pct:.2f}%")
+                col_v5.metric("EWMA (λ=0.94)", f"{vol_rec.ewma_ann_pct:.2f}%")
+
+                st.info(f"⚡ **Volatility Regime:** `{vol_rec.regime_signal}` | **Sample Sessions:** {vol_rec.sample_sessions} | **Window:** {vol_rec.window} sessions")
+
+                if vol_rec.term_structure_yang_zhang:
+                    df_ts = pd.DataFrame([
+                        {"Horizon": k, "Yang-Zhang Volatility (%)": v}
+                        for k, v in vol_rec.term_structure_yang_zhang.items()
+                    ])
+                    st.dataframe(df_ts, use_container_width=True, hide_index=True)
+
+
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
     # =========================================================================
