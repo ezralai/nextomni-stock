@@ -995,6 +995,109 @@ def calibration_report_command(args: argparse.Namespace) -> None:
     print("=" * 70 + "\n")
 
 
+def lead_lag_command(args: argparse.Namespace) -> None:
+    """Evaluate cross-market lead-lag Granger causality between two equities."""
+    import json
+    from src.analytics.causality import evaluate_granger_causality
+    from src.config import PRICE_COLUMN
+    from src.data.db import get_observations
+
+    source_ticker = validate_ticker(args.source)
+    target_ticker = validate_ticker(args.target)
+    max_lag = int(args.max_lag) if getattr(args, "max_lag", None) else 5
+
+    df_src = get_observations(source_ticker)
+    df_tgt = get_observations(target_ticker)
+
+    if df_src.empty or df_tgt.empty:
+        print(f"\nError: Insufficient data for {source_ticker} or {target_ticker}. Please synchronize both first.\n")
+        return
+
+    clean_src = df_src.sort_values("session_date").drop_duplicates(subset=["session_date"])
+    clean_tgt = df_tgt.sort_values("session_date").drop_duplicates(subset=["session_date"])
+
+    ret_src = clean_src[PRICE_COLUMN].astype(float).pct_change().dropna()
+    ret_src.index = clean_src["session_date"].iloc[1:]
+
+    ret_tgt = clean_tgt[PRICE_COLUMN].astype(float).pct_change().dropna()
+    ret_tgt.index = clean_tgt["session_date"].iloc[1:]
+
+    receipt = evaluate_granger_causality(
+        source_series=ret_src,
+        target_series=ret_tgt,
+        max_lag=max_lag,
+        source_ticker=source_ticker,
+        target_ticker=target_ticker,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 70)
+    print("  NextOmni Stock: Cross-Market Lead-Lag Granger Causality Test")
+    print("=" * 70)
+    print(f"  Source (Leading Hypothesis): {receipt.source_ticker}")
+    print(f"  Target (Lagging Hypothesis): {receipt.target_ticker}")
+    print(f"  Aligned Sample Size:         {receipt.sample_size} sessions")
+    print(f"  Optimal Evaluated Lag:       {receipt.optimal_lag} session(s)")
+    print(f"  Fisher-Snedecor F-Statistic: {receipt.f_statistic:>7.4f}")
+    print(f"  Granger Causality p-Value:   {receipt.p_value:>7.4f}")
+    print(f"  Unrestricted R-Squared:      {receipt.r_squared_unrestricted:>7.4f}")
+    print(f"  Restricted (AR) R-Squared:   {receipt.r_squared_restricted:>7.4f}")
+    print(f"  Causality Verdict:           {'CAUSAL (PASS, p < 0.05)' if receipt.is_causal else 'NOT SIGNIFICANT (FAIL)'}")
+    print(f"  Summary:                     {receipt.summary}")
+    print("=" * 70 + "\n")
+
+
+def cointegrate_command(args: argparse.Namespace) -> None:
+    """Evaluate Engle-Granger cointegration and mean-reversion spread dynamics between two assets."""
+    import json
+    from src.analytics.causality import evaluate_engle_granger_cointegration
+    from src.config import PRICE_COLUMN
+    from src.data.db import get_observations
+
+    ticker1 = validate_ticker(args.ticker1)
+    ticker2 = validate_ticker(args.ticker2)
+
+    df1 = get_observations(ticker1)
+    df2 = get_observations(ticker2)
+
+    if df1.empty or df2.empty:
+        print(f"\nError: Insufficient data for {ticker1} or {ticker2}. Please synchronize both first.\n")
+        return
+
+    clean_1 = df1.sort_values("session_date").drop_duplicates(subset=["session_date"])
+    clean_2 = df2.sort_values("session_date").drop_duplicates(subset=["session_date"])
+
+    p1 = clean_1.set_index("session_date")[PRICE_COLUMN].astype(float)
+    p2 = clean_2.set_index("session_date")[PRICE_COLUMN].astype(float)
+
+    receipt = evaluate_engle_granger_cointegration(p1, p2, ticker_1=ticker1, ticker_2=ticker2)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 75)
+    print("  NextOmni Stock: Engle-Granger Cointegration & Mean-Reversion Engine")
+    print("=" * 75)
+    print(f"  Asset 1 (Dependent):       {receipt.ticker_1}")
+    print(f"  Asset 2 (Independent):     {receipt.ticker_2}")
+    print(f"  Aligned Sample Size:       {receipt.sample_size} sessions")
+    print(f"  Hedge Ratio (Beta):        {receipt.hedge_ratio_beta:>7.4f}")
+    print(f"  Intercept (Alpha):         {receipt.intercept_alpha:>7.4f}")
+    print(f"  ADF Spread t-Statistic:    {receipt.adf_statistic:>7.4f}")
+    print(f"  Engle-Granger 5% Critical: {receipt.critical_values['5%']:>7.2f}")
+    print(f"  p-Value (Approx):          {receipt.p_value_approx:>7.4f}")
+    print(f"  Cointegration Status:      {'COINTEGRATED (PASS)' if receipt.is_cointegrated else 'NOT COINTEGRATED (FAIL)'}")
+    print(f"  Mean-Reversion Half-Life:  {receipt.half_life_sessions:.1f} sessions")
+    print(f"  Current Spread Value:      {receipt.current_spread:>+7.4f}")
+    print(f"  Current Spread Z-Score:    {receipt.current_spread_zscore:>+7.2f} sigma")
+    print(f"  Summary:                   {receipt.summary}")
+    print("=" * 75 + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="nextomni-stock",
@@ -1379,6 +1482,56 @@ def main() -> None:
         help="Output calibration report as JSON",
     )
 
+    # Lead-lag Granger causality parser
+    lead_lag_parser = subparsers.add_parser(
+        "lead-lag", help="Evaluate cross-market lead-lag Granger causality"
+    )
+    lead_lag_parser.add_argument(
+        "--source",
+        type=str,
+        required=True,
+        help="Source leading ticker symbol (e.g. JPM)",
+    )
+    lead_lag_parser.add_argument(
+        "--target",
+        type=str,
+        required=True,
+        help="Target lagging ticker symbol (e.g. 1155.KL)",
+    )
+    lead_lag_parser.add_argument(
+        "--max-lag",
+        type=int,
+        default=5,
+        help="Maximum lag orders to test in sessions (default: 5)",
+    )
+    lead_lag_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output lead-lag receipt as JSON",
+    )
+
+    # Cointegration parser
+    coint_parser = subparsers.add_parser(
+        "cointegrate", help="Evaluate Engle-Granger cointegration and mean-reverting spread"
+    )
+    coint_parser.add_argument(
+        "--ticker1",
+        type=str,
+        required=True,
+        help="First ticker symbol (dependent P1)",
+    )
+    coint_parser.add_argument(
+        "--ticker2",
+        type=str,
+        required=True,
+        help="Second ticker symbol (independent P2)",
+    )
+    coint_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output cointegration receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1426,6 +1579,10 @@ def main() -> None:
         portfolio_command(args)
     elif args.command == "calibration-report":
         calibration_report_command(args)
+    elif args.command == "lead-lag":
+        lead_lag_command(args)
+    elif args.command == "cointegrate":
+        cointegrate_command(args)
 
 
 if __name__ == "__main__":

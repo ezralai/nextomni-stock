@@ -502,6 +502,69 @@ def render_dashboard() -> None:
                         )
                         st.plotly_chart(fig_bt, use_container_width=True)
 
+            # Cross-Market Lead-Lag & Cointegration Diagnostics
+            with st.expander("🔗 Cross-Market Lead-Lag & Cointegration Diagnostics", expanded=False):
+                st.markdown(
+                    "Evaluate inter-market Granger causality (does an international lead market predict local moves?) "
+                    "and Engle-Granger cointegration spread mean-reversion dynamics."
+                )
+                from src.data.db import get_all_stocks
+                all_stocks_df = get_all_stocks()
+                all_tickers = [t for t in all_stocks_df["ticker"].tolist() if t != selected_ticker]
+                if all_tickers:
+                    col_p1, col_p2 = st.columns(2)
+                    with col_p1:
+                        partner_ticker = st.selectbox("Select Partner Asset", options=all_tickers, key="coint_partner")
+                    with col_p2:
+                        max_lag_sel = st.slider("Granger Max Lag (Sessions)", 1, 10, 5, key="granger_max_lag")
+
+                    if st.button("🔬 Compute Lead-Lag & Cointegration", use_container_width=True):
+                        with st.spinner("Aligning multi-market trading sessions and testing dynamics..."):
+                            from src.analytics.causality import evaluate_engle_granger_cointegration, evaluate_granger_causality
+                            from src.data.db import get_observations
+
+                            df_partner = get_observations(partner_ticker)
+                            if df_partner.empty or len(df_partner) < 30:
+                                st.warning(f"Insufficient history for {partner_ticker}.")
+                            else:
+                                c_obs = df_obs.sort_values("session_date").drop_duplicates("session_date")
+                                c_prt = df_partner.sort_values("session_date").drop_duplicates("session_date")
+
+                                ret_sel = c_obs[PRICE_COLUMN].astype(float).pct_change().dropna()
+                                ret_sel.index = c_obs["session_date"].iloc[1:]
+                                ret_prt = c_prt[PRICE_COLUMN].astype(float).pct_change().dropna()
+                                ret_prt.index = c_prt["session_date"].iloc[1:]
+
+                                p_sel = c_obs.set_index("session_date")[PRICE_COLUMN].astype(float)
+                                p_prt = c_prt.set_index("session_date")[PRICE_COLUMN].astype(float)
+
+                                g_lead = evaluate_granger_causality(ret_prt, ret_sel, max_lag=max_lag_sel, source_ticker=partner_ticker, target_ticker=selected_ticker)
+                                g_lag = evaluate_granger_causality(ret_sel, ret_prt, max_lag=max_lag_sel, source_ticker=selected_ticker, target_ticker=partner_ticker)
+                                coint_rec = evaluate_engle_granger_cointegration(p_sel, p_prt, ticker_1=selected_ticker, ticker_2=partner_ticker)
+
+                                col_cg1, col_cg2 = st.columns(2)
+                                with col_cg1:
+                                    st.markdown(f"**Lead-Lag Direction: {partner_ticker} ➔ {selected_ticker}**")
+                                    st.metric("Granger F-Stat", f"{g_lead.f_statistic:.2f}", delta=f"p={g_lead.p_value:.4f}")
+                                    st.caption(f"Optimal Lag: {g_lead.optimal_lag} session(s) | {'✅ Statistically Significant (p < 0.05)' if g_lead.is_causal else '❌ Not Significant'}")
+                                with col_cg2:
+                                    st.markdown(f"**Reverse Direction: {selected_ticker} ➔ {partner_ticker}**")
+                                    st.metric("Granger F-Stat", f"{g_lag.f_statistic:.2f}", delta=f"p={g_lag.p_value:.4f}")
+                                    st.caption(f"Optimal Lag: {g_lag.optimal_lag} session(s) | {'✅ Statistically Significant (p < 0.05)' if g_lag.is_causal else '❌ Not Significant'}")
+
+                                st.markdown("---")
+                                st.markdown("**Engle-Granger Cointegration & Spread Mean-Reversion:**")
+                                col_ci1, col_ci2, col_ci3, col_ci4 = st.columns(4)
+                                col_ci1.metric("Hedge Ratio (β)", f"{coint_rec.hedge_ratio_beta:.4f}")
+                                col_ci2.metric("ADF Spread Stat", f"{coint_rec.adf_statistic:.2f}", delta=f"5% Crit: {coint_rec.critical_values['5%']:.2f}")
+                                col_ci3.metric("Half-Life", f"{coint_rec.half_life_sessions:.1f} sessions" if math.isfinite(coint_rec.half_life_sessions) else "Non-stationary")
+                                col_ci4.metric("Spread Z-Score", f"{coint_rec.current_spread_zscore:+.2f} σ")
+
+                                if coint_rec.is_cointegrated:
+                                    st.success(f"⚖️ {coint_rec.summary}")
+                                else:
+                                    st.info(f"ℹ️ {coint_rec.summary}")
+
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
     # =========================================================================
