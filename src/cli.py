@@ -1515,10 +1515,11 @@ def main() -> None:
     )
     portfolio_parser.add_argument(
         "--mode",
-        choices=["max_sharpe", "min_variance", "risk_parity", "equal_weight"],
+        choices=["max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp"],
         default="max_sharpe",
         help="Optimization objective mode (default: max_sharpe)",
     )
+
     portfolio_parser.add_argument(
         "--max-weight",
         type=float,

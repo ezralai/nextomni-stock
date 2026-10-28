@@ -239,15 +239,17 @@ def render_dashboard() -> None:
                             with opt_c1:
                                 opt_mode = st.selectbox(
                                     "Portfolio Objective Mode",
-                                    ["max_sharpe", "min_variance", "risk_parity", "equal_weight"],
+                                    ["max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp"],
                                     format_func=lambda m: {
                                         "max_sharpe": "Maximum Sharpe Ratio",
                                         "min_variance": "Minimum Variance",
                                         "risk_parity": "Equal Risk Contribution (Risk Parity)",
                                         "equal_weight": "Equal Weighting (1/N)",
+                                        "hrp": "Hierarchical Risk Parity (HRP)",
                                     }[m],
                                     key="opt_mode",
                                 )
+
                             with opt_c2:
                                 opt_max_w = st.slider("Max Single-Asset Weight", 0.10, 1.0, 0.40, step=0.05, key="opt_max_w")
 

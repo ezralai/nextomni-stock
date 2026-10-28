@@ -121,7 +121,7 @@ def test_compute_ledoit_wolf_covariance_properties(sample_returns_df):
 
 def test_optimize_alpha_portfolio_modes_and_constraints(sample_screener_records, sample_returns_df):
     """Verify weight constraints (sum=1.0, 0 <= w <= max_weight) across optimization modes."""
-    modes = ["max_sharpe", "min_variance", "risk_parity", "equal_weight"]
+    modes = ["max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp"]
 
     for m in modes:
         receipt = optimize_alpha_portfolio(
@@ -162,6 +162,40 @@ def test_calculate_portfolio_risk_contributions_identity():
     assert np.isclose(np.sum(rc), 1.0)
 
 
+def test_compute_hrp_weights_mathematical_properties():
+    """Verify HRP tree clustering, inverse-variance properties, and singularity robustness."""
+    from src.analytics.portfolio import compute_hrp_weights
+
+    # 1. 3-asset known covariance with asset 0 having lowest risk
+    cov = np.array([
+        [0.01, 0.002, 0.001],
+        [0.002, 0.04, 0.005],
+        [0.001, 0.005, 0.09],
+    ])
+    w = compute_hrp_weights(cov)
+    assert len(w) == 3
+    assert np.isclose(np.sum(w), 1.0)
+    assert (w >= 0.0).all()
+    # Lowest variance asset should receive the largest weight in HRP
+    assert w[0] > w[1] > w[2]
+
+    # 2. Maximum weight constraint and redistribution
+    w_capped = compute_hrp_weights(cov, max_weight=0.45)
+    assert np.isclose(np.sum(w_capped), 1.0)
+    assert (w_capped <= 0.45 + 1e-6).all()
+
+    # 3. Collinear / singular covariance matrix (rank-deficient where Markowitz fails)
+    cov_singular = np.array([
+        [0.04, 0.04, 0.01],
+        [0.04, 0.04, 0.01],
+        [0.01, 0.01, 0.09],
+    ])
+    w_sing = compute_hrp_weights(cov_singular)
+    assert len(w_sing) == 3
+    assert np.isclose(np.sum(w_sing), 1.0)
+    assert (w_sing >= 0.0).all()
+
+
 def test_optimize_alpha_portfolio_single_asset_fallback(sample_screener_records):
     """Verify single-asset input produces 100% allocation without errors."""
     receipt = optimize_alpha_portfolio(
@@ -180,11 +214,12 @@ def test_cli_portfolio_command(capsys, sample_screener_records, sample_returns_d
 
     with patch("src.analytics.screener.screen_asset_universe", return_value=sample_screener_records), \
          patch("src.analytics.portfolio.build_aligned_returns_matrix", return_value=sample_returns_df), \
-         patch.object(sys, "argv", ["nextomni", "portfolio", "--mode", "max_sharpe", "--json"]):
+         patch.object(sys, "argv", ["nextomni", "portfolio", "--mode", "hrp", "--json"]):
         main()
 
     captured = capsys.readouterr()
     data = json.loads(captured.out)
-    assert data["mode"] == "max_sharpe"
+    assert data["mode"] == "hrp"
     assert "weights" in data
     assert "sharpe_ratio" in data
+

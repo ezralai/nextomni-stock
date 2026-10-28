@@ -11,13 +11,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
+import scipy.cluster.hierarchy as sch
 from scipy.optimize import minimize
+import scipy.spatial.distance as ssd
 from sklearn.covariance import LedoitWolf
 
 from src.analytics.screener import ScreenerRecord, screen_asset_universe
 from src.config import PRICE_COLUMN
 from src.data.db import get_observations
 from src.security.validators import assert_finite_number, validate_exchange
+
 
 
 @dataclass
@@ -184,6 +187,104 @@ def calculate_portfolio_risk_contributions(
     return risk_contrib
 
 
+def compute_hrp_weights(
+    cov_matrix: np.ndarray,
+    corr_matrix: Optional[np.ndarray] = None,
+    max_weight: Optional[float] = None,
+) -> np.ndarray:
+    """Compute Hierarchical Risk Parity (HRP) weights via tree clustering and recursive bisection.
+
+    Follows Marcos López de Prado (2016):
+    1. Distance metric: D_ij = sqrt(0.5 * (1 - rho_ij))
+    2. Single-linkage hierarchical agglomerative tree clustering
+    3. Quasi-diagonalization to order leaves along cluster hierarchy
+    4. Top-down recursive bisection allocating weights inversely proportional to cluster variance
+
+    Args:
+        cov_matrix: 2D covariance matrix (n x n).
+        corr_matrix: Optional 2D correlation matrix (n x n). Computed from cov if None.
+        max_weight: Optional maximum allowable weight per asset. Excess is iteratively redistributed.
+
+    Returns:
+        1D array of portfolio weights (n elements) summing strictly to 1.0.
+    """
+    n = len(cov_matrix)
+    if n == 0:
+        return np.array([])
+    if n == 1:
+        return np.array([1.0])
+
+    if corr_matrix is None:
+        std = np.sqrt(np.maximum(1e-12, np.diag(cov_matrix)))
+        corr_matrix = cov_matrix / np.outer(std, std)
+        corr_matrix = np.clip(corr_matrix, -1.0, 1.0)
+        np.fill_diagonal(corr_matrix, 1.0)
+
+    # 1. Tree clustering distance
+    dist = np.sqrt(np.maximum(0.0, 0.5 * (1.0 - corr_matrix)))
+    np.fill_diagonal(dist, 0.0)
+    condensed = ssd.squareform(dist, checks=False)
+    link = sch.linkage(condensed, method="single")
+
+    # 2. Quasi-diagonal leaf order
+    ordered_leaves = sch.leaves_list(link).tolist()
+
+    # 3. Recursive bisection
+    def _get_cluster_var(cluster_indices: List[int]) -> float:
+        sub_cov = cov_matrix[np.ix_(cluster_indices, cluster_indices)]
+        diag_inv = 1.0 / np.maximum(1e-12, np.diag(sub_cov))
+        inv_w = diag_inv / np.sum(diag_inv)
+        return float(inv_w.T @ sub_cov @ inv_w)
+
+    weights_by_idx = {i: 1.0 for i in ordered_leaves}
+    active_clusters = [ordered_leaves]
+
+    while active_clusters:
+        active_clusters = [c for c in active_clusters if len(c) > 1]
+        next_clusters = []
+        for c in active_clusters:
+            mid = len(c) // 2
+            c1 = c[:mid]
+            c2 = c[mid:]
+            v1 = _get_cluster_var(c1)
+            v2 = _get_cluster_var(c2)
+            total_v = max(v1 + v2, 1e-12)
+            alpha1 = v2 / total_v
+            alpha2 = 1.0 - alpha1
+            for idx in c1:
+                weights_by_idx[idx] *= alpha1
+            for idx in c2:
+                weights_by_idx[idx] *= alpha2
+            if len(c1) > 1:
+                next_clusters.append(c1)
+            if len(c2) > 1:
+                next_clusters.append(c2)
+        active_clusters = next_clusters
+
+    raw_weights = np.array([weights_by_idx[i] for i in range(n)])
+    raw_weights = np.maximum(0.0, raw_weights)
+    total_w = np.sum(raw_weights)
+    w = raw_weights / total_w if total_w > 0 else np.ones(n) / n
+
+    # Apply upper bound constraint with iterative redistribution if specified
+    if max_weight is not None and max_weight > 0:
+        upper_bound = max(1.0 / n, max_weight)
+        for _ in range(25):
+            excess = np.sum(np.maximum(0.0, w - upper_bound))
+            if excess <= 1e-8:
+                break
+            w = np.minimum(w, upper_bound)
+            unconstrained = w < upper_bound - 1e-8
+            if np.any(unconstrained):
+                w[unconstrained] += excess * (w[unconstrained] / np.sum(w[unconstrained]))
+            else:
+                break
+        w = np.maximum(0.0, w)
+        w /= np.sum(w)
+
+    return w
+
+
 def optimize_alpha_portfolio(
     screener_records: List[ScreenerRecord],
     returns_df: Optional[pd.DataFrame] = None,
@@ -197,7 +298,7 @@ def optimize_alpha_portfolio(
     Args:
         screener_records: List of ScreenerRecord objects from screen_asset_universe.
         returns_df: Optional precomputed aligned returns DataFrame.
-        mode: Allocation mode ('max_sharpe', 'min_variance', 'risk_parity', 'equal_weight').
+        mode: Allocation mode ('max_sharpe', 'min_variance', 'risk_parity', 'equal_weight', 'hrp').
         risk_free_rate: Annualized risk-free benchmark rate (default: 0.04).
         max_weight: Maximum allowable weight per asset in long-only allocation.
         db_path: Optional SQLite database path.
@@ -205,9 +306,10 @@ def optimize_alpha_portfolio(
     Returns:
         PortfolioReceipt containing optimal weights, risk/return metrics, and diagnostics.
     """
-    valid_modes = {"max_sharpe", "min_variance", "risk_parity", "equal_weight"}
+    valid_modes = {"max_sharpe", "min_variance", "risk_parity", "equal_weight", "hrp"}
     if mode not in valid_modes:
         raise ValueError(f"Invalid mode '{mode}'. Expected one of {valid_modes}")
+
 
     if not screener_records:
         raise ValueError("screener_records cannot be empty.")
@@ -285,7 +387,14 @@ def optimize_alpha_portfolio(
 
     if mode == "equal_weight":
         opt_weights = w0
+    elif mode == "hrp":
+        opt_weights = compute_hrp_weights(
+            cov_matrix=cov_ann,
+            corr_matrix=lw_receipt.shrunk_correlation.values,
+            max_weight=upper_bound,
+        )
     elif mode == "min_variance":
+
         def var_objective(w: np.ndarray) -> float:
             return float(w.T @ cov_ann @ w)
 
