@@ -778,6 +778,35 @@ def render_dashboard() -> None:
                 else:
                     st.info(f"ℹ️ {wav_rec.summary}")
 
+            # Risk-Managed Momentum & Crash Risk Monitor
+            with st.expander("🛡️ Risk-Managed Momentum & Crash Risk Monitor", expanded=False):
+                st.markdown(
+                    "Evaluate **Barroso & Santa-Clara (2015)** inverse-volatility dynamic scaling and **Daniel & Moskowitz (2016)** "
+                    "bear-market crash hazard probability. Mitigates severe momentum crashes and negative return skewness."
+                )
+                from src.analytics.risk_managed_momentum import evaluate_momentum_risk_profile
+                mom_rec = evaluate_momentum_risk_profile(df_obs, ticker=selected_ticker, target_vol=0.12, max_leverage=2.0)
+
+                if mom_rec.sample_sessions >= 45:
+                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                    col_m1.metric("Crash Hazard Probability", f"{mom_rec.current_crash_hazard_pct:.1f}%")
+                    col_m2.metric("Crash Risk State", mom_rec.crash_risk_regime)
+                    col_m3.metric("Dynamic Leverage", f"{mom_rec.current_leverage_weight:.2f}x", delta=f"{mom_rec.target_volatility_pct:.0f}% target vol")
+                    col_m4.metric("RMM Sharpe", f"{mom_rec.rmm_sharpe:+.2f}", delta=f"{mom_rec.rmm_sharpe - mom_rec.raw_momentum_sharpe:+.2f} vs Raw")
+
+                    st.markdown("**Comparative Strategy Performance (Barroso & Santa-Clara 2015):**")
+                    mom_df = pd.DataFrame([
+                        {"Metric": "Annualized Return", "Unmanaged Momentum": f"{mom_rec.raw_momentum_ann_return_pct:+.2f}%", "Risk-Managed (RMM)": f"{mom_rec.rmm_ann_return_pct:+.2f}%"},
+                        {"Metric": "Annualized Volatility", "Unmanaged Momentum": f"{mom_rec.raw_momentum_volatility_pct:.2f}%", "Risk-Managed (RMM)": f"{mom_rec.rmm_volatility_pct:.2f}%"},
+                        {"Metric": "Sharpe Ratio (Rf=4%)", "Unmanaged Momentum": f"{mom_rec.raw_momentum_sharpe:+.2f}", "Risk-Managed (RMM)": f"{mom_rec.rmm_sharpe:+.2f}"},
+                        {"Metric": "Max Drawdown", "Unmanaged Momentum": f"{mom_rec.raw_momentum_max_drawdown_pct:.2f}%", "Risk-Managed (RMM)": f"{mom_rec.rmm_max_drawdown_pct:.2f}%"},
+                        {"Metric": "Return Skewness", "Unmanaged Momentum": f"{mom_rec.raw_momentum_skewness:+.2f}", "Risk-Managed (RMM)": f"{mom_rec.rmm_skewness:+.2f}"},
+                    ])
+                    st.dataframe(mom_df, use_container_width=True, hide_index=True)
+                    st.caption(f"🛡️ **Momentum Summary:** {mom_rec.summary} | **HMAC Digest:** `{mom_rec.signature[:16]}...` (Verified: `{mom_rec.verify_integrity()}`)")
+                else:
+                    st.info(f"ℹ️ {mom_rec.summary}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

@@ -1456,6 +1456,59 @@ def wavelet_denoise_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def momentum_crash_report_command(args: argparse.Namespace) -> None:
+    """Evaluate Barroso & Santa-Clara risk-managed momentum and Daniel & Moskowitz crash hazard."""
+    import json
+    from src.analytics.risk_managed_momentum import evaluate_momentum_risk_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    target_vol = float(args.target_vol) if getattr(args, "target_vol", None) else 0.12
+    max_leverage = float(args.max_leverage) if getattr(args, "max_leverage", None) else 2.0
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observation history found for {ticker}. Please synchronize first.\n")
+        return
+
+    receipt = evaluate_momentum_risk_profile(
+        df=df_obs,
+        ticker=ticker,
+        target_vol=target_vol,
+        max_leverage=max_leverage,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Risk-Managed Momentum & Crash-Risk Dampened Trend Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:         {receipt.ticker}")
+    print(f"  Sample History:            {receipt.sample_sessions} sessions")
+    print(f"  Target Volatility (σ*):    {receipt.target_volatility_pct:.1f}% annualized")
+    print(f"  Max Leverage Cap:          {receipt.max_leverage:.2f}x")
+    print(f"  Current Dynamic Leverage:  {receipt.current_leverage_weight:.2f}x")
+    print("-" * 80)
+    print(f"  Crash Hazard Probability:  {receipt.current_crash_hazard_pct:.1f}%")
+    print(f"  Crash Risk State:          {receipt.crash_risk_regime}")
+    print("-" * 80)
+    print("  Comparative Strategy Performance (Barroso & Santa-Clara 2015):")
+    print(f"    {'Metric':<26} {'Unmanaged Momentum':>20} {'Risk-Managed (RMM)':>20}")
+    print("    " + "-" * 68)
+    print(f"    {'Annualized Return':<26} {receipt.raw_momentum_ann_return_pct:>+19.2f}% {receipt.rmm_ann_return_pct:>+19.2f}%")
+    print(f"    {'Annualized Volatility':<26} {receipt.raw_momentum_volatility_pct:>19.2f}% {receipt.rmm_volatility_pct:>19.2f}%")
+    print(f"    {'Sharpe Ratio (Rf=4%)':<26} {receipt.raw_momentum_sharpe:>+19.2f} {receipt.rmm_sharpe:>+19.2f}")
+    print(f"    {'Max Drawdown':<26} {receipt.raw_momentum_max_drawdown_pct:>19.2f}% {receipt.rmm_max_drawdown_pct:>19.2f}%")
+    print(f"    {'Return Skewness':<26} {receipt.raw_momentum_skewness:>+19.2f} {receipt.rmm_skewness:>+19.2f}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):       {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2079,6 +2132,34 @@ def main() -> None:
         help="Output wavelet receipt as JSON",
     )
 
+    # Momentum crash report parser
+    momentum_parser = subparsers.add_parser(
+        "momentum-crash-report", help="Evaluate risk-managed momentum and crash hazard diagnostics"
+    )
+    momentum_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, JPM)",
+    )
+    momentum_parser.add_argument(
+        "--target-vol",
+        type=float,
+        default=0.12,
+        help="Target annualized volatility sigma* (default: 0.12)",
+    )
+    momentum_parser.add_argument(
+        "--max-leverage",
+        type=float,
+        default=2.0,
+        help="Maximum allowable leverage cap (default: 2.0)",
+    )
+    momentum_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output momentum crash receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2146,6 +2227,8 @@ def main() -> None:
         factor_attribution_command(args)
     elif args.command == "wavelet-denoise":
         wavelet_denoise_command(args)
+    elif args.command == "momentum-crash-report":
+        momentum_crash_report_command(args)
 
 
 if __name__ == "__main__":
