@@ -1286,6 +1286,44 @@ def changepoint_detect_command(args: argparse.Namespace) -> None:
     print("=" * 75 + "\n")
 
 
+def toxicity_report_command(args: argparse.Namespace) -> None:
+    """Audit order flow toxicity and Volume-Synchronized Probability of Toxicity (VPIN)."""
+    import json
+    from src.data.db import get_observations
+    from src.features.toxicity import evaluate_flow_toxicity
+
+    ticker = validate_ticker(args.ticker)
+    window = int(args.window) if getattr(args, "window", None) else 20
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observations found for {ticker}. Please synchronize data first.\n")
+        return
+
+    receipt = evaluate_flow_toxicity(df_obs, ticker=ticker, window=window)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 75)
+    print("  NextOmni Stock: Order Flow Toxicity & VPIN Microstructure Audit")
+    print("=" * 75)
+    print(f"  Ticker Symbol:             {receipt.ticker}")
+    print(f"  Sample Size:               {receipt.sample_sessions} sessions")
+    print(f"  Observation Window:        {receipt.window} sessions")
+    print("-" * 75)
+    print(f"  Latest VPIN:               {receipt.latest_vpin * 100:>6.2f}%")
+    print(f"  Trailing Mean VPIN:        {receipt.mean_vpin * 100:>6.2f}%")
+    print(f"  Historical Peak VPIN:      {receipt.max_vpin * 100:>6.2f}%")
+    print("-" * 75)
+    print(f"  Latest Volume Initiation:  {receipt.latest_buyer_volume_pct:.1f}% Buyer / {receipt.latest_seller_volume_pct:.1f}% Seller")
+    print(f"  Toxicity Flow Regime:      {receipt.toxicity_regime}")
+    print("-" * 75)
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 75 + "\n")
+
+
 
 def main() -> None:
 
@@ -1819,6 +1857,28 @@ def main() -> None:
         help="Output change-point receipt as JSON",
     )
 
+    # Toxicity report parser
+    toxicity_parser = subparsers.add_parser(
+        "toxicity-report", help="Audit order flow toxicity and Volume-Synchronized Probability of Toxicity (VPIN)"
+    )
+    toxicity_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol to audit (e.g. JPM, 1155.KL)",
+    )
+    toxicity_parser.add_argument(
+        "--window",
+        type=int,
+        default=20,
+        help="Rolling observation window in sessions (default: 20)",
+    )
+    toxicity_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output toxicity receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -1878,6 +1938,8 @@ def main() -> None:
         crps_eval_command(args)
     elif args.command == "changepoint-detect":
         changepoint_detect_command(args)
+    elif args.command == "toxicity-report":
+        toxicity_report_command(args)
 
 
 if __name__ == "__main__":

@@ -600,6 +600,25 @@ def render_dashboard() -> None:
                 else:
                     st.warning(f"⚠️ {liq_rec.summary}")
 
+                # Volume-Synchronized Probability of Toxicity (VPIN)
+                st.markdown("---")
+                st.markdown("**Order Flow Toxicity & VPIN (Easley, Lopez de Prado & O'Hara 2012):**")
+                from src.features.toxicity import evaluate_flow_toxicity
+                tox_rec = evaluate_flow_toxicity(df_obs, ticker=selected_ticker, window=20)
+
+                col_tx1, col_tx2, col_tx3, col_tx4 = st.columns(4)
+                col_tx1.metric("Latest VPIN", f"{tox_rec.latest_vpin * 100:.2f}%", delta=f"{tox_rec.mean_vpin * 100:.2f}% mean")
+                col_tx2.metric("Buyer Initiation %", f"{tox_rec.latest_buyer_volume_pct:.1f}%")
+                col_tx3.metric("Seller Initiation %", f"{tox_rec.latest_seller_volume_pct:.1f}%")
+                col_tx4.metric("Toxicity Regime", tox_rec.toxicity_regime)
+
+                if tox_rec.toxicity_regime in ["TOXIC_INFORMED_SURGE", "HIGH_ADVERSE_SELECTION"]:
+                    st.error(f"🚨 **Adverse Selection Alert:** {tox_rec.summary}")
+                elif tox_rec.toxicity_regime == "MODERATE_FLOW_IMBALANCE":
+                    st.warning(f"⚠️ **Flow Imbalance:** {tox_rec.summary}")
+                else:
+                    st.success(f"🛡️ **Flow State:** {tox_rec.summary}")
+
             # Multi-Estimator Realized Volatility Engine
             with st.expander("⚡ Multi-Estimator Realized Volatility & Extreme Value Engine", expanded=False):
                 st.markdown(
