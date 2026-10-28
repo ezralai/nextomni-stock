@@ -1411,6 +1411,51 @@ def factor_attribution_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def wavelet_denoise_command(args: argparse.Namespace) -> None:
+    """Evaluate multiscale wavelet multiresolution decomposition and adaptive denoising."""
+    import json
+    from src.data.db import get_observations
+    from src.features.wavelet import evaluate_wavelet_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    levels = int(args.levels) if getattr(args, "levels", None) else 3
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observation history found for {ticker}. Please synchronize first.\n")
+        return
+
+    receipt = evaluate_wavelet_profile(df=df_obs, ticker=ticker, levels=levels)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Multiscale Wavelet Denoising & Energy Scalogram Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:         {receipt.ticker}")
+    print(f"  Sample History:            {receipt.sample_sessions} sessions")
+    print(f"  MODWT Decomposition Depth: {receipt.levels} octave levels (Haar shift-invariant)")
+    print(f"  Estimated Noise (σ_hat):   ${receipt.noise_sigma_hat:.4f}")
+    print(f"  Universal Threshold (λ):   ${receipt.universal_threshold:.4f} (VisuShrink)")
+    print(f"  Signal-to-Noise Ratio:     {receipt.snr_db:.2f} dB")
+    print("-" * 80)
+    print(f"  Latest Settlement Price:   ${receipt.latest_raw_price:.2f}")
+    print(f"  Denoised Jump-Clean Trend: ${receipt.latest_denoised_price:.2f}")
+    print(f"  Noise Spike Deviation:     {receipt.price_deviation_pct:+.2f}%")
+    print(f"  Timescale Energy Regime:   {receipt.dominant_scale_regime}")
+    print("-" * 80)
+    print("  Multiscale Wavelet Energy Scalogram:")
+    for scale_lbl, share_pct in receipt.energy_shares_pct.items():
+        print(f"    - {scale_lbl:<20}: {share_pct:>6.2f}% of detail variance")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):       {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2012,6 +2057,28 @@ def main() -> None:
         help="Output factor attribution receipt as JSON",
     )
 
+    # Wavelet denoise parser
+    wavelet_parser = subparsers.add_parser(
+        "wavelet-denoise", help="Evaluate multiscale wavelet decomposition and adaptive denoising"
+    )
+    wavelet_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, JPM)",
+    )
+    wavelet_parser.add_argument(
+        "--levels",
+        type=int,
+        default=3,
+        help="Multiresolution decomposition levels (default: 3)",
+    )
+    wavelet_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output wavelet receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2077,6 +2144,8 @@ def main() -> None:
         tail_dependence_command(args)
     elif args.command == "factor-attribution":
         factor_attribution_command(args)
+    elif args.command == "wavelet-denoise":
+        wavelet_denoise_command(args)
 
 
 if __name__ == "__main__":

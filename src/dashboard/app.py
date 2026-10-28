@@ -745,6 +745,39 @@ def render_dashboard() -> None:
                 else:
                     st.info(f"ℹ️ {fa_rec.summary}")
 
+            # Multiscale Wavelet Multiresolution & Denoising
+            with st.expander("🌊 Multiscale Wavelet Multiresolution & Denoising", expanded=False):
+                st.markdown(
+                    "Decompose non-stationary prices via shift-invariant **Maximal Overlap Discrete Wavelet Transform (MODWT)**. "
+                    "Applies **VisuShrink** adaptive soft-thresholding to isolate transient microstructure noise while "
+                    "preserving discrete jump discontinuities with zero phase lag."
+                )
+                from src.features.wavelet import evaluate_wavelet_profile
+                wav_rec = evaluate_wavelet_profile(df_obs, ticker=selected_ticker, levels=3)
+
+                if wav_rec.sample_sessions >= 8:
+                    col_w1, col_w2, col_w3, col_w4 = st.columns(4)
+                    col_w1.metric("Denoised Jump Trend", f"${wav_rec.latest_denoised_price:.2f}", delta=f"{wav_rec.price_deviation_pct:+.2f}% deviation")
+                    col_w2.metric("Estimated Noise (σ)", f"${wav_rec.noise_sigma_hat:.4f}")
+                    col_w3.metric("Signal-to-Noise Ratio", f"{wav_rec.snr_db:.1f} dB")
+                    col_w4.metric("Timescale Energy Regime", wav_rec.dominant_scale_regime)
+
+                    if wav_rec.energy_shares_pct:
+                        st.markdown("**Wavelet Energy Scalogram (Variance across Octaves):**")
+                        w_shares_df = pd.DataFrame([
+                            {
+                                "Octave Scale": k,
+                                "Timescale Band": "2-4 sessions (Noise/Bounce)" if "1" in k else ("4-8 sessions (Weekly)" if "2" in k else "8-16 sessions (Swing)"),
+                                "Variance Share (%)": f"{v:.1f}%",
+                            }
+                            for k, v in wav_rec.energy_shares_pct.items()
+                        ])
+                        st.dataframe(w_shares_df, use_container_width=True, hide_index=True)
+
+                    st.caption(f"🛡️ **Wavelet Summary:** {wav_rec.summary} | **HMAC Digest:** `{wav_rec.signature[:16]}...` (Verified: `{wav_rec.verify_integrity()}`)")
+                else:
+                    st.info(f"ℹ️ {wav_rec.summary}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
