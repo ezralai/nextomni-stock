@@ -609,6 +609,30 @@ def render_dashboard() -> None:
                                 else:
                                     st.info(f"ℹ️ {coint_rec.summary}")
 
+                                # Online Kalman Filter Dynamic Pairs Tracker
+                                st.markdown("---")
+                                st.markdown("**Online Kalman Filter Dynamic Hedge Ratio Tracking (Chan 2013):**")
+                                from src.analytics.kalman import evaluate_kalman_pairs_profile
+                                kal_rec = evaluate_kalman_pairs_profile(
+                                    y_ticker=selected_ticker,
+                                    x_ticker=partner_ticker,
+                                    df_y=c_obs,
+                                    df_x=c_prt,
+                                    delta=1e-4,
+                                )
+                                if kal_rec.sample_sessions >= 20:
+                                    col_k1, col_k2, col_k3, col_k4 = st.columns(4)
+                                    col_k1.metric("Dynamic Beta (β_t)", f"{kal_rec.latest_beta:.4f}", delta=f"{kal_rec.beta_drift_pct:+.1f}% vs OLS")
+                                    col_k2.metric("Spread Error (e_t)", f"{kal_rec.latest_spread:+.2f}")
+                                    col_k3.metric("Adaptive Z-Score", f"{kal_rec.latest_zscore:+.2f} σ")
+                                    col_k4.metric("Arbitrage Signal", kal_rec.current_signal)
+
+                                    if kal_rec.spread_history:
+                                        k_df = pd.DataFrame(kal_rec.spread_history)
+                                        st.caption("Trailing Dynamic Beta (β_t) and Spread Z-Score:")
+                                        st.line_chart(k_df.set_index("session_date")[["beta", "zscore"]])
+                                    st.caption(fr"🤖 **Kalman State:** Half-life = {kal_rec.mean_reversion_half_life:.1f} sessions | Process noise $\delta = {kal_rec.delta_process_noise:.1e}$ | **HMAC Digest:** `{kal_rec.signature[:16]}...` (Verified: `{kal_rec.verify_integrity()}`)")
+
             # Market Microstructure & Liquidity Profile
             with st.expander("💧 Market Microstructure & Liquidity Profile", expanded=False):
                 st.markdown(

@@ -1565,6 +1565,59 @@ def fracdiff_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def kalman_spread_command(args: argparse.Namespace) -> None:
+    """Evaluate Online Kalman Filter dynamic hedge ratio and adaptive spread tracking."""
+    import json
+    from src.analytics.kalman import evaluate_kalman_pairs_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    y_ticker = validate_ticker(args.y_ticker)
+    x_ticker = validate_ticker(args.x_ticker)
+    delta = float(args.delta) if getattr(args, "delta", None) else 1e-4
+
+    df_y = get_observations(y_ticker)
+    df_x = get_observations(x_ticker)
+
+    if df_y.empty or df_x.empty:
+        missing = y_ticker if df_y.empty else x_ticker
+        print(f"\nError: No observation history found for {missing}. Please synchronize first.\n")
+        return
+
+    receipt = evaluate_kalman_pairs_profile(
+        y_ticker=y_ticker,
+        x_ticker=x_ticker,
+        df_y=df_y,
+        df_x=df_x,
+        delta=delta,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Online Kalman Filter Dynamic Hedge Ratio & Spread Tracker")
+    print("=" * 80)
+    print(f"  Paired Assets:                Y={receipt.y_ticker} vs X={receipt.x_ticker}")
+    print(f"  Sample History:               {receipt.sample_sessions} aligned sessions")
+    print(f"  Process Noise (delta):        {receipt.delta_process_noise:.1e}")
+    print("-" * 80)
+    print(f"  Latest State Intercept (alpha_t):   {receipt.latest_alpha:>+10.4f}")
+    print(f"  Latest Dynamic Hedge Ratio (beta_t):{receipt.latest_beta:>10.4f}")
+    print(f"  Static Benchmark OLS Beta:          {receipt.ols_static_beta:>10.4f}")
+    print(f"  Hedge Ratio Parameter Drift:        {receipt.beta_drift_pct:>+9.2f}% vs static OLS")
+    print("-" * 80)
+    print(f"  Current Spread (e_t):               {receipt.latest_spread:>+10.4f}")
+    print(f"  Adaptive Spread Volatility:         {receipt.latest_spread_std:>10.4f}")
+    print(f"  Spread Z-Score:                     {receipt.latest_zscore:>+10.2f}")
+    print(f"  Mean-Reversion Half-Life:           {receipt.mean_reversion_half_life:.1f} sessions")
+    print(f"  Current Arbitrage Signal:           {receipt.current_signal}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2251,6 +2304,35 @@ def main() -> None:
         help="Output fractional differentiation receipt as JSON",
     )
 
+    # Subparser: kalman-spread
+    kalman_parser = subparsers.add_parser(
+        "kalman-spread",
+        help="Evaluate online Kalman Filter dynamic hedge ratio and adaptive spread",
+    )
+    kalman_parser.add_argument(
+        "--y-ticker",
+        type=str,
+        required=True,
+        help="Dependent asset ticker Y (e.g. JPM, MSFT)",
+    )
+    kalman_parser.add_argument(
+        "--x-ticker",
+        type=str,
+        required=True,
+        help="Independent asset ticker X (e.g. BAC, AAPL)",
+    )
+    kalman_parser.add_argument(
+        "--delta",
+        type=float,
+        default=1e-4,
+        help="Process noise factor controlling rate of parameter adaptation (default: 1e-4)",
+    )
+    kalman_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Kalman spread receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2322,6 +2404,8 @@ def main() -> None:
         momentum_crash_report_command(args)
     elif args.command == "fracdiff":
         fracdiff_command(args)
+    elif args.command == "kalman-spread":
+        kalman_spread_command(args)
 
 
 if __name__ == "__main__":
