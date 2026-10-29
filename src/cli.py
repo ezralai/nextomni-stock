@@ -1885,6 +1885,60 @@ def mrmr_select_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def price_impact_command(args: argparse.Namespace) -> None:
+    """Evaluate Kyle's (1985) Informed Trading Lambda and market price impact."""
+    import json
+    from src.analytics.price_impact import evaluate_price_impact_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    window = int(getattr(args, "window", 60))
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty or len(df_obs) < 20:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    receipt = evaluate_price_impact_profile(
+        ticker=ticker,
+        prices=df_obs[price_col],
+        volumes=df_obs["volume"],
+        window=window,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Kyle's (1985) Informed Trading Lambda & Price Impact Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample History:               {receipt.sample_sessions} sessions (Window: {receipt.rolling_window}D)")
+    print(f"  Adverse Selection Regime:     {receipt.adverse_selection_regime}")
+    print("-" * 80)
+    print("  Kyle's Lambda & Market Depth:")
+    print(f"    Kyle's Lambda (Percent):      {receipt.kyle_lambda_pct_per_million:.6f}% per $1,000,000 net order flow")
+    print(f"    Kyle's Lambda (Dollar/Shares): ${receipt.kyle_lambda_abs_per_k_shares:.6f} per 1,000 shares")
+    print(f"    Market Depth (1% Price Move): ${receipt.market_depth_millions:.2f} Million order flow required")
+    print(f"    Huber Regression R-Squared:   {receipt.r_squared:.4f}")
+    print("-" * 80)
+    print("  Trading Volume & Liquidity Baseline:")
+    print(f"    21-Day Average Daily Volume:  {receipt.average_daily_volume_shares:,.0f} shares")
+    print(f"    Average Daily Dollar Volume:  ${receipt.average_daily_dollar_volume:,.2f}")
+    print("-" * 80)
+    print("  Square-Root Law Projected Execution Price Impact:")
+    print(f"    1% ADV Order Size:            {receipt.sqrt_impact_1pct_adv_bps:>8.2f} basis points (bps)")
+    print(f"    5% ADV Order Size:            {receipt.sqrt_impact_5pct_adv_bps:>8.2f} basis points (bps)")
+    print(f"    10% ADV Order Size:           {receipt.sqrt_impact_10pct_adv_bps:>8.2f} basis points (bps)")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2748,6 +2802,29 @@ def main() -> None:
         help="Output mRMR selection receipt as JSON",
     )
 
+    # Subparser: price-impact
+    impact_parser = subparsers.add_parser(
+        "price-impact",
+        help="Evaluate Kyle's (1985) Informed Trading Lambda and market price impact",
+    )
+    impact_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    impact_parser.add_argument(
+        "--window",
+        type=int,
+        default=60,
+        help="Rolling regression window in sessions (default: 60)",
+    )
+    impact_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output price impact receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2831,6 +2908,8 @@ def main() -> None:
         resampled_frontier_command(args)
     elif args.command == "mrmr-select":
         mrmr_select_command(args)
+    elif args.command == "price-impact":
+        price_impact_command(args)
 
 
 if __name__ == "__main__":

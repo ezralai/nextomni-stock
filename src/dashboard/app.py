@@ -733,6 +733,31 @@ def render_dashboard() -> None:
                 else:
                     st.success(f"🛡️ **Flow State:** {tox_rec.summary}")
 
+                # Kyle's (1985) Informed Trading Lambda & Price Impact Engine
+                st.markdown("---")
+                st.markdown("**Kyle's (1985) Informed Trading Lambda & Market Price Impact:**")
+                from src.analytics.price_impact import evaluate_price_impact_profile
+                p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                impact_rec = evaluate_price_impact_profile(
+                    ticker=selected_ticker,
+                    prices=df_obs[p_col],
+                    volumes=df_obs["volume"],
+                    window=60,
+                )
+
+                col_kp1, col_kp2, col_kp3, col_kp4 = st.columns(4)
+                col_kp1.metric("Kyle's Lambda (λ)", f"{impact_rec.kyle_lambda_pct_per_million:.4f}%/$1M", delta=f"${impact_rec.kyle_lambda_abs_per_k_shares:.4f}/1k shares")
+                col_kp2.metric("Market Depth (1% shift)", f"${impact_rec.market_depth_millions:.1f}M")
+                col_kp3.metric("Square-Root Impact (1% ADV)", f"{impact_rec.sqrt_impact_1pct_adv_bps:.1f} bps")
+                col_kp4.metric("Adverse Selection State", impact_rec.adverse_selection_regime)
+
+                if impact_rec.adverse_selection_regime == "HIGH_ADVERSE_SELECTION_FRAGILE":
+                    st.error(f"🚨 **Microstructure Liquidity Fragility:** {impact_rec.summary}")
+                elif impact_rec.adverse_selection_regime == "MODERATE_IMPACT_NORMAL_LIQUIDITY":
+                    st.warning(f"⚠️ **Moderate Price Impact:** {impact_rec.summary}")
+                else:
+                    st.success(f"🛡️ **Deep Liquidity State:** {impact_rec.summary}")
+
             # Multi-Estimator Realized Volatility Engine
             with st.expander("⚡ Multi-Estimator Realized Volatility & Extreme Value Engine", expanded=False):
                 st.markdown(
