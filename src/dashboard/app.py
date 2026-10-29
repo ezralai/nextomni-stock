@@ -916,6 +916,39 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 30 sessions) to evaluate EVT tail risk.")
 
+            # Market Information Entropy & Ordinal Complexity Monitor (Bandt & Pompe 2002)
+            with st.expander("🌌 Market Information Entropy & Ordinal Complexity Monitor", expanded=False):
+                st.markdown(
+                    "Evaluate **Bandt & Pompe (2002)** Permutation Entropy ($H_P$) and **Richman & Moorman (2000)** Sample Entropy (SampEn). "
+                    "Quantifies market disorder and information flow to distinguish predictable alpha structures from high-entropy random walk noise."
+                )
+                from src.analytics.entropy import evaluate_market_entropy_profile
+                ent_price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                ent_prices = df_obs[ent_price_col].dropna()
+
+                if len(ent_prices) >= 30:
+                    ent_rec = evaluate_market_entropy_profile(
+                        ticker=selected_ticker,
+                        prices=ent_prices,
+                        window=60,
+                        m=3,
+                    )
+
+                    col_en1, col_en2, col_en3, col_en4 = st.columns(4)
+                    col_en1.metric("Permutation Entropy (H_P)", f"{ent_rec.permutation_entropy:.3f}", delta="0: Min, 1: Max")
+                    col_en2.metric("Predictability Index", f"{ent_rec.predictability_index_pct:.1f}%", delta=ent_rec.entropy_regime)
+                    col_en3.metric("Sample Entropy (SampEn)", f"{ent_rec.sample_entropy:.3f}")
+                    col_en4.metric("Trailing Mean H_P", f"{ent_rec.mean_permutation_entropy:.3f}")
+
+                    if ent_rec.entropy_history:
+                        st.markdown("**Trailing 60-Session Permutation Entropy & Predictability Index:**")
+                        ent_df = pd.DataFrame(ent_rec.entropy_history)
+                        st.line_chart(ent_df.set_index("session_date")[["permutation_entropy", "predictability_index"]])
+
+                    st.caption(fr"🌌 **Complexity Summary:** {ent_rec.summary} | **HMAC Digest:** `{ent_rec.signature[:16]}...` (Verified: `{ent_rec.verify_integrity()}`)")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 30 sessions) to evaluate market entropy.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

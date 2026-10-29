@@ -1672,6 +1672,56 @@ def evt_report_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def entropy_report_command(args: argparse.Namespace) -> None:
+    """Evaluate Market Information Entropy, Permutation Complexity, and Predictability Index."""
+    import json
+    from src.analytics.entropy import evaluate_market_entropy_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    window = int(args.window) if getattr(args, "window", None) else 60
+    embedding_dim = int(args.embedding_dim) if getattr(args, "embedding_dim", None) else 3
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observation history found for {ticker}. Please synchronize first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col].dropna()
+
+    receipt = evaluate_market_entropy_profile(
+        ticker=ticker,
+        prices=prices,
+        window=window,
+        m=embedding_dim,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Market Information Entropy & Ordinal Complexity Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample History:               {receipt.sample_sessions} sessions")
+    print(f"  Analysis Window:              {receipt.window} sessions")
+    print(f"  Embedding Dimension (m):      {receipt.embedding_dim}")
+    print("-" * 80)
+    print("  Information Entropy & Complexity Measures:")
+    print(f"    Permutation Entropy (H_P):    {receipt.permutation_entropy:>10.4f} (0 = Deterministic, 1 = White Noise)")
+    print(f"    Sample Entropy (SampEn):      {receipt.sample_entropy:>10.4f}")
+    print(f"    Mean Trailing Entropy:        {receipt.mean_permutation_entropy:>10.4f}")
+    print(f"    Market Predictability Index:  {receipt.predictability_index_pct:>9.2f}%")
+    print("-" * 80)
+    print(f"  Information Regime State:     {receipt.entropy_regime}")
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2410,6 +2460,35 @@ def main() -> None:
         help="Output EVT tail receipt as JSON",
     )
 
+    # Subparser: entropy-report
+    entropy_parser = subparsers.add_parser(
+        "entropy-report",
+        help="Evaluate market information entropy, permutation complexity, and predictability",
+    )
+    entropy_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    entropy_parser.add_argument(
+        "--window",
+        type=int,
+        default=60,
+        help="Rolling analysis window in trading sessions (default: 60)",
+    )
+    entropy_parser.add_argument(
+        "--embedding-dim",
+        type=int,
+        default=3,
+        help="Permutation embedding dimension m (default: 3)",
+    )
+    entropy_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output market entropy receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2485,6 +2564,8 @@ def main() -> None:
         kalman_spread_command(args)
     elif args.command == "evt-report":
         evt_report_command(args)
+    elif args.command == "entropy-report":
+        entropy_report_command(args)
 
 
 if __name__ == "__main__":
