@@ -1585,6 +1585,29 @@ def render_dashboard() -> None:
                     p_col4.metric("Pinball 90% (Upside)", f"{prob_rec.mean_pinball_loss_q90:.4f}")
                     st.info(f"📊 **Probabilistic Scoring Audit:** {prob_rec.summary}")
 
+            # Burke Ratio, Becker Pain Index & Ulcer Performance Scorecard
+            from src.analytics.drawdown_analytics import evaluate_drawdown_profile
+            p_dd_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+            if len(df_obs) >= 15:
+                try:
+                    dd_rec = evaluate_drawdown_profile(
+                        ticker=selected_ticker,
+                        prices=df_obs[p_dd_col],
+                        risk_free_rate=0.04,
+                    )
+                    st.markdown("---")
+                    st.subheader("🛡️ Path-Dependent Drawdown & Becker Pain Index Scorecard")
+                    st.caption("Martin (1989) Ulcer Index, Burke (1994) Ratio, and Becker (2001) Pain Index quantifying drawdown severity and recovery duration.")
+                    dd_col1, dd_col2, dd_col3, dd_col4, dd_col5 = st.columns(5)
+                    dd_col1.metric("Pain Index", f"{dd_rec.pain_index_pct:.2f}%", delta=f"{dd_rec.max_drawdown_pct:.1f}% MaxDD")
+                    dd_col2.metric("Pain Ratio", f"{dd_rec.pain_ratio:.2f}", delta="Excess/Pain")
+                    dd_col3.metric("Burke Ratio", f"{dd_rec.burke_ratio:.2f}", delta="Quadratic Valleys")
+                    dd_col4.metric("Ulcer Index (UI)", f"{dd_rec.ulcer_index_pct:.2f}%", delta=f"UPI: {dd_rec.ulcer_performance_index:.2f}")
+                    dd_col5.metric("Longest Under Water", f"{dd_rec.max_drawdown_duration_sessions} sessions", delta=f"{dd_rec.num_discrete_drawdowns} valleys")
+                    st.info(f"🛡️ **Path Drawdown Profile:** {dd_rec.summary} | **HMAC:** `{dd_rec.signature[:16]}...` (Verified: `{dd_rec.verify_integrity()}`)")
+                except Exception as ex:
+                    st.caption(f"Drawdown scorecard deferred: {ex}")
+
             st.markdown("---")
 
 

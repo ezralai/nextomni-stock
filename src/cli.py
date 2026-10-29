@@ -1988,6 +1988,57 @@ def tail_shape_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def pain_index_command(args: argparse.Namespace) -> None:
+    """Evaluate Burke Ratio, Becker Pain Index, and Ulcer Performance Index."""
+    import json
+    from src.analytics.drawdown_analytics import evaluate_drawdown_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    rf = float(getattr(args, "risk_free_rate", 0.04))
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty or len(df_obs) < 15:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    receipt = evaluate_drawdown_profile(
+        ticker=ticker,
+        prices=df_obs[price_col],
+        risk_free_rate=rf,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Burke Ratio, Becker Pain Index & Drawdown Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions")
+    print(f"  Annualized Return:            {receipt.annualized_return_pct:+.2f}% (Risk-Free: {receipt.risk_free_rate_pct:.2f}%)")
+    print(f"  Maximum Drawdown:             {receipt.max_drawdown_pct:.2f}% (Current: {receipt.current_drawdown_pct:.2f}%)")
+    print(f"  Under-Water State:            {'ACTIVE DRAWDOWN' if receipt.is_in_drawdown else 'AT HIGH-WATER MARK'}")
+    print(f"  Longest Drawdown Duration:    {receipt.max_drawdown_duration_sessions} trading sessions")
+    print(f"  Discrete Drawdown Episodes:   {receipt.num_discrete_drawdowns} valleys")
+    print("-" * 80)
+    print("  Path-Dependent Pain & Drawdown Metrics:")
+    print(f"    Becker (2001) Pain Index:     {receipt.pain_index_pct:>8.2f}% average time under water")
+    print(f"    Becker Pain Ratio:            {receipt.pain_ratio:>8.3f} excess return per unit average drawdown")
+    print(f"    Burke (1994) Ratio:           {receipt.burke_ratio:>8.3f} quadratic penalty on drawdown valleys")
+    print(f"    Martin (1989) Ulcer Index:    {receipt.ulcer_index_pct:>8.2f}% RMS drawdown")
+    print(f"    Ulcer Performance Index (UPI):{receipt.ulcer_performance_index:>8.3f} Martin ratio")
+    print(f"    Calmar Ratio (Ann/MaxDD):     {receipt.calmar_ratio:>8.3f}")
+    print(f"    Sterling Ratio (Ann/Top5 DD): {receipt.sterling_ratio:>8.3f}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2897,6 +2948,29 @@ def main() -> None:
         help="Output tail shape receipt as JSON",
     )
 
+    # Subparser: pain-index
+    pain_parser = subparsers.add_parser(
+        "pain-index",
+        help="Evaluate Burke Ratio, Becker Pain Index, and Ulcer Performance Index",
+    )
+    pain_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    pain_parser.add_argument(
+        "--risk-free-rate",
+        type=float,
+        default=0.04,
+        help="Annualized risk-free benchmark rate (default: 0.04)",
+    )
+    pain_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output drawdown analytics receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2984,6 +3058,8 @@ def main() -> None:
         price_impact_command(args)
     elif args.command == "tail-shape":
         tail_shape_command(args)
+    elif args.command == "pain-index":
+        pain_index_command(args)
 
 
 if __name__ == "__main__":
