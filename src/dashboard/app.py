@@ -1697,6 +1697,37 @@ def render_dashboard() -> None:
                 except Exception as ex:
                     st.caption(f"Drawdown scorecard deferred: {ex}")
 
+            # Bailey & López de Prado (2014) Deflated Sharpe Ratio & Overfitting Audit
+            from src.evaluation.deflated_sharpe import evaluate_deflated_sharpe_profile
+            if len(df_obs) >= 20:
+                try:
+                    p_ret = df_obs[p_dd_col].astype(float).pct_change().dropna()
+                    dsr_rec = evaluate_deflated_sharpe_profile(
+                        ticker=selected_ticker,
+                        returns=p_ret,
+                        num_trials=10,
+                        benchmark_sharpe_ann=0.0,
+                    )
+                    st.markdown("---")
+                    st.subheader("🎯 Bailey & López de Prado (2014) Deflated Sharpe Ratio")
+                    st.caption("Multiple testing, non-normality (skew/kurtosis), and backtest overfitting audit against data snooping bias.")
+                    dsr_c1, dsr_c2, dsr_c3, dsr_c4, dsr_c5 = st.columns(5)
+                    dsr_c1.metric("Classical Sharpe", f"{dsr_rec.annualized_sharpe_ratio:.2f}", delta=f"Daily: {dsr_rec.daily_sharpe_ratio:.3f}")
+                    dsr_c2.metric("Probabilistic SR (PSR)", f"{dsr_rec.probabilistic_sharpe_ratio * 100:.1f}%", help="Corrected for skewness and excess kurtosis")
+                    dsr_c3.metric("Deflated SR (DSR)", f"{dsr_rec.deflated_sharpe_ratio * 100:.1f}%", delta=f"{dsr_rec.overfitting_status}")
+                    dsr_c4.metric("Overfit Probability", f"{dsr_rec.overfitting_probability_pct:.1f}%", delta="1 - DSR")
+                    mintr_disp = f"{dsr_rec.min_track_record_sessions:.0f} sessions" if not math.isinf(dsr_rec.min_track_record_sessions) else "Infinite (SR <= 0)"
+                    dsr_c5.metric("Min Track Record", mintr_disp, delta=f"{dsr_rec.num_trials} trials")
+
+                    if dsr_rec.is_statistically_significant:
+                        st.success(f"🛡️ **Genuine Alpha Confirmed:** {dsr_rec.summary}")
+                    else:
+                        st.warning(f"⚠️ **Backtest Overfitting Warning:** {dsr_rec.summary}")
+
+                    st.caption(f"🛡️ **DSR Audit Digest:** `{dsr_rec.signature[:16]}...` (Verified: `{dsr_rec.verify_integrity()}`)")
+                except Exception as dsr_ex:
+                    st.caption(f"Deflated Sharpe scorecard deferred: {dsr_ex}")
+
             st.markdown("---")
 
 

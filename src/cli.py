@@ -2194,6 +2194,66 @@ def jump_test_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def deflated_sharpe_command(args: argparse.Namespace) -> None:
+    """Evaluate Bailey & López de Prado (2014) Probabilistic & Deflated Sharpe Ratio."""
+    import json
+    import math
+    from src.evaluation.deflated_sharpe import evaluate_deflated_sharpe_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    trials = int(getattr(args, "trials", 10))
+    benchmark_sr = float(getattr(args, "benchmark_sr", 0.0))
+    rf = float(getattr(args, "risk_free_rate", 0.04))
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty or len(df_obs) < 15:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    ret = df_obs[price_col].astype(float).pct_change().dropna()
+
+    receipt = evaluate_deflated_sharpe_profile(
+        ticker=ticker,
+        returns=ret,
+        num_trials=trials,
+        benchmark_sharpe_ann=benchmark_sr,
+        risk_free_rate_ann=rf,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Bailey & López de Prado (2014) Deflated Sharpe Ratio Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions (Trials Evaluated: {receipt.num_trials})")
+    print(f"  Overfitting Status:           {receipt.overfitting_status}")
+    print(f"  Statistically Significant:    {'YES (DSR >= 95%)' if receipt.is_statistically_significant else 'NO (Likely Backtest Overfitting)'}")
+    print("-" * 80)
+    print("  Performance & Statistical Moments:")
+    print(f"    Classical Annualized Sharpe:  {receipt.annualized_sharpe_ratio:>8.2f} (Daily SR: {receipt.daily_sharpe_ratio:.4f})")
+    print(f"    Skewness (Crash Asymmetry):   {receipt.skewness:>8.2f} (gamma_3)")
+    print(f"    Kurtosis (Tail Heaviness):    {receipt.kurtosis:>8.2f} (gamma_4, Normal = 3.0)")
+    print("-" * 80)
+    print("  Probabilistic & Deflated Sharpe Ratios:")
+    print(f"    Benchmark Hurdle Sharpe:      {receipt.benchmark_sharpe_ann:>8.2f} Ann")
+    print(f"    Probabilistic Sharpe (PSR):   {receipt.probabilistic_sharpe_ratio * 100:>7.1f}% (Corrected for Skew & Kurtosis)")
+    print(f"    Expected Max SR from Trials:  {receipt.expected_max_sharpe_ann:>8.2f} Ann (Null E[max_N SR] under Data Snooping)")
+    print(f"    Deflated Sharpe Ratio (DSR):  {receipt.deflated_sharpe_ratio * 100:>7.1f}% (Multiple Testing & Snooping Adjusted)")
+    print(f"    Backtest Overfit Probability: {receipt.overfitting_probability_pct:>7.1f}% (1 - DSR)")
+    mintr_str = f"{receipt.min_track_record_sessions:.0f} sessions" if not math.isinf(receipt.min_track_record_sessions) else "Infinite (SR <= Benchmark)"
+    print(f"    Minimum Track Record Length:  {mintr_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -3214,6 +3274,41 @@ def main() -> None:
         help="Output jump diffusion receipt as JSON",
     )
 
+    # Subparser: deflated-sharpe
+    dsr_parser = subparsers.add_parser(
+        "deflated-sharpe",
+        help="Evaluate Bailey & López de Prado (2014) Probabilistic & Deflated Sharpe Ratio",
+    )
+    dsr_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    dsr_parser.add_argument(
+        "--trials",
+        type=int,
+        default=10,
+        help="Number of strategy/model trials tested (default: 10)",
+    )
+    dsr_parser.add_argument(
+        "--benchmark-sr",
+        type=float,
+        default=0.0,
+        help="Hurdle annualized benchmark Sharpe ratio (default: 0.0)",
+    )
+    dsr_parser.add_argument(
+        "--risk-free-rate",
+        type=float,
+        default=0.04,
+        help="Annualized risk-free rate (default: 0.04)",
+    )
+    dsr_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Deflated Sharpe receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -3309,6 +3404,8 @@ def main() -> None:
         rmt_denoise_command(args)
     elif args.command == "jump-test":
         jump_test_command(args)
+    elif args.command == "deflated-sharpe":
+        deflated_sharpe_command(args)
 
 
 if __name__ == "__main__":
