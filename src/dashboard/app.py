@@ -1282,6 +1282,36 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate effective spread model.")
 
+                # Ang, Chen & Xing (2006) Downside Beta & Realized Semivariance
+                st.markdown("---")
+                st.subheader("📉 Ang, Chen & Xing (2006) Downside Beta & Realized Semivariance")
+                st.caption(
+                    "Asymmetric market co-movement (downside vs. upside beta) and Barndorff-Nielsen realized semivariance decomposition."
+                )
+                from src.analytics.downside_risk import evaluate_downside_risk_profile
+                if len(df_obs) >= 22:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        down_rec = evaluate_downside_risk_profile(
+                            ticker=selected_ticker,
+                            asset_prices=df_obs[p_col],
+                            benchmark_ticker="SPY",
+                            window=min(len(df_obs) - 1, 60),
+                        )
+                        dq1, dq2, dq3, dq4 = st.columns(4)
+                        dq1.metric("Crash Sensitivity", down_rec.crash_sensitivity_tier)
+                        dq2.metric("Downside Beta (β⁻)", f"{down_rec.downside_beta:.2f}", delta=f"CAPM: {down_rec.capm_beta:.2f}")
+                        dq3.metric("Upside Beta (β⁺)", f"{down_rec.upside_beta:.2f}", delta=f"Spread: {down_rec.beta_asymmetry_spread:+.2f}")
+                        dq4.metric("Downside Var Ratio", f"{down_rec.downside_variance_ratio_pct:.1f}%", delta=f"Bad Vol: {down_rec.annualized_downside_vol_pct:.1f}% Ann")
+
+                        st.caption(f"🛡️ **Downside Asymmetry Summary:** {down_rec.summary}")
+                        st.caption(f"🛡️ **Downside Risk Audit Digest:** `{down_rec.signature[:16]}...` (Verified: `{down_rec.verify_integrity()}`)")
+                    except Exception as ex:
+                        st.info(f"Downside risk evaluation deferred: {ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate downside risk profile.")
+
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

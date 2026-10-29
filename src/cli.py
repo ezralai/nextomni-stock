@@ -2371,6 +2371,61 @@ def cpcv_validate_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def downside_beta_command(args: argparse.Namespace) -> None:
+    """Evaluate Ang, Chen & Xing (2006) Downside Beta and Realized Semivariance."""
+    import json
+    import math
+    from src.analytics.downside_risk import evaluate_downside_risk_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    benchmark = validate_ticker(getattr(args, "benchmark", "SPY"))
+    window = int(getattr(args, "window", 60))
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty or len(df_obs) < window + 1:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col]
+
+    receipt = evaluate_downside_risk_profile(
+        ticker=ticker,
+        asset_prices=prices,
+        benchmark_ticker=benchmark,
+        window=window,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Ang, Chen & Xing (2006) Downside Beta & Semivariance Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker} (Benchmark: {receipt.benchmark_ticker})")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions (Lookback Window: {receipt.lookback_window}D)")
+    print(f"  Crash Sensitivity Tier:       {receipt.crash_sensitivity_tier}")
+    print("-" * 80)
+    print("  Asymmetric Beta Attributions:")
+    print(f"    Standard CAPM Beta:         {receipt.capm_beta:>8.2f} (Unconditional Market Co-Movement)")
+    print(f"    Downside Beta (Beta^-):     {receipt.downside_beta:>8.2f} (Down-Market Co-Movement: r_m < mean)")
+    print(f"    Upside Beta (Beta^+):       {receipt.upside_beta:>8.2f} (Up-Market Co-Movement: r_m > mean)")
+    print(f"    Beta Asymmetry Spread:      {receipt.beta_asymmetry_spread:>+8.2f} (Delta Beta = Beta^- - Beta^+)")
+    print("-" * 80)
+    print("  Realized Semivariance Decomposition (Annualized):")
+    print(f"    Total Realized Volatility:  {receipt.annualized_total_vol_pct:>6.2f}% Ann (RV = {receipt.realized_variance:.6f})")
+    print(f"    Good Volatility (Upside):   {receipt.annualized_upside_vol_pct:>6.2f}% Ann (RS^+ = {receipt.upside_semivariance:.6f})")
+    print(f"    Bad Volatility (Downside):  {receipt.annualized_downside_vol_pct:>6.2f}% Ann (RS^- = {receipt.downside_semivariance:.6f})")
+    print(f"    Downside Variance Ratio:    {receipt.downside_variance_ratio_pct:>6.2f}% of Total Variance")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -3490,6 +3545,35 @@ def main() -> None:
         help="Output CPCV receipt as JSON",
     )
 
+    # Subparser: downside-beta
+    downside_parser = subparsers.add_parser(
+        "downside-beta",
+        help="Evaluate Ang, Chen & Xing (2006) Downside Beta and Realized Semivariance",
+    )
+    downside_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    downside_parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="SPY",
+        help="Market benchmark ticker symbol (default: SPY)",
+    )
+    downside_parser.add_argument(
+        "--window",
+        type=int,
+        default=60,
+        help="Observation lookback window in sessions (default: 60)",
+    )
+    downside_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output downside risk receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -3591,6 +3675,8 @@ def main() -> None:
         effective_spread_command(args)
     elif args.command == "cpcv-validate":
         cpcv_validate_command(args)
+    elif args.command == "downside-beta":
+        downside_beta_command(args)
 
 
 if __name__ == "__main__":
