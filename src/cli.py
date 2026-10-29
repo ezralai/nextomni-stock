@@ -1939,6 +1939,55 @@ def price_impact_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def tail_shape_command(args: argparse.Namespace) -> None:
+    """Evaluate robust quantile tail shape, Moors kurtosis, and crash asymmetry."""
+    import json
+    from src.analytics.tail_shape import evaluate_tail_shape_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    window = int(getattr(args, "window", 120))
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty or len(df_obs) < 30:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    receipt = evaluate_tail_shape_profile(
+        ticker=ticker,
+        prices=df_obs[price_col],
+        window=window,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Robust Quantile Tail Shape & Moors Kurtosis Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions (Window: {receipt.rolling_window}D)")
+    print(f"  Tail Shape Regime:            {receipt.tail_shape_regime}")
+    print("-" * 80)
+    print("  Quantile Fat-Tailedness & Kurtosis:")
+    print(f"    Moors Quantile Kurtosis:      {receipt.moors_quantile_kurtosis:.4f} (Normal Benchmark: 1.2330)")
+    print(f"    Moors Excess Kurtosis:        {receipt.moors_excess_kurtosis:+.4f}")
+    print(f"    Hogg Tail Weight Indicator:   {receipt.hogg_tail_weight:.4f} (Normal Benchmark: 2.5800)")
+    print("-" * 80)
+    print("  Quantile Asymmetry & Crash Susceptibility:")
+    print(f"    Bowley Quantile Skewness:     {receipt.bowley_quantile_skewness:+.4f} ([-1.0, +1.0])")
+    print(f"    Tail Asymmetry Ratio (L/R):   {receipt.tail_asymmetry_ratio:.3f}x downside vs upside tail depth")
+    print(f"    Left 1% Tail Depth (Loss):    {receipt.left_tail_depth_1pct:.2f}%")
+    print(f"    Right 1% Tail Depth (Gain):   {receipt.right_tail_depth_1pct:.2f}%")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2825,6 +2874,29 @@ def main() -> None:
         help="Output price impact receipt as JSON",
     )
 
+    # Subparser: tail-shape
+    tail_parser = subparsers.add_parser(
+        "tail-shape",
+        help="Evaluate robust quantile tail shape, Moors kurtosis, and crash asymmetry",
+    )
+    tail_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    tail_parser.add_argument(
+        "--window",
+        type=int,
+        default=120,
+        help="Rolling observation window in sessions (default: 120)",
+    )
+    tail_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output tail shape receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2910,6 +2982,8 @@ def main() -> None:
         mrmr_select_command(args)
     elif args.command == "price-impact":
         price_impact_command(args)
+    elif args.command == "tail-shape":
+        tail_shape_command(args)
 
 
 if __name__ == "__main__":

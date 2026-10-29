@@ -1127,6 +1127,41 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 40 sessions) to evaluate mRMR feature selection.")
 
+                # Robust Quantile Tail Shape & Moors Kurtosis Engine
+                st.markdown("---")
+                st.subheader("📐 Robust Quantile Tail Shape & Moors Kurtosis Engine")
+                st.caption(
+                    "Quantifies fat-tailedness, Moors (1988) octile kurtosis, and downside crash asymmetry "
+                    "without requiring higher-order moment stability, identifying structural crash vulnerability."
+                )
+                from src.analytics.tail_shape import evaluate_tail_shape_profile
+                if len(df_obs) >= 30:
+                    try:
+                        p_ts_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        tail_rec = evaluate_tail_shape_profile(
+                            ticker=selected_ticker,
+                            prices=df_obs[p_ts_col],
+                            window=120,
+                        )
+                        tq1, tq2, tq3, tq4 = st.columns(4)
+                        tq1.metric("Moors Kurtosis", f"{tail_rec.moors_quantile_kurtosis:.3f}", delta=f"{tail_rec.moors_excess_kurtosis:+.3f} vs Normal 1.233")
+                        tq2.metric("Bowley Skewness", f"{tail_rec.bowley_quantile_skewness:+.3f}", delta="Bounded [-1, +1]")
+                        tq3.metric("Tail Asymmetry Ratio", f"{tail_rec.tail_asymmetry_ratio:.2f}x", delta=f"L: {tail_rec.left_tail_depth_1pct:.1f}% vs R: {tail_rec.right_tail_depth_1pct:.1f}%")
+                        tq4.metric("Tail Shape Regime", tail_rec.tail_shape_regime)
+
+                        if tail_rec.tail_shape_regime == "HEAVY_TAIL_ASYMMETRIC_CRASH_RISK":
+                            st.error(f"🚨 **Asymmetric Crash Risk Alert:** {tail_rec.summary}")
+                        elif tail_rec.tail_shape_regime == "LEPTOKURTIC_SYMMETRIC":
+                            st.warning(f"⚠️ **Fat Tails Warning:** {tail_rec.summary}")
+                        else:
+                            st.success(f"🛡️ **Tail Shape Profile:** {tail_rec.summary}")
+
+                        st.caption(f"🛡️ **Provenance HMAC Digest:** `{tail_rec.signature[:16]}...` (Verified: `{tail_rec.verify_integrity()}`)")
+                    except Exception as ex:
+                        st.info(f"Tail shape evaluation deferred: {ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 30 sessions) to evaluate tail shape.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
