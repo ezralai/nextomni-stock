@@ -2313,6 +2313,64 @@ def effective_spread_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def cpcv_validate_command(args: argparse.Namespace) -> None:
+    """Evaluate Marcos López de Prado (2018) Combinatorial Purged & Embargoed Cross-Validation."""
+    import json
+    import math
+    from src.evaluation.cpcv import evaluate_cpcv_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    horizon = int(getattr(args, "horizon", 1))
+    groups = int(getattr(args, "groups", 6))
+    test_groups = int(getattr(args, "test_groups", 2))
+    embargo = float(getattr(args, "embargo", 0.01))
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty or len(df_obs) < 80:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    receipt = evaluate_cpcv_profile(
+        ticker=ticker,
+        df=df_obs,
+        horizon_sessions=horizon,
+        num_groups=groups,
+        test_groups=test_groups,
+        embargo_pct=embargo,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Marcos López de Prado (2018) CPCV & PBO Validation Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions (Horizon: {receipt.horizon_sessions}D)")
+    print(f"  Combinatorial Topology:       N = {receipt.num_groups} Groups, k = {receipt.test_groups} Test Groups")
+    print(f"  Folds Evaluated:              C({receipt.num_groups}, {receipt.test_groups}) = {receipt.num_folds} Purged Folds ({receipt.num_paths} Complete Paths)")
+    print(f"  Leakage Protection:           Embargo = {receipt.embargo_sessions} sessions, Mean Purged = {receipt.mean_purged_sessions_per_fold:.1f} sessions/fold")
+    print(f"  CPCV Overfitting Status:      {receipt.cpcv_status}")
+    print("-" * 80)
+    print("  Out-of-Sample Performance Benchmarking:")
+    print(f"    Model MAE:                  {receipt.mean_model_mae:>8.4f}")
+    print(f"    Baseline Persistence MAE:   {receipt.mean_baseline_mae:>8.4f}")
+    print(f"    MAE Outperformance:         {receipt.mae_improvement_pct:>+7.2f}%")
+    print(f"    Directional Accuracy:       {receipt.directional_accuracy_pct:>7.2f}%")
+    print("-" * 80)
+    print("  Combinatorial Path Sharpe Distribution & PBO:")
+    print(f"    Mean OOS Sharpe Ratio:      {receipt.mean_oos_sharpe_ratio:>8.2f}")
+    print(f"    Sharpe Dispersion [Min,Max]:[{receipt.min_oos_sharpe_ratio:.2f}, {receipt.max_oos_sharpe_ratio:.2f}]")
+    print(f"    Prob. Backtest Overfit(PBO):{receipt.probability_of_backtest_overfitting_pct:>7.1f}%")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -3391,6 +3449,47 @@ def main() -> None:
         help="Output effective spread receipt as JSON",
     )
 
+    # Subparser: cpcv-validate
+    cpcv_parser = subparsers.add_parser(
+        "cpcv-validate",
+        help="Evaluate Marcos López de Prado (2018) Combinatorial Purged & Embargoed Cross-Validation (CPCV)",
+    )
+    cpcv_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    cpcv_parser.add_argument(
+        "--horizon",
+        type=int,
+        default=1,
+        help="Forecast horizon in sessions (default: 1)",
+    )
+    cpcv_parser.add_argument(
+        "--groups",
+        type=int,
+        default=6,
+        help="Total contiguous groups N (default: 6)",
+    )
+    cpcv_parser.add_argument(
+        "--test-groups",
+        type=int,
+        default=2,
+        help="Test groups per combination k (default: 2)",
+    )
+    cpcv_parser.add_argument(
+        "--embargo",
+        type=float,
+        default=0.01,
+        help="Post-test embargo proportion (default: 0.01)",
+    )
+    cpcv_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output CPCV receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -3490,6 +3589,8 @@ def main() -> None:
         deflated_sharpe_command(args)
     elif args.command == "effective-spread":
         effective_spread_command(args)
+    elif args.command == "cpcv-validate":
+        cpcv_validate_command(args)
 
 
 if __name__ == "__main__":

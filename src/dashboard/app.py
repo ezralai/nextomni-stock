@@ -1759,6 +1759,37 @@ def render_dashboard() -> None:
                 except Exception as dsr_ex:
                     st.caption(f"Deflated Sharpe scorecard deferred: {dsr_ex}")
 
+            # Marcos López de Prado (2018) Combinatorial Purged Cross-Validation (CPCV) & PBO
+            from src.evaluation.cpcv import evaluate_cpcv_profile
+            if len(df_obs) >= 80:
+                try:
+                    cpcv_rec = evaluate_cpcv_profile(
+                        ticker=selected_ticker,
+                        df=df_obs,
+                        horizon_sessions=1,
+                        num_groups=6,
+                        test_groups=2,
+                        embargo_pct=0.01,
+                    )
+                    st.markdown("---")
+                    st.subheader("🔁 Marcos López de Prado (2018) Combinatorial Purged Cross-Validation (CPCV)")
+                    st.caption("Boundary purging, post-test embargoing, combinatorial multiple OOS paths, and Probability of Backtest Overfitting (PBO).")
+                    cp_c1, cp_c2, cp_c3, cp_c4, cp_c5 = st.columns(5)
+                    cp_c1.metric("Combinatorial Folds", f"{cpcv_rec.num_folds} folds", delta=f"{cpcv_rec.num_paths} OOS Paths")
+                    cp_c2.metric("MAE Outperformance", f"{cpcv_rec.mae_improvement_pct:+.2f}%", delta=f"{cpcv_rec.mean_model_mae:.4f} vs {cpcv_rec.mean_baseline_mae:.4f}")
+                    cp_c3.metric("Directional Accuracy", f"{cpcv_rec.directional_accuracy_pct:.1f}%")
+                    cp_c4.metric("OOS Sharpe", f"{cpcv_rec.mean_oos_sharpe_ratio:.2f}", delta=f"[{cpcv_rec.min_oos_sharpe_ratio:.2f}, {cpcv_rec.max_oos_sharpe_ratio:.2f}]")
+                    cp_c5.metric("PBO Overfit Risk", f"{cpcv_rec.probability_of_backtest_overfitting_pct:.1f}%", delta=cpcv_rec.cpcv_status)
+
+                    if cpcv_rec.cpcv_status == "ROBUST_LOW_OVERFITTING":
+                        st.success(f"🛡️ **CPCV Low Overfitting Certified:** {cpcv_rec.summary}")
+                    else:
+                        st.warning(f"⚠️ **CPCV Overfitting Notice:** {cpcv_rec.summary}")
+
+                    st.caption(f"🛡️ **CPCV Audit Digest:** `{cpcv_rec.signature[:16]}...` (Verified: `{cpcv_rec.verify_integrity()}`)")
+                except Exception as cpcv_ex:
+                    st.caption(f"CPCV validation scorecard deferred: {cpcv_ex}")
+
             st.markdown("---")
 
 
