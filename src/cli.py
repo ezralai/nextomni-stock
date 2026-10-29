@@ -2039,6 +2039,54 @@ def pain_index_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def markov_regime_command(args: argparse.Namespace) -> None:
+    """Evaluate Hamilton (1989) two-state Markov-switching dynamic regime model."""
+    import json
+    from src.analytics.markov_regime import evaluate_markov_regime_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    window = int(getattr(args, "window", 120))
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty or len(df_obs) < 40:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    receipt = evaluate_markov_regime_profile(
+        ticker=ticker,
+        prices=df_obs[price_col],
+        window=window,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Hamilton (1989) Two-State Markov-Switching Regime Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions (Window: {receipt.rolling_window}D)")
+    print(f"  Current Inferred Regime:      {receipt.current_regime}")
+    print(f"  Crisis State Probability:     {receipt.current_crisis_probability * 100:>6.2f}% (P(S_T = 1))")
+    print(f"  Model Log-Likelihood:         {receipt.log_likelihood:>8.2f}")
+    print("-" * 80)
+    print("  State Characteristics (Annualized Moments):")
+    print(f"    State 0 (Low Vol Expansion):  {receipt.state_0_volatility_ann_pct:>6.2f}% Ann Vol, {receipt.state_0_mean_ann_pct:>+6.2f}% Ann Mean")
+    print(f"    State 1 (High Vol Crisis):    {receipt.state_1_volatility_ann_pct:>6.2f}% Ann Vol, {receipt.state_1_mean_ann_pct:>+6.2f}% Ann Mean ({receipt.volatility_ratio_state1_to_state0:.1f}x Vol Amplification)")
+    print("-" * 80)
+    print("  Regime Transition Probabilities & Expected Persistence:")
+    print(f"    P(Stay in State 0 | S0):      {receipt.p00_persistence:>6.4f} (Expected Duration: {receipt.expected_low_vol_duration_sessions:.1f} sessions)")
+    print(f"    P(Stay in State 1 | S1):      {receipt.p11_persistence:>6.4f} (Expected Duration: {receipt.expected_high_vol_duration_sessions:.1f} sessions)")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2971,6 +3019,29 @@ def main() -> None:
         help="Output drawdown analytics receipt as JSON",
     )
 
+    # Subparser: markov-regime
+    markov_parser = subparsers.add_parser(
+        "markov-regime",
+        help="Evaluate Hamilton (1989) two-state Markov-switching dynamic regime model",
+    )
+    markov_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    markov_parser.add_argument(
+        "--window",
+        type=int,
+        default=120,
+        help="Observation rolling window in sessions (default: 120)",
+    )
+    markov_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Markov regime receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -3060,6 +3131,8 @@ def main() -> None:
         tail_shape_command(args)
     elif args.command == "pain-index":
         pain_index_command(args)
+    elif args.command == "markov-regime":
+        markov_regime_command(args)
 
 
 if __name__ == "__main__":

@@ -1162,6 +1162,39 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 30 sessions) to evaluate tail shape.")
 
+                # Hamilton (1989) Two-State Markov-Switching Regime Engine
+                st.markdown("---")
+                st.subheader("🔄 Hamilton (1989) Two-State Markov-Switching Regime Engine")
+                st.caption(
+                    "Bayesian hidden Markov state-space inference distinguishing calm low-volatility expansion "
+                    "from turbulent high-volatility crisis regimes with transition matrices and expected durations."
+                )
+                from src.analytics.markov_regime import evaluate_markov_regime_profile
+                if len(df_obs) >= 40:
+                    try:
+                        p_mr_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        markov_rec = evaluate_markov_regime_profile(
+                            ticker=selected_ticker,
+                            prices=df_obs[p_mr_col],
+                            window=120,
+                        )
+                        mq1, mq2, mq3, mq4 = st.columns(4)
+                        mq1.metric("Current Regime", markov_rec.current_regime)
+                        mq2.metric("Crisis Probability P(S=1)", f"{markov_rec.current_crisis_probability * 100:.1f}%")
+                        mq3.metric("Low-Vol Duration (p00)", f"{markov_rec.expected_low_vol_duration_sessions:.1f} sessions", delta=f"{markov_rec.state_0_volatility_ann_pct:.1f}% Vol")
+                        mq4.metric("Crisis Duration (p11)", f"{markov_rec.expected_high_vol_duration_sessions:.1f} sessions", delta=f"{markov_rec.state_1_volatility_ann_pct:.1f}% Vol ({markov_rec.volatility_ratio_state1_to_state0:.1f}x)")
+
+                        if markov_rec.current_regime == "HIGH_VOLATILITY_CRISIS":
+                            st.error(f"🚨 **Markov Crisis Regime Alert:** {markov_rec.summary}")
+                        else:
+                            st.success(f"🛡️ **Markov Regime State:** {markov_rec.summary}")
+
+                        st.caption(f"🛡️ **Markov Audit Digest:** `{markov_rec.signature[:16]}...` (Verified: `{markov_rec.verify_integrity()}`)")
+                    except Exception as ex:
+                        st.info(f"Markov regime evaluation deferred: {ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 40 sessions) to evaluate Markov-switching model.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
