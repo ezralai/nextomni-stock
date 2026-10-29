@@ -368,6 +368,29 @@ def render_dashboard() -> None:
                                 st.caption(f"🛡️ **Resampled Robustness Summary:** {resampled_rec.summary}")
                             except Exception as ex:
                                 st.info(f"Resampled frontier profile deferred: {ex}")
+
+                            # Marchenko-Pastur (1967) Random Matrix Theory Covariance Denoising
+                            st.markdown("---")
+                            st.subheader("🔬 Marchenko-Pastur (1967) RMT Covariance Denoising")
+                            st.caption(
+                                "Random Matrix Theory spectral filtering to eliminate in-sample noise eigenvalues "
+                                "and dramatically stabilize multi-asset covariance matrices (López de Prado, 2018)."
+                            )
+                            try:
+                                from src.analytics.rmt_denoiser import evaluate_rmt_denoising_profile
+                                rmt_rec, raw_cov_df, denoised_cov_df = evaluate_rmt_denoising_profile(
+                                    tickers=list(port_rec.weights.keys()),
+                                    lookback_sessions=252,
+                                )
+                                rmt_c1, rmt_c2, rmt_c3, rmt_c4 = st.columns(4)
+                                rmt_c1.metric("Signal Modes", f"{rmt_rec.num_signal_eigenvalues} / {rmt_rec.num_assets}", help="Eigenvalues exceeding Marchenko-Pastur Lambda+")
+                                rmt_c2.metric("Signal Variance", f"{rmt_rec.signal_variance_ratio_pct:.1f}%")
+                                rmt_c3.metric("Noise Ceiling (λ+)", f"{rmt_rec.noise_cutoff_lambda_plus:.3f}")
+                                rmt_c4.metric("Condition Impr.", f"{rmt_rec.condition_number_improvement_ratio:.1f}x", delta=f"{rmt_rec.condition_number_raw:.1f} → {rmt_rec.condition_number_denoised:.1f}")
+
+                                st.caption(f"🛡️ **RMT Stability Summary:** {rmt_rec.summary}")
+                            except Exception as rmt_ex:
+                                st.info(f"RMT covariance denoising deferred: {rmt_ex}")
                     else:
                         st.info("No synchronized assets with sufficient observation history found. Synchronize tickers first.")
 

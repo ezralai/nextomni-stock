@@ -2087,6 +2087,63 @@ def markov_regime_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def rmt_denoise_command(args: argparse.Namespace) -> None:
+    """Evaluate Marchenko-Pastur (1967) RMT covariance matrix denoising and detrending."""
+    import json
+    from src.analytics.rmt_denoiser import evaluate_rmt_denoising_profile
+
+    raw_tickers = getattr(args, "tickers", None)
+    ticker_list = None
+    if raw_tickers:
+        if isinstance(raw_tickers, str):
+            ticker_list = [t.strip().upper() for t in raw_tickers.split(",") if t.strip()]
+        else:
+            ticker_list = [str(t).strip().upper() for t in raw_tickers if str(t).strip()]
+
+    exchange = getattr(args, "exchange", None)
+    lookback = int(getattr(args, "lookback", 252))
+    method = getattr(args, "method", "constant_residual")
+    detrend = bool(getattr(args, "detrend", False))
+
+    receipt, raw_cov, denoised_cov = evaluate_rmt_denoising_profile(
+        tickers=ticker_list,
+        exchange=exchange,
+        lookback_sessions=lookback,
+        method=method,
+        detrend=detrend,
+    )
+
+    if getattr(args, "json", False):
+        out = {
+            "receipt": receipt.to_dict(),
+            "raw_covariance": raw_cov.to_dict(),
+            "denoised_covariance": denoised_cov.to_dict(),
+        }
+        print(json.dumps(out, indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Marchenko-Pastur (1967) RMT Covariance Denoising Engine")
+    print("=" * 80)
+    print(f"  Asset Universe:               {', '.join(receipt.tickers)}")
+    print(f"  Sample Dimensions:            {receipt.num_assets} assets x {receipt.sample_sessions} sessions (q = {receipt.q_ratio:.2f})")
+    print(f"  Denoising Method:             {receipt.method} (Detrend Market Mode: {receipt.is_detrended})")
+    print(f"  Fitted Noise Variance:        {receipt.fitted_noise_variance:.4f}")
+    print(f"  Marchenko-Pastur Null Band:   [{receipt.noise_floor_lambda_minus:.4f}, {receipt.noise_cutoff_lambda_plus:.4f}] (Lambda+ Cutoff)")
+    print("-" * 80)
+    print(f"  Signal Eigenvalues (> L+):    {receipt.num_signal_eigenvalues} modes ({receipt.signal_variance_ratio_pct:.1f}% Total Variance)")
+    print(f"  Noise Eigenvalues (<= L+):    {receipt.num_noise_eigenvalues} modes (Shrunk / Constant Residual)")
+    print("-" * 80)
+    print("  Condition Number (Matrix Stability):")
+    print(f"    Raw Empirical Matrix:       {receipt.condition_number_raw:>10.2f}")
+    print(f"    RMT Denoised Matrix:        {receipt.condition_number_denoised:>10.2f}")
+    print(f"    Stability Improvement:      {receipt.condition_number_improvement_ratio:>10.1f}x reduction")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -3042,6 +3099,48 @@ def main() -> None:
         help="Output Markov regime receipt as JSON",
     )
 
+    # Subparser: rmt-denoise
+    rmt_parser = subparsers.add_parser(
+        "rmt-denoise",
+        help="Denoise empirical covariance matrix via Marchenko-Pastur (1967) Random Matrix Theory",
+    )
+    rmt_parser.add_argument(
+        "--tickers",
+        type=str,
+        default=None,
+        help="Comma-separated stock tickers (e.g. AAPL,MSFT,NVDA,JPM)",
+    )
+    rmt_parser.add_argument(
+        "--exchange",
+        type=str,
+        default=None,
+        choices=list(SUPPORTED_EXCHANGES.keys()),
+        help="Exchange MIC code for universe selection (default: XNYS)",
+    )
+    rmt_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=252,
+        help="Lookback window in trading sessions (default: 252)",
+    )
+    rmt_parser.add_argument(
+        "--method",
+        type=str,
+        default="constant_residual",
+        choices=["constant_residual", "targeted_shrinkage"],
+        help="RMT eigenvalue replacement algorithm (default: constant_residual)",
+    )
+    rmt_parser.add_argument(
+        "--detrend",
+        action="store_true",
+        help="Remove dominant market eigenvalue mode (lambda_1)",
+    )
+    rmt_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output RMT denoising receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -3133,6 +3232,8 @@ def main() -> None:
         pain_index_command(args)
     elif args.command == "markov-regime":
         markov_regime_command(args)
+    elif args.command == "rmt-denoise":
+        rmt_denoise_command(args)
 
 
 if __name__ == "__main__":
