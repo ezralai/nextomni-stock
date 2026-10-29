@@ -877,6 +877,45 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 40 sessions) to evaluate fractional differentiation.")
 
+            # Extreme Value Theory (EVT) Peaks-Over-Threshold Tail Risk Analyzer
+            with st.expander("⚡ Extreme Value Theory (EVT) Tail Risk Analyzer", expanded=False):
+                st.markdown(
+                    "Evaluate **Pickands-Balkema-de Haan (1974, 1975)** Generalized Pareto Distribution (GPD) "
+                    "Peaks-Over-Threshold (POT) extreme risk limits. Overcomes Gaussian and polynomial Cornish-Fisher "
+                    "underestimations of severe catastrophic market crashes."
+                )
+                from src.analytics.evt import evaluate_evt_tail_profile
+                evt_price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                evt_prices = df_obs[evt_price_col].dropna()
+
+                if len(evt_prices) >= 30:
+                    evt_rec = evaluate_evt_tail_profile(
+                        ticker=selected_ticker,
+                        prices=evt_prices,
+                        threshold_quantile=0.95,
+                    )
+
+                    col_ev1, col_ev2, col_ev3, col_ev4 = st.columns(4)
+                    col_ev1.metric("EVT 99% VaR (1-Day)", f"{evt_rec.var_99_pct:.2f}%")
+                    col_ev2.metric("EVT 99% CVaR (ES)", f"{evt_rec.cvar_99_pct:.2f}%")
+                    col_ev3.metric("GPD Shape (ξ)", f"{evt_rec.gpd_shape_xi:+.3f}", delta=evt_rec.tail_fatness_regime)
+                    col_ev4.metric(
+                        "Gaussian Underestimation",
+                        f"{evt_rec.tail_risk_underestimation_pct:+.1f}%",
+                        delta=f"Gauss: {evt_rec.gaussian_var_99_pct:.2f}% vs EVT: {evt_rec.var_99_pct:.2f}%",
+                    )
+
+                    st.markdown("**Comparative Tail Risk Measures (Daily Loss %):**")
+                    evt_df = pd.DataFrame([
+                        {"Risk Model": "EVT Peaks-Over-Threshold (GPD)", "95% VaR": f"{evt_rec.var_95_pct:.2f}%", "99% VaR": f"{evt_rec.var_99_pct:.2f}%", "99% CVaR (ES)": f"{evt_rec.cvar_99_pct:.2f}%"},
+                        {"Risk Model": "Cornish-Fisher Expansion", "95% VaR": "—", "99% VaR": f"{evt_rec.cornish_fisher_var_99_pct:.2f}%", "99% CVaR (ES)": "—"},
+                        {"Risk Model": "Standard Gaussian", "95% VaR": "—", "99% VaR": f"{evt_rec.gaussian_var_99_pct:.2f}%", "99% CVaR (ES)": "—"},
+                    ])
+                    st.dataframe(evt_df, use_container_width=True, hide_index=True)
+                    st.caption(fr"⚡ **EVT Threshold:** $u = {evt_rec.threshold_u:.2f}\%$ ({evt_rec.exceedances_count} exceedances) | $\beta = {evt_rec.gpd_scale_beta:.5f}$ | **HMAC Digest:** `{evt_rec.signature[:16]}...` (Verified: `{evt_rec.verify_integrity()}`)")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 30 sessions) to evaluate EVT tail risk.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

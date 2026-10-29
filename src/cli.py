@@ -1618,6 +1618,60 @@ def kalman_spread_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def evt_report_command(args: argparse.Namespace) -> None:
+    """Evaluate Extreme Value Theory (EVT) Peaks-Over-Threshold tail risk and GPD parameters."""
+    import json
+    from src.analytics.evt import evaluate_evt_tail_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    threshold_q = float(args.threshold_quantile) if getattr(args, "threshold_quantile", None) else 0.95
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observation history found for {ticker}. Please synchronize first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col].dropna()
+
+    receipt = evaluate_evt_tail_profile(
+        ticker=ticker,
+        prices=prices,
+        threshold_quantile=threshold_q,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Extreme Value Theory (EVT) Peaks-Over-Threshold Tail Risk Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample History:               {receipt.sample_sessions} sessions")
+    print(f"  Threshold Quantile:           {receipt.threshold_quantile * 100:.1f}% percentile")
+    print(f"  Loss Cutoff Threshold (u):    {receipt.threshold_u:.2f}% daily loss")
+    print(f"  Tail Exceedances (N_u):       {receipt.exceedances_count} sessions")
+    print("-" * 80)
+    print("  Generalized Pareto Distribution (GPD) Parameters:")
+    print(f"    Shape Parameter (xi / ξ):   {receipt.gpd_shape_xi:>+10.4f} ({receipt.tail_fatness_regime})")
+    print(f"    Scale Parameter (beta / β): {receipt.gpd_scale_beta:>10.6f}")
+    print("-" * 80)
+    print("  Comparative Tail Risk Measures (Daily Loss %):")
+    print(f"    {'Risk Model':<30} {'95% VaR':>12} {'99% VaR':>12} {'99% CVaR (ES)':>15}")
+    print("    " + "-" * 71)
+    print(f"    {'EVT Peaks-Over-Threshold (GPD)':<30} {receipt.var_95_pct:>11.2f}% {receipt.var_99_pct:>11.2f}% {receipt.cvar_99_pct:>14.2f}%")
+    print(f"    {'Cornish-Fisher Expansion':<30} {'—':>12} {receipt.cornish_fisher_var_99_pct:>11.2f}% {'—':>15}")
+    print(f"    {'Standard Gaussian':<30} {'—':>12} {receipt.gaussian_var_99_pct:>11.2f}% {'—':>15}")
+    print("-" * 80)
+    print(f"  Gaussian Tail Underestimation: {receipt.tail_risk_underestimation_pct:>+8.1f}% severe under-prediction")
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2333,6 +2387,29 @@ def main() -> None:
         help="Output Kalman spread receipt as JSON",
     )
 
+    # Subparser: evt-report
+    evt_parser = subparsers.add_parser(
+        "evt-report",
+        help="Evaluate Extreme Value Theory (EVT) Peaks-Over-Threshold tail risk and GPD",
+    )
+    evt_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    evt_parser.add_argument(
+        "--threshold-quantile",
+        type=float,
+        default=0.95,
+        help="Loss threshold quantile u (default: 0.95)",
+    )
+    evt_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output EVT tail receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2406,6 +2483,8 @@ def main() -> None:
         fracdiff_command(args)
     elif args.command == "kalman-spread":
         kalman_spread_command(args)
+    elif args.command == "evt-report":
+        evt_report_command(args)
 
 
 if __name__ == "__main__":
