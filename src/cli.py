@@ -1835,6 +1835,56 @@ def resampled_frontier_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def mrmr_select_command(args: argparse.Namespace) -> None:
+    """Execute Minimum Redundancy Maximum Relevance (mRMR) quantitative feature selection."""
+    import json
+    from src.features.mrmr import evaluate_mrmr_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    horizon = int(getattr(args, "horizon", 1))
+    n_features = int(getattr(args, "n_features", 5))
+    criterion = str(getattr(args, "criterion", "MID")).upper()
+
+    receipt = evaluate_mrmr_profile(
+        ticker=ticker,
+        horizon_sessions=horizon,
+        n_features=n_features,
+        criterion=criterion,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Minimum Redundancy Maximum Relevance (mRMR) Feature Selection")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Forecast Horizon:             {receipt.horizon_sessions} trading session(s)")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions")
+    print(f"  Optimization Criterion:       {receipt.criterion}")
+    print(f"  Candidate Signals:            {receipt.num_candidates} features")
+    print(f"  Selected Signals:             {receipt.num_selected} features")
+    print("-" * 80)
+    print("  Greedy Forward Selection History:")
+    print("    Step   Selected Feature          Relevance I(f;y)    Redundancy R(f;S)    mRMR Score")
+    for step in receipt.selection_history:
+        print(
+            f"    {step['step']:<6} {step['feature']:<25} {step['relevance']:>16.4f} "
+            f"{step['redundancy']:>20.4f} {step['mrmr_score']:>13.4f}"
+        )
+    print("-" * 80)
+    print("  Collinearity & Redundancy Suppression:")
+    print(f"    Mean Candidate Collinearity:  {receipt.mean_candidate_correlation:.4f}")
+    print(f"    Mean Selected Collinearity:   {receipt.mean_selected_correlation:.4f}")
+    print(f"    Multicollinearity Reduction:  {receipt.redundancy_reduction_pct:+.1f}%")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2661,6 +2711,43 @@ def main() -> None:
         help="Output resampled frontier receipt as JSON",
     )
 
+    # Subparser: mrmr-select
+    mrmr_parser = subparsers.add_parser(
+        "mrmr-select",
+        help="Perform Minimum Redundancy Maximum Relevance (mRMR) quantitative feature selection",
+    )
+    mrmr_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    mrmr_parser.add_argument(
+        "--horizon",
+        type=int,
+        default=1,
+        choices=[1, 5, 21],
+        help="Forecast horizon in sessions: 1, 5, or 21 (default: 1)",
+    )
+    mrmr_parser.add_argument(
+        "--n-features",
+        type=int,
+        default=5,
+        help="Target number of non-redundant features to select (default: 5)",
+    )
+    mrmr_parser.add_argument(
+        "--criterion",
+        type=str,
+        default="MID",
+        choices=["MID", "MIQ"],
+        help="mRMR objective criterion: 'MID' (Difference) or 'MIQ' (Quotient) (default: MID)",
+    )
+    mrmr_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output mRMR selection receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2742,6 +2829,8 @@ def main() -> None:
         garch_volatility_command(args)
     elif args.command == "resampled-frontier":
         resampled_frontier_command(args)
+    elif args.command == "mrmr-select":
+        mrmr_select_command(args)
 
 
 if __name__ == "__main__":

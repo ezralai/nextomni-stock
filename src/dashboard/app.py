@@ -1046,6 +1046,62 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 40 sessions) to evaluate GARCH volatility.")
 
+                # Minimum Redundancy Maximum Relevance (mRMR) Feature Selection
+                st.markdown("---")
+                st.subheader("🧬 Minimum Redundancy Maximum Relevance (mRMR) Feature Selection")
+                st.caption(
+                    "Identifies the most predictive, non-collinear quantitative signals using Peng, Long & Ding (2005) "
+                    "mutual information and redundancy penalties, eliminating multicollinearity before model fitting."
+                )
+                from src.features.mrmr import evaluate_mrmr_profile
+                if len(df_obs) >= 40:
+                    try:
+                        mrmr_rec = evaluate_mrmr_profile(
+                            ticker=selected_ticker,
+                            horizon_sessions=1,
+                            n_features=6,
+                            criterion="MID",
+                        )
+                        mc1, mc2, mc3, mc4 = st.columns(4)
+                        mc1.metric("Selected Signals", f"{mrmr_rec.num_selected} / {mrmr_rec.num_candidates}")
+                        mc2.metric("Mean Selected Corr", f"{mrmr_rec.mean_selected_correlation:.3f}")
+                        mc3.metric("Candidate Baseline Corr", f"{mrmr_rec.mean_candidate_correlation:.3f}")
+                        mc4.metric("Redundancy Reduction", f"{mrmr_rec.redundancy_reduction_pct:+.1f}%")
+
+                        # Bar chart of selected features: Relevance vs Redundancy
+                        feat_names = [s["feature"] for s in mrmr_rec.selection_history]
+                        rel_vals = [s["relevance"] for s in mrmr_rec.selection_history]
+                        red_vals = [s["redundancy"] for s in mrmr_rec.selection_history]
+                        scores = [s["mrmr_score"] for s in mrmr_rec.selection_history]
+
+                        fig_mrmr = go.Figure()
+                        fig_mrmr.add_trace(go.Bar(
+                            x=feat_names, y=rel_vals, name="Relevance I(f;y)",
+                            marker_color="#10B981",
+                        ))
+                        fig_mrmr.add_trace(go.Bar(
+                            x=feat_names, y=red_vals, name="Redundancy Penalty R(f;S)",
+                            marker_color="#EF4444",
+                        ))
+                        fig_mrmr.add_trace(go.Scatter(
+                            x=feat_names, y=scores, name="Net mRMR Score",
+                            mode="lines+markers", line=dict(color="#3B82F6", width=2),
+                            yaxis="y",
+                        ))
+                        fig_mrmr.update_layout(
+                            title=f"mRMR Feature Selection Step Trace: {selected_ticker} (Criterion: {mrmr_rec.criterion})",
+                            barmode="group",
+                            template="plotly_dark",
+                            height=360,
+                            margin=dict(l=30, r=30, t=40, b=30),
+                        )
+                        st.plotly_chart(fig_mrmr, use_container_width=True)
+                        st.caption(f"🛡️ **Selection Provenance:** {mrmr_rec.summary} | **HMAC Digest:** `{mrmr_rec.signature[:16]}...` (Verified: `{mrmr_rec.verify_integrity()}`)")
+                    except Exception as ex:
+                        st.info(f"mRMR feature selection deferred: {ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 40 sessions) to evaluate mRMR feature selection.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
