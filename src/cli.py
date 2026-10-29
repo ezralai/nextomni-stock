@@ -1778,6 +1778,63 @@ def garch_volatility_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def resampled_frontier_command(args: argparse.Namespace) -> None:
+    """Evaluate Michaud (1998) Resampled Efficient Frontier and compare with Classical Markowitz."""
+    import json
+    from src.analytics.resampled_portfolio import evaluate_resampled_frontier_profile
+
+    raw_tickers = args.tickers
+    if isinstance(raw_tickers, str):
+        ticker_list = [t.strip().upper() for t in raw_tickers.split(",") if t.strip()]
+    else:
+        ticker_list = [str(t).strip().upper() for t in raw_tickers if str(t).strip()]
+
+    simulations = int(getattr(args, "simulations", 100))
+    points = int(getattr(args, "points", 15))
+    rf = float(getattr(args, "risk_free_rate", 0.04))
+
+    receipt = evaluate_resampled_frontier_profile(
+        tickers=ticker_list,
+        num_simulations=simulations,
+        num_frontier_points=points,
+        risk_free_rate=rf,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Michaud (1998) Resampled Efficiency & Robust Frontier")
+    print("=" * 80)
+    print(f"  Asset Universe:               {', '.join(receipt.tickers)}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions")
+    print(f"  Monte Carlo Simulations:      {receipt.num_simulations} paths")
+    print(f"  Frontier Discrete Points:     {receipt.num_frontier_points}")
+    print(f"  Shrinkage Intensity:          {receipt.shrinkage_intensity:.4f}")
+    print(f"  Risk-Free Rate:               {receipt.risk_free_rate_pct:.2f}%")
+    print("-" * 80)
+    print("  Maximum Sharpe Ratio Allocations Comparison:")
+    print("    Metric                       Classical Markowitz         Michaud Resampled")
+    print(f"    Expected Annual Return:      {receipt.classical_max_sharpe.expected_return_ann_pct:>18.2f}%      {receipt.resampled_max_sharpe.expected_return_ann_pct:>18.2f}%")
+    print(f"    Annualized Volatility:       {receipt.classical_max_sharpe.volatility_ann_pct:>18.2f}%      {receipt.resampled_max_sharpe.volatility_ann_pct:>18.2f}%")
+    print(f"    Sharpe Ratio:                {receipt.classical_max_sharpe.sharpe_ratio:>19.3f}       {receipt.resampled_max_sharpe.sharpe_ratio:>19.3f}")
+    print(f"    Effective Assets (N_eff):    {receipt.classical_max_sharpe.effective_assets:>19.2f}       {receipt.resampled_max_sharpe.effective_assets:>19.2f}")
+    print(f"    Michaud Diversification Gain: {receipt.michaud_diversification_gain_pct:>+18.1f}%")
+    print("-" * 80)
+    print("  Asset Weights Comparison at Maximum Sharpe:")
+    print("    Ticker            Classical Markowitz         Michaud Resampled         Dispersion (Std)")
+    for t in receipt.tickers:
+        cw = receipt.classical_max_sharpe.weights.get(t, 0.0) * 100.0
+        rw = receipt.resampled_max_sharpe.weights.get(t, 0.0) * 100.0
+        sd = receipt.weight_stability_dispersion.get(t, 0.0) * 100.0
+        print(f"    {t:<14}    {cw:>16.1f}%         {rw:>16.1f}%         {sd:>15.1f}%")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2569,6 +2626,41 @@ def main() -> None:
         help="Output GARCH receipt as JSON",
     )
 
+    # Subparser: resampled-frontier
+    rf_parser = subparsers.add_parser(
+        "resampled-frontier",
+        help="Evaluate Michaud (1998) Resampled Efficiency and compare with classical Markowitz frontier",
+    )
+    rf_parser.add_argument(
+        "--tickers",
+        type=str,
+        required=True,
+        help="Comma-separated ticker symbols (e.g. AAPL,MSFT,NVDA,GOOGL)",
+    )
+    rf_parser.add_argument(
+        "--simulations",
+        type=int,
+        default=100,
+        help="Number of Monte Carlo resampling paths (default: 100)",
+    )
+    rf_parser.add_argument(
+        "--points",
+        type=int,
+        default=15,
+        help="Number of discrete efficient frontier points (default: 15)",
+    )
+    rf_parser.add_argument(
+        "--risk-free-rate",
+        type=float,
+        default=0.04,
+        help="Annualized risk-free rate benchmark (default: 0.04)",
+    )
+    rf_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output resampled frontier receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2648,6 +2740,8 @@ def main() -> None:
         entropy_report_command(args)
     elif args.command == "garch-volatility":
         garch_volatility_command(args)
+    elif args.command == "resampled-frontier":
+        resampled_frontier_command(args)
 
 
 if __name__ == "__main__":

@@ -307,6 +307,67 @@ def render_dashboard() -> None:
                                     disp_tail = disp_tail.applymap(lambda v: f"{v * 100:.1f}%")
                                 st.dataframe(disp_tail, use_container_width=True)
                                 st.caption(f"🛡️ **Tail Dependence Summary:** {tail_rec.summary}")
+
+                            # Michaud (1998) Resampled Efficiency & Robust Frontier
+                            st.markdown("---")
+                            st.subheader("🎯 Michaud (1998) Resampled Efficient Frontier")
+                            st.caption(
+                                "Monte Carlo resampling across estimation uncertainty to eliminate Markowitz 'error maximization'. "
+                                "Produces robust, turnover-dampened asset allocations."
+                            )
+                            from src.analytics.resampled_portfolio import evaluate_resampled_frontier_profile
+                            try:
+                                resampled_rec = evaluate_resampled_frontier_profile(
+                                    tickers=list(port_rec.weights.keys()),
+                                    num_simulations=50,
+                                    num_frontier_points=12,
+                                )
+                                rf_c1, rf_c2, rf_c3, rf_c4 = st.columns(4)
+                                rf_c1.metric("Resampled Max Sharpe", f"{resampled_rec.resampled_max_sharpe.sharpe_ratio:.3f}")
+                                rf_c2.metric("Classical Max Sharpe", f"{resampled_rec.classical_max_sharpe.sharpe_ratio:.3f}")
+                                rf_c3.metric("Diversification Gain", f"{resampled_rec.michaud_diversification_gain_pct:+.1f}%")
+                                rf_c4.metric("Effective Assets", f"{resampled_rec.resampled_max_sharpe.effective_assets:.2f}")
+
+                                # Dual Frontier Chart
+                                c_vols = [p.volatility_ann_pct for p in resampled_rec.classical_frontier]
+                                c_rets = [p.expected_return_ann_pct for p in resampled_rec.classical_frontier]
+                                r_vols = [p.volatility_ann_pct for p in resampled_rec.resampled_frontier]
+                                r_rets = [p.expected_return_ann_pct for p in resampled_rec.resampled_frontier]
+
+                                fig_frontier = go.Figure()
+                                fig_frontier.add_trace(go.Scatter(
+                                    x=c_vols, y=c_rets, mode="lines+markers",
+                                    name="Classical Markowitz Frontier",
+                                    line=dict(color="#EF4444", width=2, dash="dash"),
+                                    marker=dict(size=6),
+                                ))
+                                fig_frontier.add_trace(go.Scatter(
+                                    x=r_vols, y=r_rets, mode="lines+markers",
+                                    name="Michaud Resampled Frontier",
+                                    line=dict(color="#10B981", width=3),
+                                    marker=dict(size=7),
+                                ))
+                                fig_frontier.add_trace(go.Scatter(
+                                    x=[resampled_rec.resampled_max_sharpe.volatility_ann_pct],
+                                    y=[resampled_rec.resampled_max_sharpe.expected_return_ann_pct],
+                                    mode="markers+text",
+                                    name="Resampled Max Sharpe",
+                                    text=["Resampled Max Sharpe"],
+                                    textposition="top left",
+                                    marker=dict(color="#3B82F6", size=12, symbol="star"),
+                                ))
+                                fig_frontier.update_layout(
+                                    title="Classical Markowitz vs. Michaud Resampled Efficient Frontier",
+                                    xaxis_title="Annualized Volatility (%)",
+                                    yaxis_title="Expected Annual Return (%)",
+                                    template="plotly_dark",
+                                    height=380,
+                                    margin=dict(l=40, r=40, t=40, b=40),
+                                )
+                                st.plotly_chart(fig_frontier, use_container_width=True)
+                                st.caption(f"🛡️ **Resampled Robustness Summary:** {resampled_rec.summary}")
+                            except Exception as ex:
+                                st.info(f"Resampled frontier profile deferred: {ex}")
                     else:
                         st.info("No synchronized assets with sufficient observation history found. Synchronize tickers first.")
 
