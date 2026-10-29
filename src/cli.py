@@ -1722,6 +1722,62 @@ def entropy_report_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def garch_volatility_command(args: argparse.Namespace) -> None:
+    """Evaluate Asymmetric GJR-GARCH(1, 1) volatility forecasting and forward term structure."""
+    import json
+    from src.analytics.garch import evaluate_garch_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    model_choice = str(getattr(args, "model", "gjr")).lower().strip()
+    asymmetric = model_choice != "standard"
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observation history found for {ticker}. Please synchronize first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col].dropna()
+
+    receipt = evaluate_garch_profile(
+        ticker=ticker,
+        prices=prices,
+        asymmetric=asymmetric,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Asymmetric GJR-GARCH(1, 1) Volatility Forecasting Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample History:               {receipt.sample_sessions} sessions")
+    print(f"  Specification Model:          {receipt.model_type}")
+    print("-" * 80)
+    print("  QMLE Conditional Variance Parameters:")
+    print(f"    Baseline Intercept (omega / ω):       {receipt.omega:.8e}")
+    print(f"    Symmetric Shock (alpha / α):          {receipt.alpha:>10.4f}")
+    print(f"    Asymmetric Leverage (gamma / γ):      {receipt.gamma_asymmetry:>10.4f}")
+    print(f"    Persistence GARCH (beta / β):         {receipt.beta:>10.4f}")
+    print(f"    Variance Persistence (phi / φ):       {receipt.persistence_phi:>10.4f}")
+    print(f"    Leverage Asymmetry Ratio (α+γ)/α:     {receipt.leverage_asymmetry_ratio:>9.2f}x bad news volatility amplification")
+    print("-" * 80)
+    print("  Annualized Volatility Levels & Forward Term Structure:")
+    print(f"    Current Conditional Volatility:       {receipt.current_conditional_volatility_ann_pct:>9.2f}% annualized")
+    print(f"    Unconditional Long-Term Volatility:   {receipt.unconditional_volatility_ann_pct:>9.2f}% annualized")
+    print("    Forward Term Structure Projections:")
+    for h_label, h_val in receipt.term_structure_forecast_ann_pct.items():
+        print(f"      {h_label:<20} {h_val:>10.2f}% annualized")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2489,6 +2545,30 @@ def main() -> None:
         help="Output market entropy receipt as JSON",
     )
 
+    # Subparser: garch-volatility
+    garch_parser = subparsers.add_parser(
+        "garch-volatility",
+        help="Evaluate asymmetric GJR-GARCH(1, 1) volatility forecasting and leverage effect",
+    )
+    garch_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    garch_parser.add_argument(
+        "--model",
+        type=str,
+        default="gjr",
+        choices=["gjr", "standard"],
+        help="GARCH model specification: 'gjr' (asymmetric) or 'standard' (default: gjr)",
+    )
+    garch_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output GARCH receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2566,6 +2646,8 @@ def main() -> None:
         evt_report_command(args)
     elif args.command == "entropy-report":
         entropy_report_command(args)
+    elif args.command == "garch-volatility":
+        garch_volatility_command(args)
 
 
 if __name__ == "__main__":

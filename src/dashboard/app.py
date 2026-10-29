@@ -949,6 +949,42 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 30 sessions) to evaluate market entropy.")
 
+            # Asymmetric GJR-GARCH(1, 1) Volatility Forecasting & Leverage Effect Engine
+            with st.expander("📉 Asymmetric GJR-GARCH(1, 1) Volatility Forecaster", expanded=False):
+                st.markdown(
+                    r"Evaluate **Glosten, Jagannathan & Runkle (1993)** Asymmetric GJR-GARCH(1, 1) conditional variance dynamics. "
+                    r"Quantifies the equity **leverage effect** ($\gamma$) where negative market returns cause disproportionately higher volatility spikes than positive returns."
+                )
+                from src.analytics.garch import evaluate_garch_profile
+                garch_price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                garch_prices = df_obs[garch_price_col].dropna()
+
+                if len(garch_prices) >= 40:
+                    garch_rec = evaluate_garch_profile(
+                        ticker=selected_ticker,
+                        prices=garch_prices,
+                        asymmetric=True,
+                    )
+
+                    col_g1, col_g2, col_g3, col_g4 = st.columns(4)
+                    col_g1.metric("Conditional Volatility", f"{garch_rec.current_conditional_volatility_ann_pct:.2f}%", delta=f"{garch_rec.current_conditional_volatility_ann_pct - garch_rec.unconditional_volatility_ann_pct:+.2f}% vs Unconditional")
+                    col_g2.metric("Leverage Asymmetry (γ)", f"{garch_rec.gamma_asymmetry:.3f}", delta=f"{garch_rec.leverage_asymmetry_ratio:.2f}x bad news ratio")
+                    col_g3.metric("GARCH Persistence (φ)", f"{garch_rec.persistence_phi:.3f}", delta="Stationary (<1.0)")
+                    col_g4.metric("Unconditional Vol (Mean)", f"{garch_rec.unconditional_volatility_ann_pct:.2f}%")
+
+                    if garch_rec.term_structure_forecast_ann_pct:
+                        st.markdown("**Forward Conditional Volatility Term Structure Projections:**")
+                        ts_df = pd.DataFrame([
+                            {"Horizon": "Next Session (1-Day)", "Projected Annualized Volatility": f"{garch_rec.term_structure_forecast_ann_pct.get('1_session', 0.0):.2f}%"},
+                            {"Horizon": "1 Trading Week (5-Day)", "Projected Annualized Volatility": f"{garch_rec.term_structure_forecast_ann_pct.get('5_sessions', 0.0):.2f}%"},
+                            {"Horizon": "1 Trading Month (21-Day)", "Projected Annualized Volatility": f"{garch_rec.term_structure_forecast_ann_pct.get('21_sessions', 0.0):.2f}%"},
+                        ])
+                        st.dataframe(ts_df, use_container_width=True, hide_index=True)
+
+                    st.caption(fr"📉 **Parameters:** $\omega = {garch_rec.omega:.3e}$ | $\alpha = {garch_rec.alpha:.3f}$ | $\gamma = {garch_rec.gamma_asymmetry:.3f}$ | $\beta = {garch_rec.beta:.3f}$ | **HMAC Digest:** `{garch_rec.signature[:16]}...` (Verified: `{garch_rec.verify_integrity()}`)")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 40 sessions) to evaluate GARCH volatility.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
