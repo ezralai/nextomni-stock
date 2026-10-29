@@ -1509,6 +1509,62 @@ def momentum_crash_report_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def fracdiff_command(args: argparse.Namespace) -> None:
+    """Evaluate memory-preserving fractional differentiation and minimal stationary order d*."""
+    import json
+    from src.data.db import get_observations
+    from src.features.fracdiff import evaluate_fracdiff_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    threshold = float(args.threshold) if getattr(args, "threshold", None) else 1e-4
+    target_d = float(args.d) if getattr(args, "d", None) is not None else None
+    auto_d = getattr(args, "auto_d", True) if target_d is None else False
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty:
+        print(f"\nError: No observation history found for {ticker}. Please synchronize first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col].dropna()
+
+    receipt = evaluate_fracdiff_profile(
+        ticker=ticker,
+        prices=prices,
+        threshold=threshold,
+        auto_d=auto_d,
+        target_d=target_d,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Memory-Preserving Fractional Differentiation Engine (FFD)")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample History:               {receipt.sample_sessions} sessions")
+    print(f"  Truncation Threshold (tau):   {receipt.threshold:.1e}")
+    print(f"  Filter Window Length (l):     {receipt.window_length} sessions")
+    print("-" * 80)
+    print(f"  Selected Order (d):           {receipt.selected_d:.3f}")
+    print(f"  Optimal Stationary Order (d*):{receipt.optimal_d:.3f}")
+    print(f"  ADF Test Statistic:           {receipt.adf_stat:.4f} (5% Critical: -2.863)")
+    print(f"  ADF p-value:                  {receipt.adf_pvalue:.4f}")
+    print(f"  Stationary (p < 0.05):        {'YES' if receipt.is_stationary else 'NO'}")
+    print("-" * 80)
+    print("  Memory Preservation vs Integer Differencing:")
+    print(f"    Memory Retained Correlation rho(P, P^(d)):      {receipt.retained_memory_corr:>+8.4f} ({receipt.retained_memory_corr * 100:.1f}%)")
+    print(f"    Integer Diff Memory Correlation rho(P, Delta P): {receipt.raw_to_diff1_corr:>+8.4f} ({receipt.raw_to_diff1_corr * 100:.1f}%)")
+    if receipt.is_stationary:
+        print(f"    Alpha Retention Advantage:                     {receipt.retained_memory_corr - receipt.raw_to_diff1_corr:>+8.4f} correlation units preserved!")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -2160,6 +2216,41 @@ def main() -> None:
         help="Output momentum crash receipt as JSON",
     )
 
+    # Subparser: fracdiff
+    fracdiff_parser = subparsers.add_parser(
+        "fracdiff",
+        help="Evaluate memory-preserving fractional differentiation and optimal d*",
+    )
+    fracdiff_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, MSFT)",
+    )
+    fracdiff_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=1e-4,
+        help="FFD weight truncation threshold (default: 1e-4)",
+    )
+    fracdiff_parser.add_argument(
+        "--d",
+        type=float,
+        default=None,
+        help="Specific fractional differentiation order to evaluate (optional)",
+    )
+    fracdiff_parser.add_argument(
+        "--auto-d",
+        action="store_true",
+        default=True,
+        help="Automatically search for minimal stationary order d* (default: True)",
+    )
+    fracdiff_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output fractional differentiation receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -2229,6 +2320,8 @@ def main() -> None:
         wavelet_denoise_command(args)
     elif args.command == "momentum-crash-report":
         momentum_crash_report_command(args)
+    elif args.command == "fracdiff":
+        fracdiff_command(args)
 
 
 if __name__ == "__main__":

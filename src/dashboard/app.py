@@ -807,6 +807,52 @@ def render_dashboard() -> None:
                 else:
                     st.info(f"ℹ️ {mom_rec.summary}")
 
+            # Fractional Differentiation & Memory Preservation Analyzer (López de Prado 2018)
+            with st.expander("📈 Fractional Differentiation & Memory Preservation Analyzer (FFD)", expanded=False):
+                st.markdown(
+                    "Evaluate **Marcos López de Prado (2018)** Fixed-Width Window Fractional Differentiation (FFD). "
+                    "Determines the minimal degree of differentiation $d^*$ that achieves statistical stationarity ($p_{\\text{ADF}} < 0.05$) "
+                    "while preserving maximum memory ($\rho$) from the underlying price series."
+                )
+                from src.features.fracdiff import evaluate_fracdiff_profile
+                fd_price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                fd_prices = df_obs[fd_price_col].dropna()
+
+                if len(fd_prices) >= 40:
+                    fd_rec = evaluate_fracdiff_profile(
+                        ticker=selected_ticker,
+                        prices=fd_prices,
+                        threshold=1e-4,
+                        auto_d=True,
+                    )
+
+                    col_fd1, col_fd2, col_fd3, col_fd4 = st.columns(4)
+                    col_fd1.metric("Optimal Stationary Order (d*)", f"{fd_rec.optimal_d:.2f}")
+                    col_fd2.metric(
+                        "Retained Memory Corr ρ",
+                        f"{fd_rec.retained_memory_corr * 100:.1f}%",
+                        delta=f"{(fd_rec.retained_memory_corr - fd_rec.raw_to_diff1_corr) * 100:+.1f}% vs ΔP",
+                    )
+                    col_fd3.metric("ADF Stat at d*", f"{fd_rec.adf_stat:.3f}", delta="5% crit: -2.863")
+                    col_fd4.metric("ADF p-value", f"{fd_rec.adf_pvalue:.4f}", delta="Stationary" if fd_rec.is_stationary else "Non-Stationary")
+
+                    if fd_rec.scan_points:
+                        st.markdown("**Stationarity vs Memory Trade-off Curve across Differentiation Order $d$:**")
+                        scan_df = pd.DataFrame(fd_rec.scan_points)
+                        scan_df_disp = scan_df.rename(columns={
+                            "d": "Order (d)",
+                            "adf_stat": "ADF Stat",
+                            "p_value": "ADF p-value",
+                            "memory_corr": "Memory Correlation (ρ)",
+                            "is_stationary": "Stationary (1/0)",
+                        })
+                        st.line_chart(scan_df.set_index("d")[["p_value", "memory_corr"]])
+                        st.dataframe(scan_df_disp, use_container_width=True, hide_index=True)
+
+                    st.caption(f"📈 **FFD Configuration:** Window Length $l = {fd_rec.window_length}$ sessions | Cutoff $\\tau = {fd_rec.threshold:.1e}$ | **HMAC Digest:** `{fd_rec.signature[:16]}...` (Verified: `{fd_rec.verify_integrity()}`)")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 40 sessions) to evaluate fractional differentiation.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
