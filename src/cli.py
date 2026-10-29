@@ -2144,6 +2144,56 @@ def rmt_denoise_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def jump_test_command(args: argparse.Namespace) -> None:
+    """Evaluate Barndorff-Nielsen & Shephard (2004, 2006) Bipower Variation and Jump Decomposition."""
+    import json
+    from src.analytics.jump_diffusion import evaluate_jump_diffusion_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    window = int(getattr(args, "window", 21))
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty or len(df_obs) < window + 1:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    receipt = evaluate_jump_diffusion_profile(
+        ticker=ticker,
+        prices=df_obs[price_col],
+        window=window,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Barndorff-Nielsen & Shephard (2004, 2006) Jump Detection Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions (Lookback Window: {receipt.window}D)")
+    print(f"  Jump Regime:                  {receipt.jump_regime}")
+    print(f"  Statistically Significant:    {'YES (p < 0.05)' if receipt.has_significant_jump else 'NO (Continuous Brownian Path)'}")
+    print("-" * 80)
+    print("  Quadratic Variation Volatility Decomposition (Annualized):")
+    print(f"    Total Realized Volatility:  {receipt.annualized_total_vol_pct:>6.2f}% Ann (RV = {receipt.realized_variance:.6f})")
+    print(f"    Continuous Path Volatility: {receipt.annualized_continuous_vol_pct:>6.2f}% Ann (BV = {receipt.bipower_variation:.6f})")
+    print(f"    Jump Component Volatility:  {receipt.annualized_jump_vol_pct:>6.2f}% Ann (JV = {receipt.jump_variation:.6f})")
+    print(f"    Jump Variance Proportion:   {receipt.jump_contribution_ratio * 100:>6.2f}% of Total Quadratic Variation")
+    print("-" * 80)
+    print("  BNS Asymptotic Hypothesis Test Statistics:")
+    print(f"    BNS Z-Score:                {receipt.bns_z_statistic:>8.4f} (Standard Normal N(0, 1))")
+    print(f"    One-Sided p-value:          {receipt.p_value:>8.4f}")
+    print(f"    Tri-power Quarticity (TQ):  {receipt.tripower_quarticity:>12.8f}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -3141,6 +3191,29 @@ def main() -> None:
         help="Output RMT denoising receipt as JSON",
     )
 
+    # Subparser: jump-test
+    jump_parser = subparsers.add_parser(
+        "jump-test",
+        help="Evaluate Barndorff-Nielsen & Shephard (2004, 2006) Bipower Variation and Jump Decomposition",
+    )
+    jump_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    jump_parser.add_argument(
+        "--window",
+        type=int,
+        default=21,
+        help="Observation rolling window in sessions (default: 21)",
+    )
+    jump_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output jump diffusion receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -3234,6 +3307,8 @@ def main() -> None:
         markov_regime_command(args)
     elif args.command == "rmt-denoise":
         rmt_denoise_command(args)
+    elif args.command == "jump-test":
+        jump_test_command(args)
 
 
 if __name__ == "__main__":

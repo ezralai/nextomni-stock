@@ -1218,6 +1218,39 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 40 sessions) to evaluate Markov-switching model.")
 
+                # Barndorff-Nielsen & Shephard (2004, 2006) Bipower Jump Decomposition
+                st.markdown("---")
+                st.subheader("⚡ Barndorff-Nielsen & Shephard (2004, 2006) Jump Detection Engine")
+                st.caption(
+                    "Nonparametric quadratic variation decomposition isolating continuous hedgeable sample path "
+                    "variance from discrete, unhedgeable Poisson jump events."
+                )
+                from src.analytics.jump_diffusion import evaluate_jump_diffusion_profile
+                if len(df_obs) >= 22:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        jump_rec = evaluate_jump_diffusion_profile(
+                            ticker=selected_ticker,
+                            prices=df_obs[p_col],
+                            window=21,
+                        )
+                        jq1, jq2, jq3, jq4 = st.columns(4)
+                        jq1.metric("Jump Regime", jump_rec.jump_regime)
+                        jq2.metric("Total Realized Vol", f"{jump_rec.annualized_total_vol_pct:.1f}% Ann", delta=f"{jump_rec.annualized_continuous_vol_pct:.1f}% Cont / {jump_rec.annualized_jump_vol_pct:.1f}% Jump")
+                        jq3.metric("Jump Ratio (JV/RV)", f"{jump_rec.jump_contribution_ratio * 100:.1f}%")
+                        jq4.metric("BNS Z-Score", f"{jump_rec.bns_z_statistic:.2f}", delta="Significant Jump (p<0.05)" if jump_rec.has_significant_jump else "Continuous Path")
+
+                        if jump_rec.has_significant_jump:
+                            st.warning(f"⚡ **Discrete Jump Alert:** {jump_rec.summary}")
+                        else:
+                            st.success(f"🛡️ **Continuous Path State:** {jump_rec.summary}")
+
+                        st.caption(f"🛡️ **Jump Audit Digest:** `{jump_rec.signature[:16]}...` (Verified: `{jump_rec.verify_integrity()}`)")
+                    except Exception as ex:
+                        st.info(f"Jump diffusion evaluation deferred: {ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate jump diffusion model.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
