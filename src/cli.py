@@ -2254,6 +2254,65 @@ def deflated_sharpe_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def effective_spread_command(args: argparse.Namespace) -> None:
+    """Evaluate Richard Roll (1984) Effective Bid-Ask Spread and Composite Execution Friction."""
+    import json
+    import math
+    from src.analytics.effective_spread import evaluate_effective_spread_profile
+    from src.data.db import get_observations
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    window = int(getattr(args, "window", 21))
+
+    df_obs = get_observations(ticker)
+    if df_obs.empty or len(df_obs) < window + 1:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col]
+    high = df_obs["high"] if "high" in df_obs.columns else None
+    low = df_obs["low"] if "low" in df_obs.columns else None
+    volumes = df_obs["volume"] if "volume" in df_obs.columns else None
+
+    receipt = evaluate_effective_spread_profile(
+        ticker=ticker,
+        prices=prices,
+        high=high,
+        low=low,
+        volumes=volumes,
+        window=window,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Richard Roll (1984) Effective Bid-Ask Spread Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions (Lookback Window: {receipt.window}D)")
+    print(f"  Mean Price Level:             ${receipt.mean_price:.2f}")
+    print(f"  Liquidity Friction Tier:      {receipt.liquidity_tier}")
+    print(f"  Autocovariance Regime:        {'Positive (Trending / Momentum)' if receipt.has_positive_autocovariance else 'Negative (Dealer Order Bounce)'}")
+    print("-" * 80)
+    print("  Implicit Bid-Ask Spread Metrics:")
+    print(f"    Roll Dollar Spread:         ${receipt.roll_spread_dollars:.4f}")
+    print(f"    Roll Percentage Spread:      {receipt.roll_spread_pct:>6.2f}%")
+    print(f"    Signed Continuous Spread:    {receipt.signed_roll_spread_pct:>6.2f}% (Chu, Stivers & Truong)")
+    print(f"    Corwin-Schultz Spread:       {receipt.corwin_schultz_spread_pct:>6.2f}% (High-Low 2-Day Range)")
+    print(f"    Serial Autocovariance:       {receipt.serial_autocovariance:>10.6f} (gamma_1)")
+    print("-" * 80)
+    print("  Composite Trading Execution Friction:")
+    print(f"    Inferred Round-Trip Cost:    {receipt.composite_round_trip_bps:>6.1f} bps ({receipt.composite_round_trip_bps / 100.0:.2f}%)")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -3309,6 +3368,29 @@ def main() -> None:
         help="Output Deflated Sharpe receipt as JSON",
     )
 
+    # Subparser: effective-spread
+    spread_parser = subparsers.add_parser(
+        "effective-spread",
+        help="Evaluate Richard Roll (1984) Effective Bid-Ask Spread and Composite Execution Friction",
+    )
+    spread_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    spread_parser.add_argument(
+        "--window",
+        type=int,
+        default=21,
+        help="Observation rolling window in sessions (default: 21)",
+    )
+    spread_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output effective spread receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -3406,6 +3488,8 @@ def main() -> None:
         jump_test_command(args)
     elif args.command == "deflated-sharpe":
         deflated_sharpe_command(args)
+    elif args.command == "effective-spread":
+        effective_spread_command(args)
 
 
 if __name__ == "__main__":

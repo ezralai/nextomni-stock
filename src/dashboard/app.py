@@ -1251,6 +1251,37 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate jump diffusion model.")
 
+                # Richard Roll (1984) Effective Spread & Composite Execution Friction
+                st.markdown("---")
+                st.subheader("💧 Richard Roll (1984) Effective Spread & Trading Friction")
+                st.caption(
+                    "Serial covariance order bounce model and composite pre-trade slippage estimating round-trip execution costs."
+                )
+                from src.analytics.effective_spread import evaluate_effective_spread_profile
+                if len(df_obs) >= 22:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        spread_rec = evaluate_effective_spread_profile(
+                            ticker=selected_ticker,
+                            prices=df_obs[p_col],
+                            high=df_obs["high"] if "high" in df_obs.columns else None,
+                            low=df_obs["low"] if "low" in df_obs.columns else None,
+                            volumes=df_obs["volume"] if "volume" in df_obs.columns else None,
+                            window=21,
+                        )
+                        sq1, sq2, sq3, sq4 = st.columns(4)
+                        sq1.metric("Liquidity Tier", spread_rec.liquidity_tier)
+                        sq2.metric("Roll Spread", f"{spread_rec.roll_spread_pct:.2f}%", delta=f"${spread_rec.roll_spread_dollars:.3f}")
+                        sq3.metric("Corwin-Schultz Spread", f"{spread_rec.corwin_schultz_spread_pct:.2f}%")
+                        sq4.metric("Composite Round-Trip", f"{spread_rec.composite_round_trip_bps:.1f} bps", delta=f"Autocov: {spread_rec.serial_autocovariance:.4f}")
+
+                        st.caption(f"🛡️ **Microstructure Cost Summary:** {spread_rec.summary}")
+                        st.caption(f"🛡️ **Spread Audit Digest:** `{spread_rec.signature[:16]}...` (Verified: `{spread_rec.verify_integrity()}`)")
+                    except Exception as ex:
+                        st.info(f"Effective spread evaluation deferred: {ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate effective spread model.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
