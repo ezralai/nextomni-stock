@@ -250,7 +250,7 @@ streamlit run src/dashboard/app.py
 - [x] **Phase 6:** Multi-horizon expansion ($P_{t+5}$, $P_{t+21}$).
 - [x] **Phase 7:** Market monitoring & data latency labeling (`REALTIME`, `DELAYED_15MIN`, `END_OF_DAY`).
 - [x] **Phase 8:** Interactive Streamlit Dashboard.
-- [x] **Phase 9:** Portfolio audit, performance documentation & reproducibility checks.
+- [x] **Phase 9:** Portfolio audit, performance documentation & reproducibility check.
 
 ---
 
