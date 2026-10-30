@@ -243,7 +243,7 @@ streamlit run src/dashboard/app.py
 
 - [x] **Phase 0:** Repository setup, data provider research, exchange calendar verification, and environment foundation.
 - [x] **Phase 1:** Historical data pipeline (SQLite storage, validation, Yahoo Finance adapter, corporate actions, and calendar cross-referencing).
-- [x] **Phase 2:** Exploratory data analysis (charts, distributions, volatility, drawdown).
+- [x] **Phase 2:** Exploratory data analysis (charts, distribution, volatility, drawdown).
 - [x] **Phase 3:** First forecast & persistence baseline ($P_{t+1}$).
 - [x] **Phase 4:** First machine learning model (Linear Regression) with walk-forward validation.
 - [x] **Phase 5:** Prediction tracking finite state machine & idempotent actual-price evaluation.
