@@ -391,6 +391,45 @@ def render_dashboard() -> None:
                                 st.caption(f"🛡️ **RMT Stability Summary:** {rmt_rec.summary}")
                             except Exception as rmt_ex:
                                 st.info(f"RMT covariance denoising deferred: {rmt_ex}")
+
+                            # Black-Litterman (1992) Bayesian Portfolio Optimization & Machine Learning View Integration
+                            st.markdown("---")
+                            st.subheader("⚖️ Black-Litterman (1992) Bayesian Portfolio Optimization")
+                            st.caption(
+                                "Combines CAPM implied equilibrium market priors with active quantitative/model views. "
+                                "Resolves Markowitz extreme corner solutions and yields stable, robust asset allocations."
+                            )
+                            try:
+                                from src.analytics.black_litterman import evaluate_black_litterman_portfolio
+                                bl_rec = evaluate_black_litterman_portfolio(
+                                    universe=list(port_rec.weights.keys()),
+                                    tau=0.05,
+                                    risk_aversion_delta=2.5,
+                                    lookback_window=120,
+                                    denoise_cov=True,
+                                )
+                                bl_c1, bl_c2, bl_c3, bl_c4 = st.columns(4)
+                                bl_c1.metric("Posterior Return", f"{bl_rec.expected_portfolio_return_ann_pct:+.2f}% Ann", delta=f"{bl_rec.expected_portfolio_return_ann_pct - bl_rec.prior_market_return_ann_pct:+.2f}% vs CAPM")
+                                bl_c2.metric("Posterior Volatility", f"{bl_rec.expected_portfolio_vol_ann_pct:.2f}% Ann")
+                                bl_c3.metric("Posterior Sharpe", f"{bl_rec.sharpe_ratio:+.2f}")
+                                bl_c4.metric("RMT Covariance", "Denoised" if bl_rec.is_rmt_denoised else "Standard", help="Marchenko-Pastur spectral filtering applied")
+
+                                # Allocation comparison table
+                                bl_alloc_df = pd.DataFrame([
+                                    {
+                                        "Ticker": a["ticker"],
+                                        "Market Wgt": f"{a['market_weight'] * 100:.1f}%",
+                                        "Prior Ret (Π)": f"{a['prior_return_ann_pct']:+.2f}%",
+                                        "Posterior Ret (μ)": f"{a['posterior_return_ann_pct']:+.2f}%",
+                                        "BL Optimal Wgt": f"{a['optimal_weight'] * 100:.1f}%",
+                                        "Shift (Δw)": f"{a['weight_shift'] * 100:+.1f}%",
+                                    }
+                                    for a in bl_rec.allocations
+                                ])
+                                st.dataframe(bl_alloc_df, use_container_width=True, hide_index=True)
+                                st.caption(f"🛡️ **Black-Litterman Summary:** {bl_rec.summary}")
+                            except Exception as bl_ex:
+                                st.info(f"Black-Litterman portfolio optimization deferred: {bl_ex}")
                     else:
                         st.info("No synchronized assets with sufficient observation history found. Synchronize tickers first.")
 

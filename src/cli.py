@@ -2535,6 +2535,86 @@ def fama_french_command(args: argparse.Namespace) -> None:
     print(f"  Summary: {receipt.summary}")
     print("=" * 80 + "\n")
 
+def black_litterman_command(args: argparse.Namespace) -> None:
+    """Execute Black-Litterman (1992) Bayesian portfolio optimization & active view blending."""
+    import json
+    from src.analytics.black_litterman import evaluate_black_litterman_portfolio
+    from src.security.validators import validate_ticker
+
+    raw_tickers = [t.strip().upper() for t in args.universe.split(",") if t.strip()]
+    universe = [validate_ticker(t) for t in raw_tickers]
+    if len(universe) < 2:
+        print("\nError: Universe must contain at least 2 distinct tickers.\n")
+        return
+
+    views_dict = {}
+    if getattr(args, "views", None):
+        raw_views = args.views.strip()
+        if raw_views.startswith("{"):
+            try:
+                parsed = json.loads(raw_views)
+                views_dict = {validate_ticker(k): float(v) for k, v in parsed.items()}
+            except Exception as e:
+                print(f"\nError: Invalid JSON views format: {e}\n")
+                return
+        else:
+            for item in raw_views.split(","):
+                if ":" in item:
+                    k, v = item.split(":", 1)
+                    views_dict[validate_ticker(k.strip())] = float(v.strip())
+
+    tau = float(getattr(args, "tau", 0.05))
+    delta = float(getattr(args, "risk_aversion", 2.5))
+    lookback = int(getattr(args, "lookback", 120))
+    denoise = not getattr(args, "no_denoise", False)
+
+    try:
+        receipt = evaluate_black_litterman_portfolio(
+            universe=universe,
+            views_dict=views_dict,
+            tau=tau,
+            risk_aversion_delta=delta,
+            lookback_window=lookback,
+            denoise_cov=denoise,
+        )
+    except Exception as ex:
+        print(f"\nError: Black-Litterman optimization failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    denoise_status = "ACTIVE (RMT Marchenko-Pastur)" if receipt.is_rmt_denoised else "INACTIVE (Sample Cov)"
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Black-Litterman (1992) Bayesian Portfolio Engine")
+    print("=" * 80)
+    print(f"  Asset Universe ({len(receipt.universe)}):        {', '.join(receipt.universe)}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions (Lookback: {receipt.lookback_window}d)")
+    print(f"  Parameters:                   tau = {receipt.tau:.3f} | delta = {receipt.risk_aversion_delta:.2f} | Views = {receipt.views_count}")
+    print(f"  Covariance Denoising:         {denoise_status}")
+    print("-" * 80)
+    print("  Bayesian Return & Constrained Allocation Decomposition:")
+    print(f"    {'Ticker':<10} {'Market Wgt':<12} {'Prior Ret (Pi)':<16} {'Posterior Ret (μ)':<18} {'BL Optimal Wgt':<16} {'Shift (Δw)':<10}")
+    for alloc in receipt.allocations:
+        shift_sign = "+" if alloc["weight_shift"] >= 0 else ""
+        print(
+            f"    {alloc['ticker']:<10} {alloc['market_weight'] * 100:>10.2f}%  "
+            f"{alloc['prior_return_ann_pct']:>14.2f}%  "
+            f"{alloc['posterior_return_ann_pct']:>16.2f}%  "
+            f"{alloc['optimal_weight'] * 100:>14.2f}%  "
+            f"{shift_sign}{alloc['weight_shift'] * 100:>8.2f}%"
+        )
+    print("-" * 80)
+    print("  Portfolio Risk & Return Aggregate Performance:")
+    print(f"    Expected Annual Return:     {receipt.expected_portfolio_return_ann_pct:>+8.2f}% Ann (Market Prior: {receipt.prior_market_return_ann_pct:>+8.2f}%)")
+    print(f"    Portfolio Annualized Vol:   {receipt.expected_portfolio_vol_ann_pct:>8.2f}% Ann")
+    print(f"    Portfolio Sharpe Ratio:     {receipt.sharpe_ratio:>+8.2f} (Rf = 4.0%)")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
 
 
 def main() -> None:
@@ -3750,6 +3830,52 @@ def main() -> None:
         help="Output factor attribution receipt as JSON",
     )
 
+    # Subparser: black-litterman
+    bl_parser = subparsers.add_parser(
+        "black-litterman",
+        help="Execute Black-Litterman (1992) Bayesian portfolio optimization & active view blending",
+    )
+    bl_parser.add_argument(
+        "--universe",
+        type=str,
+        required=True,
+        help="Comma-separated stock universe (e.g. AAPL,MSFT,NVDA,GOOGL)",
+    )
+    bl_parser.add_argument(
+        "--views",
+        type=str,
+        default=None,
+        help="Active views as key:value pairs or JSON (e.g. NVDA:0.25,AAPL:0.12)",
+    )
+    bl_parser.add_argument(
+        "--tau",
+        type=float,
+        default=0.05,
+        help="Prior uncertainty scalar (default: 0.05)",
+    )
+    bl_parser.add_argument(
+        "--risk-aversion",
+        type=float,
+        default=2.5,
+        help="Market risk aversion parameter delta (default: 2.5)",
+    )
+    bl_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=120,
+        help="Lookback window in sessions (default: 120)",
+    )
+    bl_parser.add_argument(
+        "--no-denoise",
+        action="store_true",
+        help="Disable Marchenko-Pastur RMT covariance denoising",
+    )
+    bl_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Black-Litterman receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -3858,6 +3984,8 @@ def main() -> None:
         optimal_execution_command(args)
     elif args.command == "fama-french":
         fama_french_command(args)
+    elif args.command == "black-litterman":
+        black_litterman_command(args)
 
 
 if __name__ == "__main__":
