@@ -1522,6 +1522,56 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate systematic liquidity risk.")
 
+                # Harvey & Siddique (2000) Co-Skewness & Dittmar (2002) Co-Kurtosis Higher-Moment Asset Pricing
+                st.markdown("---")
+                st.subheader("📐 Harvey-Siddique Co-Skewness & Dittmar Co-Kurtosis Higher-Moment Pricing")
+                st.caption(
+                    "Third and fourth systematic co-moments: Co-Skewness (β_SKS, covariance with market volatility) "
+                    "and Co-Kurtosis (β_CKT, covariance with market tail-risk contagion) with Four-Moment Alpha."
+                )
+                from src.analytics.higher_moments import evaluate_higher_moments_profile
+                if len(df_obs) >= 22:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        hm_rec = evaluate_higher_moments_profile(
+                            ticker=selected_ticker,
+                            asset_prices=df_obs[p_col],
+                            benchmark_ticker="SPY",
+                            lookback_window=min(len(df_obs) - 1, 60),
+                        )
+                        hm1, hm2, hm3, hm4 = st.columns(4)
+                        sig_sks = "★ Sig" if hm_rec.is_coskewness_significant else "Not Sig"
+                        sig_ckt = "★ Sig" if hm_rec.is_cokurtosis_significant else "Not Sig"
+                        hm1.metric(
+                            "Co-Skewness (β_SKS)",
+                            f"{hm_rec.coskewness_beta:+.3f}",
+                            delta=f"t={hm_rec.coskewness_t_stat:+.2f} ({sig_sks})",
+                            help="Harvey & Siddique (2000) co-skewness; negative values reflect crash-when-market-spikes risk and command positive premium",
+                        )
+                        hm2.metric(
+                            "Co-Kurtosis (β_CKT)",
+                            f"{hm_rec.cokurtosis_beta:.3f}",
+                            delta=f"t={hm_rec.cokurtosis_t_stat:+.2f} ({sig_ckt})",
+                            help="Dittmar (2002) co-kurtosis; measures sensitivity to market extreme fat-tail co-exceedance",
+                        )
+                        hm3.metric(
+                            "4-Moment Alpha",
+                            f"{hm_rec.annualized_alpha_pct:+.2f}% Ann",
+                            delta=f"R²: {hm_rec.four_moment_r_squared * 100:.1f}%",
+                        )
+                        hm4.metric(
+                            "Higher-Moment Regime",
+                            hm_rec.higher_moment_risk_regime,
+                            delta=f"{hm_rec.expected_coskewness_premium_pct:+.2f}%/yr SKS Prem",
+                        )
+
+                        st.caption(f"🛡️ **Higher Moments Summary:** {hm_rec.summary}")
+                        st.caption(f"🛡️ **Higher Moments Audit Digest:** `{hm_rec.signature[:16]}...` (Verified: `{hm_rec.verify_integrity()}`)")
+                    except Exception as hm_ex:
+                        st.info(f"Higher moments asset pricing evaluation deferred: {hm_ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate higher moments.")
+
 
 
 

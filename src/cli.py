@@ -2783,6 +2783,63 @@ def fama_macbeth_command(args: argparse.Namespace) -> None:
     print(f"  Summary: {receipt.summary}")
     print("=" * 80 + "\n")
 
+def higher_moments_command(args: argparse.Namespace) -> None:
+    """Evaluate Harvey-Siddique (2000) Co-Skewness & Dittmar (2002) Co-Kurtosis Higher-Moment Asset Pricing."""
+    import json
+    from src.analytics.higher_moments import evaluate_higher_moments_profile
+    import src.data.db as db
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    benchmark = validate_ticker(getattr(args, "benchmark", "SPY"))
+    lookback = int(getattr(args, "lookback", 60))
+
+    df_obs = db.get_observations(ticker)
+    if df_obs.empty or len(df_obs) < lookback + 1:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col]
+
+    try:
+        receipt = evaluate_higher_moments_profile(
+            ticker=ticker,
+            asset_prices=prices,
+            benchmark_ticker=benchmark,
+            lookback_window=lookback,
+        )
+    except Exception as ex:
+        print(f"\nError: Higher-moments asset pricing evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    sig_sks = "YES (p < 0.05)" if receipt.is_coskewness_significant else "no (p >= 0.05)"
+    sig_ckt = "YES (p < 0.05)" if receipt.is_cokurtosis_significant else "no (p >= 0.05)"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Harvey-Siddique & Dittmar Higher-Moment Asset Pricing Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker} (Benchmark: {receipt.benchmark_ticker})")
+    print(f"  Sample Window:                {receipt.lookback_window} sessions (Total Aligned: {receipt.sample_sessions} sessions)")
+    print(f"  Market Beta (β_M):            {receipt.market_beta:>8.2f}")
+    print(f"  Four-Moment Alpha:            {receipt.annualized_alpha_pct:>+8.2f}% Ann (R²: {receipt.four_moment_r_squared * 100:.1f}%)")
+    print("-" * 80)
+    print("  Higher-Order Systematic Co-Moments:")
+    print(f"    Co-Skewness (β_SKS):        {receipt.coskewness_beta:>+8.3f} (t={receipt.coskewness_t_stat:>+6.2f}, Sig: {sig_sks})")
+    print(f"    Co-Kurtosis (β_CKT):        {receipt.cokurtosis_beta:>8.3f} (t={receipt.cokurtosis_t_stat:>+6.2f}, Sig: {sig_ckt})")
+    print("-" * 80)
+    print("  Higher-Moment Risk Assessment & Expected Return Premia:")
+    print(f"    Risk Regime:                {receipt.higher_moment_risk_regime}")
+    print(f"    Co-Skewness Premium:        {receipt.expected_coskewness_premium_pct:>+8.2f}% / year (-3.6% * β_SKS)")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
 
 
 def main() -> None:
@@ -4131,6 +4188,35 @@ def main() -> None:
         help="Output Fama-MacBeth receipt as JSON",
     )
 
+    # Subparser: higher-moments
+    hm_parser = subparsers.add_parser(
+        "higher-moments",
+        help="Evaluate Harvey-Siddique (2000) co-skewness & Dittmar (2002) co-kurtosis higher-moment asset pricing",
+    )
+    hm_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    hm_parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="SPY",
+        help="Market benchmark ticker symbol (default: SPY)",
+    )
+    hm_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=60,
+        help="Observation lookback window in sessions (default: 60)",
+    )
+    hm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output higher moments receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4247,6 +4333,8 @@ def main() -> None:
         liquidity_beta_command(args)
     elif args.command == "fama-macbeth":
         fama_macbeth_command(args)
+    elif args.command == "higher-moments":
+        higher_moments_command(args)
 
 
 if __name__ == "__main__":
