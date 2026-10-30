@@ -62,3 +62,6 @@ models/*.joblib
 models/**/*.joblib
 models/*.sig
 models/**/*.sig
+
+# Generated CodeGraph cache
+.agents/skills/codegraph/graph.json
