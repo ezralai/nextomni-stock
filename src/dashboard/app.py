@@ -1432,6 +1432,56 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate idiosyncratic volatility.")
 
+                # Pástor & Stambaugh (2003) Systematic Liquidity Risk Factor & Liquidity Beta
+                st.markdown("---")
+                st.subheader("🌊 Pástor & Stambaugh (2003) Systematic Liquidity Risk & Beta Engine")
+                st.caption(
+                    "Sensitivity to market-wide aggregate liquidity dry-ups (Liquidity Beta β_L), "
+                    "order-flow reversal price impact (γ), and expected systematic liquidity premium (7.5% annual decile spread)."
+                )
+                from src.analytics.pastor_stambaugh import evaluate_pastor_stambaugh_profile
+                if len(df_obs) >= 22:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        ps_rec = evaluate_pastor_stambaugh_profile(
+                            ticker=selected_ticker,
+                            asset_prices=df_obs[p_col],
+                            asset_volumes=df_obs["volume"],
+                            benchmark_ticker="SPY",
+                            lookback_window=min(len(df_obs) - 1, 60),
+                        )
+                        ps1, ps2, ps3, ps4 = st.columns(4)
+                        sig_b = "★ Sig" if ps_rec.is_liquidity_beta_significant else "Not Sig"
+                        ps1.metric(
+                            "Liquidity Beta (β_L)",
+                            f"{ps_rec.liquidity_beta:+.3f}",
+                            delta=f"t={ps_rec.liquidity_beta_t_stat:+.2f} ({sig_b})",
+                            help="Sensitivity to aggregate market liquidity innovations; high beta commands return premium but suffers in panics",
+                        )
+                        ps2.metric(
+                            "Market Beta (β_M)",
+                            f"{ps_rec.market_beta:.2f}",
+                            delta=f"R²: {ps_rec.r_squared * 100:.1f}%",
+                        )
+                        ps3.metric(
+                            "Order Flow Gamma (γ)",
+                            f"{ps_rec.average_price_impact_gamma:+.4f}",
+                            delta="Reversal Friction",
+                            help="Campbell-Grossman-Wang price impact parameter; negative values reflect order flow reversal",
+                        )
+                        ps4.metric(
+                            "Liquidity Regime",
+                            ps_rec.liquidity_risk_regime,
+                            delta=f"{ps_rec.expected_liquidity_premium_pct:+.2f}%/yr Prem",
+                        )
+
+                        st.caption(f"🛡️ **Liquidity Beta Summary:** {ps_rec.summary}")
+                        st.caption(f"🛡️ **Liquidity Audit Digest:** `{ps_rec.signature[:16]}...` (Verified: `{ps_rec.verify_integrity()}`)")
+                    except Exception as ps_ex:
+                        st.info(f"Pástor-Stambaugh liquidity evaluation deferred: {ps_ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate systematic liquidity risk.")
+
 
 
 

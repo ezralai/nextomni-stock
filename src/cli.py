@@ -2673,6 +2673,62 @@ def idiosyncratic_vol_command(args: argparse.Namespace) -> None:
     print(f"  Summary: {receipt.summary}")
     print("=" * 80 + "\n")
 
+def liquidity_beta_command(args: argparse.Namespace) -> None:
+    """Evaluate Pástor & Stambaugh (2003) Systematic Liquidity Risk Factor & Liquidity Beta."""
+    import json
+    from src.analytics.pastor_stambaugh import evaluate_pastor_stambaugh_profile
+    import src.data.db as db
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    benchmark = validate_ticker(getattr(args, "benchmark", "SPY"))
+    lookback = int(getattr(args, "lookback", 60))
+
+    df_obs = db.get_observations(ticker)
+    if df_obs.empty or len(df_obs) < lookback + 1:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col]
+    volumes = df_obs["volume"]
+
+    try:
+        receipt = evaluate_pastor_stambaugh_profile(
+            ticker=ticker,
+            asset_prices=prices,
+            asset_volumes=volumes,
+            benchmark_ticker=benchmark,
+            lookback_window=lookback,
+        )
+    except Exception as ex:
+        print(f"\nError: Pástor-Stambaugh liquidity evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    sig_str = "YES (p < 0.05)" if receipt.is_liquidity_beta_significant else "NO (p >= 0.05)"
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Pástor & Stambaugh (2003) Systematic Liquidity Risk Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker} (Benchmark: {receipt.benchmark_ticker})")
+    print(f"  Sample Window:                {receipt.lookback_window} sessions (Total Aligned: {receipt.sample_sessions} sessions)")
+    print(f"  Annualized Alpha:             {receipt.annualized_alpha_pct:>+8.2f}% Ann")
+    print(f"  Market Beta (β_M):            {receipt.market_beta:>8.2f}")
+    print(f"  Model R-Squared:              {receipt.r_squared * 100:>8.2f}%")
+    print("-" * 80)
+    print("  Systematic Liquidity Sensitivity & Risk Premium:")
+    print(f"    Liquidity Beta (β_L):       {receipt.liquidity_beta:>+8.3f} (t={receipt.liquidity_beta_t_stat:>+6.2f}, Sig: {sig_str})")
+    print(f"    Order Flow Gamma (γ):       {receipt.average_price_impact_gamma:>+8.4f} (Price Impact Reversal)")
+    print(f"    Liquidity Risk Regime:      {receipt.liquidity_risk_regime}")
+    print(f"    Expected Liquidity Premium: {receipt.expected_liquidity_premium_pct:>+8.2f}% / year (Cross-sectional premium)")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
 
 
 def main() -> None:
@@ -3963,6 +4019,35 @@ def main() -> None:
         help="Output idiosyncratic volatility receipt as JSON",
     )
 
+    # Subparser: liquidity-beta
+    liq_parser = subparsers.add_parser(
+        "liquidity-beta",
+        help="Evaluate Pástor & Stambaugh (2003) systematic liquidity risk factor & liquidity beta",
+    )
+    liq_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    liq_parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="SPY",
+        help="Market benchmark ticker symbol (default: SPY)",
+    )
+    liq_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=60,
+        help="Observation lookback window in sessions (default: 60)",
+    )
+    liq_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Pástor-Stambaugh liquidity receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4075,6 +4160,8 @@ def main() -> None:
         black_litterman_command(args)
     elif args.command == "idiosyncratic-vol":
         idiosyncratic_vol_command(args)
+    elif args.command == "liquidity-beta":
+        liquidity_beta_command(args)
 
 
 if __name__ == "__main__":
