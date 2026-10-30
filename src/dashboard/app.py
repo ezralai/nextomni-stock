@@ -1535,9 +1535,67 @@ def render_dashboard() -> None:
                     st.success("All 3 horizon forecasts registered to prediction audit database!")
                     st.cache_data.clear()
 
+            # Almgren & Chriss (2000) Optimal Execution Schedule
+            st.markdown("---")
+            st.subheader("⚡ Almgren & Chriss (2000) Optimal Execution Schedule")
+            st.caption(
+                "Dynamic inventory trajectory minimizing implementation shortfall (permanent & temporary impact) and timing risk."
+            )
+            from src.analytics.optimal_execution import evaluate_optimal_execution_plan
+            with st.expander("⚙️ Execution Parameter Controls & Optimal Schedule", expanded=False):
+                col_ex1, col_ex2, col_ex3 = st.columns(3)
+                target_shares_input = col_ex1.number_input(
+                    "Target Shares (positive=Sell, negative=Buy)",
+                    value=1000.0,
+                    step=100.0,
+                    key="ac_shares",
+                )
+                exec_days_input = col_ex2.slider(
+                    "Execution Horizon (Sessions)",
+                    min_value=1,
+                    max_value=21,
+                    value=5,
+                    key="ac_days",
+                )
+                risk_aversion_input = col_ex3.select_slider(
+                    "Risk Aversion (λ)",
+                    options=[0.0, 1e-7, 1e-6, 1e-5, 1e-4],
+                    value=1e-6,
+                    format_func=lambda x: "0.0 (TWAP)" if x == 0.0 else f"{x:.1e}",
+                    key="ac_lambda",
+                )
+
+                if len(df_obs) >= 10:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        plan_rec = evaluate_optimal_execution_plan(
+                            ticker=selected_ticker,
+                            target_shares=float(target_shares_input),
+                            execution_days=int(exec_days_input),
+                            risk_aversion_lambda=float(risk_aversion_input),
+                            prices=df_obs[p_col],
+                            volumes=df_obs["volume"] if "volume" in df_obs.columns else None,
+                        )
+
+                        eq1, eq2, eq3, eq4 = st.columns(4)
+                        eq1.metric("Order Value", f"${plan_rec.total_market_value:,.0f}", delta=f"{abs(plan_rec.target_shares):,.0f} shs")
+                        eq2.metric("Expected Shortfall", f"${plan_rec.expected_total_shortfall_dollars:,.2f}", delta=f"{plan_rec.expected_total_shortfall_bps:.1f} bps")
+                        eq3.metric("Execution Half-Life", f"{plan_rec.half_life_days:.2f} Days", delta=f"κ = {plan_rec.urgency_parameter_kappa:.4f}")
+                        eq4.metric("Timing Risk (StdDev)", f"${plan_rec.shortfall_std_dev_dollars:,.2f}", delta=f"Vol: {plan_rec.daily_volatility_pct:.2f}%/D")
+
+                        # Trajectory DataFrame table
+                        st.dataframe(pd.DataFrame(plan_rec.trajectory_schedule), use_container_width=True)
+                        st.caption(f"🛡️ **Optimal Execution Summary:** {plan_rec.summary}")
+                        st.caption(f"🛡️ **Execution Audit Digest:** `{plan_rec.signature[:16]}...` (Verified: `{plan_rec.verify_integrity()}`)")
+                    except Exception as ex:
+                        st.info(f"Execution planning deferred: {ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 10 sessions) to evaluate optimal execution trajectory.")
+
     # =========================================================================
     # TAB 4: Prediction Audit Log & Reconciled Evaluation
     # =========================================================================
+
     with tabs[3]:
         st.header("Prediction Audit Log & Evaluation")
         st.caption("Auditable tracking finite state machine reconciling predictions with actual settlement prices.")

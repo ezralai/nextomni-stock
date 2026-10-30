@@ -2426,8 +2426,61 @@ def downside_beta_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def optimal_execution_command(args: argparse.Namespace) -> None:
+    """Evaluate Almgren & Chriss (2000) optimal execution trajectory and market impact."""
+    import json
+    from src.analytics.optimal_execution import evaluate_optimal_execution_plan
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    shares = float(args.shares)
+    days = int(getattr(args, "days", 5))
+    lam = float(getattr(args, "risk_aversion", 1e-6))
+
+    receipt = evaluate_optimal_execution_plan(
+        ticker=ticker,
+        target_shares=shares,
+        execution_days=days,
+        risk_aversion_lambda=lam,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    action = "Liquidation (Sell)" if receipt.target_shares > 0 else "Acquisition (Buy)"
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Almgren & Chriss (2000) Optimal Execution Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker} ({action})")
+    print(f"  Order Size:                   {abs(receipt.target_shares):,.0f} shares (Benchmark S_0: ${receipt.initial_price:.2f})")
+    print(f"  Total Market Value:           ${receipt.total_market_value:,.2f}")
+    print(f"  Execution Horizon:            {receipt.execution_days} sessions (Urgency Kappa: {receipt.urgency_parameter_kappa:.4f})")
+    print(f"  Execution Half-Life:          {receipt.half_life_days:.2f} trading days")
+    print(f"  Risk Aversion (Lambda):       {receipt.risk_aversion_lambda:.8f}")
+    print("-" * 80)
+    print("  Transaction Cost & Market Impact Metrics:")
+    print(f"    Expected Total Shortfall:   ${receipt.expected_total_shortfall_dollars:>10.2f} ({receipt.expected_total_shortfall_bps:>6.2f} bps)")
+    print(f"    Permanent Impact Cost:      ${receipt.expected_permanent_impact_dollars:>10.2f}")
+    print(f"    Temporary Impact Cost:      ${receipt.expected_temporary_impact_dollars:>10.2f}")
+    print(f"    Timing Risk (StdDev):       ${receipt.shortfall_std_dev_dollars:>10.2f}")
+    print("-" * 80)
+    print("  Discrete Execution Trajectory Schedule:")
+    print(f"    {'Step':<6} {'Time(D)':<8} {'Start Shares':<14} {'Trade (n_j)':<14} {'Remaining':<14} {'Executed %':<10}")
+    for step in receipt.trajectory_schedule:
+        print(
+            f"    {step['step']:<6} {step['time_day']:<8.1f} {step['inventory_start']:<14,.0f} "
+            f"{step['trade_shares']:<14,.0f} {step['inventory_remaining']:<14,.0f} {step['percent_executed_pct']:<10.1f}%"
+        )
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
+
 
 
     parser = argparse.ArgumentParser(
@@ -3574,6 +3627,41 @@ def main() -> None:
         help="Output downside risk receipt as JSON",
     )
 
+    # Subparser: optimal-execution
+    execution_parser = subparsers.add_parser(
+        "optimal-execution",
+        help="Evaluate Almgren & Chriss (2000) optimal execution trajectory and market impact",
+    )
+    execution_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    execution_parser.add_argument(
+        "--shares",
+        type=float,
+        required=True,
+        help="Target shares to execute (positive for sell/liquidation, negative for buy)",
+    )
+    execution_parser.add_argument(
+        "--days",
+        type=int,
+        default=5,
+        help="Execution horizon in trading days/sessions (default: 5)",
+    )
+    execution_parser.add_argument(
+        "--risk-aversion",
+        type=float,
+        default=1e-6,
+        help="Investor risk aversion parameter lambda >= 0 (default: 1e-6, 0 for pure TWAP)",
+    )
+    execution_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output execution trajectory receipt as JSON",
+    )
+
     args = parser.parse_args()
     if args.command == "sync":
         sync_command(args)
@@ -3677,6 +3765,9 @@ def main() -> None:
         cpcv_validate_command(args)
     elif args.command == "downside-beta":
         downside_beta_command(args)
+    elif args.command == "optimal-execution":
+        optimal_execution_command(args)
+
 
 
 if __name__ == "__main__":
