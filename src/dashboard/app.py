@@ -1658,6 +1658,66 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 20 sessions) to evaluate Merton credit risk.")
 
+                st.markdown("---")
+                st.subheader("⚡ Joel Hasbrouck (1991) VAR Price Discovery & Information Share")
+                st.caption(
+                    "Dynamic Vector Autoregression (VAR) decomposing trade price impact into permanent informed trading "
+                    "information content vs transient microstructure friction (inventory bounce), with Random-Walk "
+                    "variance decomposition (R_w²)."
+                )
+                from src.analytics.hasbrouck_var import evaluate_hasbrouck_var_profile
+                if len(df_obs) >= 30:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        v_col = "volume"
+                        hv_cols = st.columns(2)
+                        with hv_cols[0]:
+                            var_lags_val = st.slider("VAR Lag Order (p)", min_value=1, max_value=8, value=5, step=1, key="hasbrouck_lags")
+                        with hv_cols[1]:
+                            irf_h_val = st.slider("IRF Simulation Horizon (H)", min_value=5, max_value=30, value=20, step=5, key="hasbrouck_irf_h")
+
+                        hv_rec = evaluate_hasbrouck_var_profile(
+                            ticker=selected_ticker,
+                            asset_prices=df_obs[p_col],
+                            asset_volumes=df_obs[v_col],
+                            var_lags=var_lags_val,
+                            irf_horizon=irf_h_val,
+                            lookback_window=min(len(df_obs) - 1, 120),
+                        )
+
+                        hv1, hv2, hv3, hv4 = st.columns(4)
+                        hv1.metric(
+                            "Permanent Impact I(∞)",
+                            f"{hv_rec.permanent_impact_bps:+.2f} bps",
+                            delta=f"{hv_rec.permanent_to_total_ratio_pct:.1f}% of total",
+                            help="Permanent informational price revision per 1-sigma unexpected order flow innovation",
+                        )
+                        hv2.metric(
+                            "Contemporaneous Impact (b0)",
+                            f"{hv_rec.contemporaneous_impact_bps:+.2f} bps",
+                            delta=f"Transient S0: {hv_rec.transient_impact_bps:+.2f} bps",
+                            help="Immediate trade execution price response b0",
+                        )
+                        hv3.metric(
+                            "Trade Info Share (R_w²)",
+                            f"{hv_rec.information_share_rw2_pct:.1f}%",
+                            delta=f"Regime: {hv_rec.market_quality_regime}",
+                            help="Percentage of permanent efficient random-walk price variance explained by trade order flow",
+                        )
+                        hv4.metric(
+                            "Public News Volatility",
+                            f"{hv_rec.public_innovation_bps:.1f} bps",
+                            delta=f"Trade Shock σ: {hv_rec.trade_innovation_std:.2f}",
+                            help="Non-trade public information innovation volatility",
+                        )
+
+                        st.caption(f"⚡ **Hasbrouck Microstructure Summary:** {hv_rec.summary}")
+                        st.caption(f"🛡️ **VAR Audit Digest:** `{hv_rec.signature[:16]}...` (Verified: `{hv_rec.verify_integrity()}`)")
+                    except Exception as hv_ex:
+                        st.info(f"Hasbrouck VAR price discovery evaluation deferred: {hv_ex}")
+                else:
+                    st.info("ℹ️ Insufficient price & volume history (minimum 30 sessions) to evaluate Hasbrouck VAR.")
+
 
 
 

@@ -2905,6 +2905,55 @@ def merton_credit_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def hasbrouck_var_command(args: argparse.Namespace) -> None:
+    """Evaluate Joel Hasbrouck (1991) Vector Autoregression (VAR) Price Discovery & Information Share."""
+    import json
+    from src.analytics.hasbrouck_var import evaluate_hasbrouck_var_profile
+    import src.data.db as db
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    lags = int(getattr(args, "lags", 5))
+    horizon = int(getattr(args, "horizon", 20))
+    lookback = int(getattr(args, "lookback", 120))
+
+    try:
+        receipt = evaluate_hasbrouck_var_profile(
+            ticker=ticker,
+            var_lags=lags,
+            irf_horizon=horizon,
+            lookback_window=lookback,
+        )
+    except Exception as ex:
+        print(f"\nError: Hasbrouck VAR evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Hasbrouck (1991) VAR Price Discovery & Information Share")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample Observations:          {receipt.sample_sessions} sessions (Lags p={receipt.var_lags}, IRF H={receipt.irf_horizon})")
+    print("-" * 80)
+    print("  Price Impact Decomposition (Unexpected 1-σ Trade Shock):")
+    print(f"    Contemporaneous Impact:     {receipt.contemporaneous_impact_bps:>+8.2f} bps (b0 initial trade response)")
+    print(f"    Permanent Impact I(∞):      {receipt.permanent_impact_bps:>+8.2f} bps (Private Information Content)")
+    print(f"    Transient Friction S0:      {receipt.transient_impact_bps:>+8.2f} bps (Bid-Ask Bounce / Inventory Decay)")
+    print(f"    Permanent Ratio:            {receipt.permanent_to_total_ratio_pct:>8.1f}%")
+    print("-" * 80)
+    print("  Hasbrouck Random-Walk Variance Decomposition:")
+    print(f"    Trade Info Share (R_w²):    {receipt.information_share_rw2_pct:>8.2f}% of random walk volatility")
+    print(f"    Public News Volatility:     {receipt.public_innovation_bps:>8.2f} bps (Non-trade macro innovations)")
+    print(f"    Market Quality Regime:      {receipt.market_quality_regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -4340,6 +4389,41 @@ def main() -> None:
         help="Output Merton credit receipt as JSON",
     )
 
+    # Subparser: hasbrouck-var
+    hv_parser = subparsers.add_parser(
+        "hasbrouck-var",
+        help="Evaluate Joel Hasbrouck (1991) VAR price discovery and trade information share",
+    )
+    hv_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    hv_parser.add_argument(
+        "--lags",
+        type=int,
+        default=5,
+        help="Number of autoregressive lags p in VAR (default: 5)",
+    )
+    hv_parser.add_argument(
+        "--horizon",
+        type=int,
+        default=20,
+        help="Impulse response function simulation horizon H (default: 20)",
+    )
+    hv_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=120,
+        help="Lookback window in sessions (default: 120)",
+    )
+    hv_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Hasbrouck receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4460,6 +4544,8 @@ def main() -> None:
         higher_moments_command(args)
     elif args.command == "merton-credit":
         merton_credit_command(args)
+    elif args.command == "hasbrouck-var":
+        hasbrouck_var_command(args)
 
 
 if __name__ == "__main__":
