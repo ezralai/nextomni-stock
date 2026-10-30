@@ -2615,6 +2615,64 @@ def black_litterman_command(args: argparse.Namespace) -> None:
     print(f"  Summary: {receipt.summary}")
     print("=" * 80 + "\n")
 
+def idiosyncratic_vol_command(args: argparse.Namespace) -> None:
+    """Evaluate Ang, Hodrick, Xing & Zhang (2006, 2009) Idiosyncratic Volatility & Higher Moments."""
+    import json
+    from src.analytics.idiosyncratic_volatility import evaluate_idiosyncratic_volatility_profile
+    import src.data.db as db
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    benchmark = validate_ticker(getattr(args, "benchmark", "SPY"))
+    lookback = int(getattr(args, "lookback", 60))
+
+    df_obs = db.get_observations(ticker)
+    if df_obs.empty or len(df_obs) < lookback + 1:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col]
+
+    try:
+        receipt = evaluate_idiosyncratic_volatility_profile(
+            ticker=ticker,
+            asset_prices=prices,
+            benchmark_ticker=benchmark,
+            lookback_window=lookback,
+        )
+    except Exception as ex:
+        print(f"\nError: Idiosyncratic volatility evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Ang et al. (2006) Idiosyncratic Volatility & Higher Moments Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker} (Benchmark: {receipt.benchmark_ticker})")
+    print(f"  Sample Window:                {receipt.lookback_window} sessions (Total Aligned: {receipt.sample_sessions} sessions)")
+    print(f"  Annualized Alpha:             {receipt.annualized_alpha_pct:>+8.2f}% Ann")
+    print(f"  Total Return Volatility:      {receipt.total_annualized_vol_pct:>8.2f}% Ann")
+    print(f"  R-Squared (Carhart 4-Factor): {receipt.r_squared * 100:>8.2f}%")
+    print("-" * 80)
+    print("  Idiosyncratic Dispersion & Downside Asymmetry:")
+    print(f"    Idiosyncratic Vol (IVOL):   {receipt.idiosyncratic_vol_ann_pct:>8.2f}% Ann ({receipt.idiosyncratic_variance_ratio_pct:.1f}% of Total Variance)")
+    print(f"    Downside IVOL (IVOL^-):     {receipt.downside_idiosyncratic_vol_ann_pct:>8.2f}% Ann (Downside Ratio: {receipt.downside_ivol_ratio:.2f})")
+    print(f"    Idiosyncratic Skewness:     {receipt.idiosyncratic_skewness:>+8.2f} (Boyer et al. 2010 Lottery Bias)")
+    print(f"    Idiosyncratic Kurtosis:     {receipt.idiosyncratic_kurtosis:>8.2f} (Fat-Tail Excess)")
+    print(f"    Idiosyncratic Info Ratio:   {receipt.idiosyncratic_information_ratio:>+8.2f} (Alpha / IVOL)")
+    print("-" * 80)
+    print("  Ang et al. (2006) Cross-Sectional Pricing Anomaly Assessment:")
+    print(f"    Anomaly Risk Regime:        {receipt.ivol_anomaly_regime}")
+    print(f"    Expected Return Haircut:    -{receipt.ivol_expected_return_haircut_pct:.2f}% / year (Cross-sectional penalty)")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
 
 
 def main() -> None:
@@ -3876,6 +3934,35 @@ def main() -> None:
         help="Output Black-Litterman receipt as JSON",
     )
 
+    # Subparser: idiosyncratic-vol
+    ivol_parser = subparsers.add_parser(
+        "idiosyncratic-vol",
+        help="Evaluate Ang, Hodrick, Xing & Zhang (2006, 2009) idiosyncratic volatility & higher moments",
+    )
+    ivol_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    ivol_parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="SPY",
+        help="Market benchmark ticker symbol (default: SPY)",
+    )
+    ivol_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=60,
+        help="Observation lookback window in sessions (default: 60)",
+    )
+    ivol_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output idiosyncratic volatility receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -3986,6 +4073,8 @@ def main() -> None:
         fama_french_command(args)
     elif args.command == "black-litterman":
         black_litterman_command(args)
+    elif args.command == "idiosyncratic-vol":
+        idiosyncratic_vol_command(args)
 
 
 if __name__ == "__main__":

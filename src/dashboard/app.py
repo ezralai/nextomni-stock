@@ -1384,6 +1384,54 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate multi-factor model.")
 
+                # Ang, Hodrick, Xing & Zhang (2006) Cross-Sectional Idiosyncratic Volatility (IVOL) & Higher Moments
+                st.markdown("---")
+                st.subheader("⚡ Ang et al. (2006) Idiosyncratic Volatility (IVOL) & Higher-Moment Alpha Engine")
+                st.caption(
+                    "Cross-sectional idiosyncratic volatility puzzle, lottery-demand skewness (Boyer et al. 2010), "
+                    "tail kurtosis, downside idiosyncratic semivariance, and expected return anomaly drag."
+                )
+                from src.analytics.idiosyncratic_volatility import evaluate_idiosyncratic_volatility_profile
+                if len(df_obs) >= 22:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        ivol_rec = evaluate_idiosyncratic_volatility_profile(
+                            ticker=selected_ticker,
+                            asset_prices=df_obs[p_col],
+                            benchmark_ticker="SPY",
+                            lookback_window=min(len(df_obs) - 1, 60),
+                        )
+                        iv1, iv2, iv3, iv4 = st.columns(4)
+                        iv1.metric(
+                            "Idiosyncratic Vol (IVOL)",
+                            f"{ivol_rec.idiosyncratic_vol_ann_pct:.1f}% Ann",
+                            delta=f"{ivol_rec.idiosyncratic_variance_ratio_pct:.1f}% of Total Var",
+                        )
+                        iv2.metric(
+                            "Downside IVOL (IVOL⁻)",
+                            f"{ivol_rec.downside_idiosyncratic_vol_ann_pct:.1f}% Ann",
+                            delta=f"Ratio: {ivol_rec.downside_ivol_ratio:.2f}",
+                        )
+                        iv3.metric(
+                            "Idiosyncratic Skew (ISKEW)",
+                            f"{ivol_rec.idiosyncratic_skewness:+.2f}",
+                            delta=f"IKURT: {ivol_rec.idiosyncratic_kurtosis:.1f}",
+                            help="Boyer et al. (2010) lottery-demand skewness; positive values reflect speculative retail premium",
+                        )
+                        iv4.metric(
+                            "Anomaly Regime",
+                            ivol_rec.ivol_anomaly_regime,
+                            delta=f"-{ivol_rec.ivol_expected_return_haircut_pct:.2f}%/yr drag" if ivol_rec.ivol_expected_return_haircut_pct > 0 else "No Drag",
+                            delta_color="inverse" if ivol_rec.ivol_expected_return_haircut_pct > 0 else "normal",
+                        )
+
+                        st.caption(f"🛡️ **IVOL Anomaly Summary:** {ivol_rec.summary}")
+                        st.caption(f"🛡️ **IVOL Audit Digest:** `{ivol_rec.signature[:16]}...` (Verified: `{ivol_rec.verify_integrity()}`)")
+                    except Exception as iv_ex:
+                        st.info(f"Idiosyncratic volatility evaluation deferred: {iv_ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate idiosyncratic volatility.")
+
 
 
 
