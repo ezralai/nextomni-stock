@@ -2954,6 +2954,60 @@ def hasbrouck_var_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def vrp_command(args: argparse.Namespace) -> None:
+    """Evaluate Bollerslev, Tauchen & Zhou (2009) Variance Risk Premium (VRP) & Volatility-of-Volatility."""
+    import json
+    from src.analytics.variance_risk_premium import evaluate_variance_risk_premium_profile
+    import src.data.db as db
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    iv = getattr(args, "iv", None)
+    if iv is not None:
+        iv = float(iv)
+    horizon = int(getattr(args, "horizon", 21))
+    lookback = int(getattr(args, "lookback", 120))
+
+    try:
+        receipt = evaluate_variance_risk_premium_profile(
+            ticker=ticker,
+            implied_volatility=iv,
+            horizon_sessions=horizon,
+            lookback_window=lookback,
+        )
+    except Exception as ex:
+        print(f"\nError: Variance Risk Premium evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    sig_str = "YES (p < 0.05)" if receipt.predictive_p_value < 0.05 else f"no (p = {receipt.predictive_p_value:.3f})"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Bollerslev et al. (2009) Variance Risk Premium Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Forecast Horizon:             {receipt.horizon_sessions} sessions (~1 trading month)")
+    print(f"  Implied Volatility (IV):      {receipt.implied_volatility_pct:>8.2f}% (Variance: {receipt.implied_variance:.4f})")
+    print(f"  Realized Volatility (RV):     {receipt.realized_volatility_pct:>8.2f}% (Variance: {receipt.realized_variance:.4f})")
+    print("-" * 80)
+    print("  Variance Risk Premium Spread & Volatility of Volatility:")
+    print(f"    Variance Risk Premium (VRP):{receipt.variance_risk_premium:>+8.2f} pts ((IV² - RV²) * 100)")
+    print(f"    Volatility Spread:          {receipt.volatility_spread_pct_points:>+8.2f} percentage points (IV - RV)")
+    print(f"    Volatility-of-Vol (VoV):    {receipt.volatility_of_volatility_pct:>8.2f}% (Annualized VVIX proxy)")
+    print(f"    VRP Regime:                 {receipt.vrp_regime}")
+    print("-" * 80)
+    print(f"  Bollerslev Forward Return Prediction ({receipt.horizon_sessions}-Session Forward Return):")
+    print(f"    Predicted Forward Return:   {receipt.predicted_forward_return_pct:>+8.2f}% (R² = {receipt.r_squared_pct:.1f}%)")
+    print(f"    Predictive Beta (β_VRP):    {receipt.predictive_beta_vrp:>+8.4f} (t={receipt.predictive_t_stat:>+6.2f}, Sig: {sig_str})")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -4424,6 +4478,41 @@ def main() -> None:
         help="Output Hasbrouck receipt as JSON",
     )
 
+    # Subparser: vrp
+    vrp_parser = subparsers.add_parser(
+        "vrp",
+        help="Evaluate Bollerslev, Tauchen & Zhou (2009) variance risk premium & volatility-of-volatility",
+    )
+    vrp_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    vrp_parser.add_argument(
+        "--iv",
+        type=float,
+        default=None,
+        help="Annualized implied volatility (e.g. 0.28 for 28%; optional)",
+    )
+    vrp_parser.add_argument(
+        "--horizon",
+        type=int,
+        default=21,
+        help="Forward forecast horizon in sessions (default: 21)",
+    )
+    vrp_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=120,
+        help="Lookback window in sessions (default: 120)",
+    )
+    vrp_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output VRP receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4546,6 +4635,8 @@ def main() -> None:
         merton_credit_command(args)
     elif args.command == "hasbrouck-var":
         hasbrouck_var_command(args)
+    elif args.command == "vrp":
+        vrp_command(args)
 
 
 if __name__ == "__main__":

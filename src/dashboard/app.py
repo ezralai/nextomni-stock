@@ -1718,6 +1718,80 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price & volume history (minimum 30 sessions) to evaluate Hasbrouck VAR.")
 
+                st.markdown("---")
+                st.subheader("📊 Bollerslev, Tauchen & Zhou (2009) Variance Risk Premium (VRP) & Vol-of-Vol")
+                st.caption(
+                    "Econometric crash-risk insurance premium measuring the spread between risk-neutral expected variance "
+                    "(IV²) and physical realized variance (RV²), with Newey-West forward return predictions."
+                )
+                from src.analytics.variance_risk_premium import evaluate_variance_risk_premium_profile
+                if len(df_obs) >= 45:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        vrp_cols = st.columns(2)
+                        with vrp_cols[0]:
+                            iv_override = st.number_input(
+                                "Implied Volatility IV (% Ann, 0=Auto)",
+                                min_value=0.0,
+                                max_value=200.0,
+                                value=0.0,
+                                step=1.0,
+                                key="vrp_iv_input",
+                                help="Option-implied volatility in % (e.g. 28.0). Set 0 for automated empirical proxy.",
+                            )
+                        with vrp_cols[1]:
+                            vrp_horizon_val = st.slider(
+                                "Forecast Horizon (Sessions)",
+                                min_value=5,
+                                max_value=63,
+                                value=21,
+                                step=1,
+                                key="vrp_horizon_slider",
+                                help="Number of forward trading sessions (21 sessions = 1 trading month)",
+                            )
+
+                        iv_param = (iv_override / 100.0) if iv_override > 0 else None
+                        vrp_rec = evaluate_variance_risk_premium_profile(
+                            ticker=selected_ticker,
+                            asset_prices=df_obs[p_col],
+                            implied_volatility=iv_param,
+                            horizon_sessions=vrp_horizon_val,
+                            lookback_window=min(len(df_obs) - 1, 120),
+                        )
+
+                        vp1, vp2, vp3, vp4 = st.columns(4)
+                        vp1.metric(
+                            "Variance Risk Premium (VRP)",
+                            f"{vrp_rec.variance_risk_premium:+.2f} pts",
+                            delta=f"Vol Spread: {vrp_rec.volatility_spread_pct_points:+.1f}% pts",
+                            help="Bollerslev VRP = (IV² - RV²) * 100",
+                        )
+                        vp2.metric(
+                            "IV vs RV",
+                            f"{vrp_rec.implied_volatility_pct:.1f}% IV",
+                            delta=f"RV: {vrp_rec.realized_volatility_pct:.1f}%",
+                            help="Risk-neutral Implied Volatility vs Physical Realized Volatility",
+                        )
+                        vp3.metric(
+                            "Predicted Forward Return",
+                            f"{vrp_rec.predicted_forward_return_pct:+.2f}%",
+                            delta=f"β_VRP: {vrp_rec.predictive_beta_vrp:+.4f} (t={vrp_rec.predictive_t_stat:+.2f})",
+                            help=f"Newey-West HAC predicted forward {vrp_rec.horizon_sessions}-session return",
+                        )
+                        vp4.metric(
+                            "Vol-of-Vol (VoV)",
+                            f"{vrp_rec.volatility_of_volatility_pct:.1f}%",
+                            delta=f"Regime: {vrp_rec.vrp_regime}",
+                            help="Annualized volatility-of-volatility (VVIX equivalent second-order risk)",
+                        )
+
+                        st.caption(f"📊 **VRP Summary:** {vrp_rec.summary}")
+                        st.caption(f"🛡️ **VRP Audit Digest:** `{vrp_rec.signature[:16]}...` (Verified: `{vrp_rec.verify_integrity()}`)")
+                    except Exception as vrp_ex:
+                        st.info(f"Variance Risk Premium evaluation deferred: {vrp_ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 45 sessions) to evaluate Variance Risk Premium.")
+
 
 
 
