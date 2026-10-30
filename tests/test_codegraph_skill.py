@@ -144,3 +144,80 @@ def test_live_repository_build_and_query() -> None:
     # Test blast radius on security validator
     blast = engine.compute_blast_radius("validate_ticker")
     assert len(blast["affected_files"]) >= 5
+
+
+def test_extract_table_dataflow_and_cli(tmp_path: Path) -> None:
+    """Verify that SQL table reads/writes and CLI subparsers are extracted into the graph."""
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+
+    # Synthetic DB access file
+    (src_dir / "db_ops.py").write_text(
+        'def fetch_data():\n'
+        '    query = "SELECT * FROM stock_observations WHERE ticker = ?"\n'
+        '    return query\n\n'
+        'def insert_prediction():\n'
+        '    sql = "INSERT INTO predictions (id, price) VALUES (?, ?)"\n'
+        '    return sql\n',
+        encoding="utf-8",
+    )
+
+    # Synthetic CLI file
+    (src_dir / "cli_ops.py").write_text(
+        'def setup_cli(subparsers):\n'
+        '    p = subparsers.add_parser("backtest_custom")\n'
+        '    return p\n',
+        encoding="utf-8",
+    )
+
+    cache_file = tmp_path / "cache.json"
+    graph = build_graph.extract_repository_graph(tmp_path, cache_path=cache_file)
+    edges = graph["edges"]
+    nodes = {n["id"]: n for n in graph["nodes"]}
+
+    # Verify table read edge
+    read_edges = [e for e in edges if e["type"] == "READS_TABLE" and e["target"] == "db_table:stock_observations"]
+    assert len(read_edges) >= 1
+    assert "fetch_data" in read_edges[0]["source"]
+
+    # Verify table write edge
+    write_edges = [e for e in edges if e["type"] == "WRITES_TABLE" and e["target"] == "db_table:predictions"]
+    assert len(write_edges) >= 1
+    assert "insert_prediction" in write_edges[0]["source"]
+
+    # Verify CLI subparser node and edge
+    assert "cli:subcommand:backtest_custom" in nodes
+    cli_edges = [e for e in edges if e["type"] == "REGISTERS_CLI"]
+    assert len(cli_edges) >= 1
+
+    # Verify caching file created
+    assert cache_file.exists()
+
+
+def test_query_engine_dataflow_and_dead_code(tmp_path: Path) -> None:
+    """Verify table dataflow and dead code querying."""
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+
+    (src_dir / "analytics.py").write_text(
+        'def active_calc():\n'
+        '    sql = "SELECT id FROM stock_observations"\n'
+        '    return sql\n\n'
+        'def completely_dead_function():\n'
+        '    return 42\n',
+        encoding="utf-8",
+    )
+
+    graph = build_graph.extract_repository_graph(tmp_path)
+    engine = query_graph.CodeGraphQueryEngine(graph)
+
+    # Test dataflow
+    df_obs = engine.get_table_dataflow("stock_observations")
+    assert df_obs["readers_count"] >= 1
+    assert any("active_calc" in r["caller"] for r in df_obs["readers"])
+
+    # Test dead code
+    dead = engine.find_dead_code_candidates()
+    dead_names = [d["name"] for d in dead]
+    assert "completely_dead_function" in dead_names
+

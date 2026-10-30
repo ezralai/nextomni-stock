@@ -65,3 +65,5 @@ models/**/*.sig
 
 # Generated CodeGraph cache
 .agents/skills/codegraph/graph.json
+.agents/skills/codegraph/.cache_hashes.json
+

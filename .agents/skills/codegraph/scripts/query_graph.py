@@ -1,7 +1,7 @@
 """Interactive Query Engine for NextOmni Stock CodeGraph.
 
 Enables developers and AI agents to query callers, callees, blast radiuses,
-and test coverage gaps across the entire repository.
+database table dataflows, dead code candidates, and test coverage gaps.
 """
 
 import argparse
@@ -20,9 +20,7 @@ class CodeGraphQueryEngine:
         self.edges = graph_data.get("edges", [])
 
         # Adjacency lists
-        # outbound: source -> list of edge dicts
         self.outbound: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        # inbound: target -> list of edge dicts
         self.inbound: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 
         for edge in self.edges:
@@ -50,7 +48,7 @@ class CodeGraphQueryEngine:
         return matches
 
     def get_callers(self, target_symbol: str) -> List[Dict[str, Any]]:
-        """Find all functions, classes, and files that call or import target_symbol."""
+        """Find all functions, classes, and files that call, import, or test target_symbol."""
         target_nodes = self.find_node_ids(target_symbol)
         callers = []
         seen = set()
@@ -105,7 +103,7 @@ class CodeGraphQueryEngine:
         while queue:
             curr_id, depth, path = queue.popleft()
             curr_file = self.nodes.get(curr_id, {}).get("file", curr_id.split(":")[0])
-            if curr_file and not curr_file.startswith("external:"):
+            if curr_file and not curr_file.startswith("external:") and not curr_file.startswith("db_table:"):
                 affected_files.add(curr_file)
 
             if depth < max_depth:
@@ -132,27 +130,83 @@ class CodeGraphQueryEngine:
             "sample_paths": paths[:15],
         }
 
-    def audit_test_coverage_gaps(self) -> List[Dict[str, Any]]:
-        """Identify non-test functions in src/ that have zero inbound TESTS edges."""
-        gaps = []
+    def get_table_dataflow(self, table_name: str) -> Dict[str, Any]:
+        """Find all functions and modules that read from or write to a specific database table."""
+        tbl_node_id = f"db_table:{table_name}"
+        readers = []
+        writers = []
+
+        for edge in self.inbound.get(tbl_node_id, []):
+            edge_info = {
+                "caller": edge["source"],
+                "file": self.nodes.get(edge["source"], {}).get("file", edge["source"].split(":")[0]),
+                "line": edge.get("line"),
+            }
+            if edge["type"] == "READS_TABLE":
+                readers.append(edge_info)
+            elif edge["type"] == "WRITES_TABLE":
+                writers.append(edge_info)
+
+        return {
+            "table": table_name,
+            "table_node_id": tbl_node_id,
+            "readers_count": len(readers),
+            "writers_count": len(writers),
+            "readers": readers,
+            "writers": writers,
+        }
+
+    def find_dead_code_candidates(self) -> List[Dict[str, Any]]:
+        """Identify functions in src/ that have zero inbound CALLS and zero TESTS edges."""
+        dead_candidates = []
+        exempt_prefixes = ("main", "run", "cli", "__", "test_")
+
         for node_id, node in self.nodes.items():
             if node["type"] == "function" and node.get("file", "").startswith("src/"):
                 fn_name = node["name"]
-                # Skip private dunder methods
-                if fn_name.startswith("__") and fn_name.endswith("__"):
+                if any(fn_name.startswith(p) for p in exempt_prefixes):
+                    continue
+
+                in_edges = self.inbound.get(node_id, [])
+                calls_edges = [e for e in in_edges if e["type"] in {"CALLS", "TESTS"}]
+                if not calls_edges:
+                    dead_candidates.append({
+                        "function_id": node_id,
+                        "file": node["file"],
+                        "name": fn_name,
+                        "line": node.get("line"),
+                        "total_inbound_edges": len(in_edges),
+                    })
+        return dead_candidates
+
+    def suggest_missing_tests(self) -> List[Dict[str, Any]]:
+        """List functions in src/ lacking test coverage and suggest corresponding test locations."""
+        suggestions = []
+        for node_id, node in self.nodes.items():
+            if node["type"] == "function" and node.get("file", "").startswith("src/"):
+                fn_name = node["name"]
+                if fn_name.startswith("__") or fn_name == "main":
                     continue
 
                 in_edges = self.inbound.get(node_id, [])
                 test_edges = [e for e in in_edges if e["type"] == "TESTS"]
                 if not test_edges:
-                    gaps.append({
+                    src_file = Path(node["file"])
+                    suggested_test_file = f"tests/test_{src_file.stem}.py"
+                    suggestions.append({
                         "function_id": node_id,
                         "file": node["file"],
                         "name": fn_name,
                         "line": node.get("line"),
-                        "total_callers": len(in_edges),
+                        "suggested_test_file": suggested_test_file,
+                        "suggested_test_name": f"test_{fn_name}",
+                        "callers_count": len(in_edges),
                     })
-        return gaps
+        return suggestions
+
+    # Alias for backward compatibility
+    audit_test_coverage_gaps = suggest_missing_tests
+
 
 
 def main() -> None:
@@ -166,6 +220,9 @@ def main() -> None:
     parser.add_argument("--callers", type=str, help="Find all callers of a function or class symbol")
     parser.add_argument("--callees", type=str, help="Find all functions called by a function")
     parser.add_argument("--blast-radius", type=str, help="Calculate recursive blast radius for a symbol/file")
+    parser.add_argument("--dataflow", type=str, help="Trace read/write dataflow for a SQLite database table")
+    parser.add_argument("--dead-code", action="store_true", help="Find uncalled functions in src/ (dead code)")
+    parser.add_argument("--suggest-tests", action="store_true", help="Suggest tests for untested functions in src/")
     parser.add_argument("--audit-tests", action="store_true", help="Audit functions lacking test coverage")
     parser.add_argument("--summary", action="store_true", help="Print CodeGraph topology summary")
     parser.add_argument("--json", action="store_true", help="Output results in JSON format")
@@ -174,7 +231,6 @@ def main() -> None:
     graph_path = Path(args.graph)
 
     if not graph_path.exists():
-        # Automatically trigger build if not yet built
         from build_graph import extract_repository_graph
         root_dir = Path(".")
         graph_data = extract_repository_graph(root_dir)
@@ -222,7 +278,7 @@ def main() -> None:
             print()
         return
 
-    if args.blast-radius if hasattr(args, "blast-radius") else args.blast_radius:
+    if getattr(args, "blast_radius", None):
         target = args.blast_radius
         res = engine.compute_blast_radius(target)
         if args.json:
@@ -240,14 +296,55 @@ def main() -> None:
             print()
         return
 
+    if args.dataflow:
+        res = engine.get_table_dataflow(args.dataflow)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"\nSQLite Dataflow for Table '{args.dataflow}':")
+            print(f"  Readers ({res['readers_count']}):")
+            for r in res["readers"][:10]:
+                print(f"    - {r['caller']} (line {r.get('line')}) in {r['file']}")
+            print(f"  Writers ({res['writers_count']}):")
+            for w in res["writers"][:10]:
+                print(f"    - {w['caller']} (line {w.get('line')}) in {w['file']}")
+            print()
+        return
+
+    if args.dead_code:
+        res = engine.find_dead_code_candidates()
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"\nPotential Dead Code Candidates in src/ ({len(res)} found):")
+            for d in res[:20]:
+                print(f"  - {d['function_id']} (line {d.get('line')}) in {d['file']}")
+            if len(res) > 20:
+                print(f"  ... and {len(res) - 20} more.")
+            print()
+        return
+
+    if args.suggest_tests:
+        res = engine.suggest_missing_tests()
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            print(f"\nSuggested Test Templates for Untested Functions ({len(res)} found):")
+            for s in res[:15]:
+                print(f"  - {s['name']} -> {s['suggested_test_file']}::{s['suggested_test_name']} (Callers: {s['callers_count']})")
+            if len(res) > 15:
+                print(f"  ... and {len(res) - 15} more.")
+            print()
+        return
+
     if args.audit_tests:
-        gaps = engine.audit_test_coverage_gaps()
+        gaps = engine.suggest_missing_tests()
         if args.json:
             print(json.dumps(gaps, indent=2))
         else:
             print(f"\nFunctions in src/ lacking direct TESTS edges ({len(gaps)} found):")
             for g in gaps[:20]:
-                print(f"  - {g['function_id']} (Callers: {g['total_callers']})")
+                print(f"  - {g['function_id']} (Callers: {g['callers_count']})")
             if len(gaps) > 20:
                 print(f"  ... and {len(gaps) - 20} more.")
             print()

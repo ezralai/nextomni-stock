@@ -26,6 +26,10 @@ Every iteration must continuously refine the repository across three fundamental
 4. **Clean Code & Type Safety:**
    - Maintain type annotations on all public functions.
    - Enforce PEP 8 style standards with zero dead code or unused imports.
+5. **CodeGraph Blast Radius Verification:**
+   - Every proposal and code edit must be validated against the repository CodeGraph (`.agents/skills/codegraph/scripts/query_graph.py`).
+   - Query `--blast-radius <target>` and `--dataflow <table>` to identify affected components and database dataflows with 100% precision before modifying files.
+
 
 ---
 
@@ -79,8 +83,9 @@ Every iteration must continuously refine the repository across three fundamental
 ## Iterative Refinement Cycle
 
 When tasked with improving the system:
-1. **Benchmark & Profile:** Inspect current performance, security boundaries, and feature matrices.
-2. **Formulate Hypothesis:** Define a specific, testable improvement (e.g., adding Garman-Klass volatility, implementing LightGBM regressor, optimizing SQLite indices).
-3. **Targeted Implementation:** Make minimal, clean code changes adhering to Pillars 1–3.
-4. **Automated Verification:** Run `pytest -v` across the entire test suite. Verify 100% test pass rate.
-5. **Document Impact:** Quantify the exact architectural, security, or ML performance improvement.
+1. **Benchmark, Profile & CodeGraph Impact:** Inspect current performance, query CodeGraph (`--blast-radius`, `--dataflow`) to map affected components, and formulate the standard 6-part proposal.
+2. **Formulate Hypothesis:** Define a specific, testable quantitative, architectural, or security improvement.
+3. **Targeted Implementation:** Make minimal, clean code changes adhering strictly to Pillars 1–3 after user approval.
+4. **Automated Verification & Graph Re-Index:** Run `pytest -v` (100% pass rate required), then re-index the CodeGraph with `build_graph.py`.
+5. **Document Impact:** Quantify the exact architectural, security, or ML performance improvement in an iteration artifact.
+
