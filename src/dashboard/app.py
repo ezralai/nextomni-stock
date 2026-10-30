@@ -1792,6 +1792,62 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 45 sessions) to evaluate Variance Risk Premium.")
 
+                st.markdown("---")
+                st.subheader("🎰 Bali, Cakici & Whitelaw (2011) 'MAX' Effect & Lottery Demand Alpha")
+                st.caption(
+                    "Behavioral finance cumulative prospect theory engine quantifying speculative retail lottery preferences, "
+                    "extreme upside tail order statistics (MAX_N), and expected structural alpha drag."
+                )
+                from src.analytics.max_lottery import evaluate_max_lottery_profile
+                if len(df_obs) >= 20:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        ml_cols = st.columns(2)
+                        with ml_cols[0]:
+                            top_n_val = st.slider("Extreme Tail Days (N)", min_value=1, max_value=10, value=5, step=1, key="max_lottery_top_n")
+                        with ml_cols[1]:
+                            ml_lookback = st.slider("Observation Window (Sessions)", min_value=20, max_value=120, value=60, step=10, key="max_lottery_lookback")
+
+                        ml_rec = evaluate_max_lottery_profile(
+                            ticker=selected_ticker,
+                            asset_prices=df_obs[p_col],
+                            top_n_days=top_n_val,
+                            lookback_window=ml_lookback,
+                        )
+
+                        ml1, ml2, ml3, ml4 = st.columns(4)
+                        ml1.metric(
+                            f"MAX_{ml_rec.top_n_days} Avg Return",
+                            f"{ml_rec.max_n_pct:+.2f}%",
+                            delta=f"Single MAX_1: {ml_rec.max_1_pct:+.2f}%",
+                            help=f"Average of the {ml_rec.top_n_days} largest daily return spikes in lookback window",
+                        )
+                        ml2.metric(
+                            f"MIN_{ml_rec.top_n_days} Downside",
+                            f"{ml_rec.min_n_pct:+.2f}%",
+                            delta=f"Asymmetry: {ml_rec.max_to_min_ratio:.2f}x",
+                            help=f"Average of the {ml_rec.top_n_days} worst daily drawdowns; asymmetry ratio = MAX / |MIN|",
+                        )
+                        ml3.metric(
+                            "Lottery Score (Λ)",
+                            f"{ml_rec.lottery_demand_score:.1f} / 100",
+                            delta=f"Regime: {ml_rec.lottery_regime}",
+                            help="Composite behavioral lottery demand index; scores > 75 signal severe retail overpricing",
+                        )
+                        ml4.metric(
+                            "Expected Alpha Drag",
+                            f"{ml_rec.expected_alpha_drag_ann_pct:+.2f}% Ann",
+                            delta=f"Skew: {ml_rec.return_skewness:+.2f}",
+                            help="Bali et al. (2011) expected annualized risk-adjusted performance penalty / compounder premium",
+                        )
+
+                        st.caption(f"🎰 **MAX Lottery Summary:** {ml_rec.summary}")
+                        st.caption(f"🛡️ **Lottery Audit Digest:** `{ml_rec.signature[:16]}...` (Verified: `{ml_rec.verify_integrity()}`)")
+                    except Exception as ml_ex:
+                        st.info(f"MAX lottery evaluation deferred: {ml_ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 20 sessions) to evaluate MAX lottery effect.")
+
 
 
 

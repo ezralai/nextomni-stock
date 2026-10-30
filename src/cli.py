@@ -3008,6 +3008,54 @@ def vrp_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def max_lottery_command(args: argparse.Namespace) -> None:
+    """Evaluate Bali, Cakici & Whitelaw (2011) Extreme Daily Return MAX Effect & Lottery Demand."""
+    import json
+    from src.analytics.max_lottery import evaluate_max_lottery_profile
+    import src.data.db as db
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    top_n = int(getattr(args, "top_n", 5))
+    lookback = int(getattr(args, "lookback", 60))
+
+    try:
+        receipt = evaluate_max_lottery_profile(
+            ticker=ticker,
+            top_n_days=top_n,
+            lookback_window=lookback,
+        )
+    except Exception as ex:
+        print(f"\nError: MAX lottery evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Bali et al. (2011) MAX Effect & Lottery Demand Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Sample Window:                {receipt.lookback_window} sessions (Top N Days = {receipt.top_n_days})")
+    print(f"  Daily Volatility:             {receipt.daily_volatility_pct:>8.1f}% Ann (Skewness: {receipt.return_skewness:>+6.2f})")
+    print("-" * 80)
+    print("  Extreme Daily Return Tail Order Statistics:")
+    print(f"    Single Highest Return (MAX_1):{receipt.max_1_pct:>+8.2f}%")
+    print(f"    Average Top {receipt.top_n_days} Return (MAX_{receipt.top_n_days}):{receipt.max_n_pct:>+8.2f}%")
+    print(f"    Average Bottom {receipt.top_n_days} Return (MIN_{receipt.top_n_days}):{receipt.min_n_pct:>+8.2f}%")
+    print(f"    Max-to-Min Asymmetry Ratio:   {receipt.max_to_min_ratio:>8.2f}x")
+    print("-" * 80)
+    print("  Behavioral Lottery Attraction & Expected Performance Penalty:")
+    print(f"    Lottery Demand Score (Λ):     {receipt.lottery_demand_score:>8.1f} / 100")
+    print(f"    Expected Annualized Alpha Drag:{receipt.expected_alpha_drag_ann_pct:>+8.2f}% / year")
+    print(f"    Lottery Demand Regime:        {receipt.lottery_regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -4513,6 +4561,35 @@ def main() -> None:
         help="Output VRP receipt as JSON",
     )
 
+    # Subparser: max-lottery
+    ml_parser = subparsers.add_parser(
+        "max-lottery",
+        help="Evaluate Bali, Cakici & Whitelaw (2011) extreme daily return MAX effect & lottery demand",
+    )
+    ml_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    ml_parser.add_argument(
+        "--top-n",
+        type=int,
+        default=5,
+        help="Number of extreme upside days N to average for MAX_N (default: 5)",
+    )
+    ml_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=60,
+        help="Lookback observation window in sessions (default: 60)",
+    )
+    ml_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output MAX lottery receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4637,6 +4714,8 @@ def main() -> None:
         hasbrouck_var_command(args)
     elif args.command == "vrp":
         vrp_command(args)
+    elif args.command == "max-lottery":
+        max_lottery_command(args)
 
 
 if __name__ == "__main__":
