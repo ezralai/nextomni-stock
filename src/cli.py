@@ -2841,6 +2841,70 @@ def higher_moments_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def merton_credit_command(args: argparse.Namespace) -> None:
+    """Evaluate Robert C. Merton (1974) Structural Credit Risk & Distance-to-Default (DD)."""
+    import json
+    from src.analytics.merton_credit import evaluate_merton_credit_profile
+    import src.data.db as db
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    debt = float(getattr(args, "debt", 0.0))
+    shares = getattr(args, "shares", None)
+    if shares is not None:
+        shares = float(shares)
+    equity_val = getattr(args, "market_cap", None)
+    if equity_val is not None:
+        equity_val = float(equity_val)
+    vol = getattr(args, "volatility", None)
+    if vol is not None:
+        vol = float(vol)
+    rf = float(getattr(args, "risk_free", 0.045))
+    horizon = float(getattr(args, "horizon", 1.0))
+    lookback = int(getattr(args, "lookback", 60))
+
+    try:
+        receipt = evaluate_merton_credit_profile(
+            ticker=ticker,
+            debt_value=debt,
+            shares_outstanding=shares,
+            equity_value=equity_val,
+            equity_volatility=vol,
+            risk_free_rate_ann=rf,
+            horizon_years=horizon,
+            lookback_window=lookback,
+        )
+    except Exception as ex:
+        print(f"\nError: Merton structural credit evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Merton (1974) Structural Credit Risk & Distance-to-Default Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Equity Market Value (E):      ${receipt.equity_value:,.0f} (Vol: {receipt.annualized_equity_volatility * 100:.2f}%)")
+    print(f"  Debt Liabilities (D):         ${receipt.debt_value:,.0f} (Horizon T: {receipt.horizon_years:.1f} yr, Rf: {receipt.risk_free_rate_ann * 100:.2f}%)")
+    print("-" * 80)
+    print("  Structural Implied Asset State (Option Inversion):")
+    print(f"    Implied Firm Assets (V_A):  ${receipt.implied_asset_value:,.0f}")
+    print(f"    Implied Asset Vol (σ_A):    {receipt.implied_asset_volatility * 100:>8.2f}%")
+    print(f"    Leverage Ratio (D / V_A):   {receipt.leverage_ratio_pct:>8.2f}%")
+    print("-" * 80)
+    print("  Default Probability & Structural Credit Spread:")
+    print(f"    Distance-to-Default (DD):   {receipt.distance_to_default:>+8.2f} std devs (Risk-Neutral d2: {receipt.risk_neutral_dd:>+8.2f})")
+    print(f"    Default Probability (π):    {receipt.default_probability_pct:>8.4f}%")
+    print(f"    Implied Credit Spread:      {receipt.implied_credit_spread_bps:>8.1f} bps")
+    print(f"    Credit Distress Regime:     {receipt.distress_regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -4217,6 +4281,65 @@ def main() -> None:
         help="Output higher moments receipt as JSON",
     )
 
+    # Subparser: merton-credit
+    mc_parser = subparsers.add_parser(
+        "merton-credit",
+        help="Evaluate Robert C. Merton (1974) structural credit risk & distance-to-default",
+    )
+    mc_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    mc_parser.add_argument(
+        "--debt",
+        type=float,
+        required=True,
+        help="Face value of total debt liabilities / default point in dollars",
+    )
+    mc_parser.add_argument(
+        "--shares",
+        type=float,
+        default=None,
+        help="Common shares outstanding (optional; defaults to 1B shares or market cap)",
+    )
+    mc_parser.add_argument(
+        "--market-cap",
+        type=float,
+        default=None,
+        help="Explicit total equity market capitalization in dollars (optional)",
+    )
+    mc_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=None,
+        help="Explicit annualized equity return volatility sigma_E (optional)",
+    )
+    mc_parser.add_argument(
+        "--risk-free",
+        type=float,
+        default=0.045,
+        help="Annualized risk-free interest rate (default: 0.045)",
+    )
+    mc_parser.add_argument(
+        "--horizon",
+        type=float,
+        default=1.0,
+        help="Credit maturity / forecast horizon in years (default: 1.0)",
+    )
+    mc_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=60,
+        help="Lookback window in sessions to calculate equity volatility (default: 60)",
+    )
+    mc_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Merton credit receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4335,6 +4458,8 @@ def main() -> None:
         fama_macbeth_command(args)
     elif args.command == "higher-moments":
         higher_moments_command(args)
+    elif args.command == "merton-credit":
+        merton_credit_command(args)
 
 
 if __name__ == "__main__":

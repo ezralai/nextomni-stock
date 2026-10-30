@@ -1572,6 +1572,92 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate higher moments.")
 
+                st.markdown("---")
+                st.subheader("💳 Robert C. Merton (1974) Structural Credit Risk & Distance-to-Default (DD)")
+                st.caption(
+                    "Option-theoretic structural solvency model solving unobservable firm asset value (V_A) "
+                    "and asset volatility (σ_A) to evaluate Distance-to-Default, default probability (π), "
+                    "and structural credit spreads."
+                )
+                from src.analytics.merton_credit import evaluate_merton_credit_profile
+                if len(df_obs) >= 20:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        latest_price = float(df_obs[p_col].dropna().iloc[-1])
+                        mc_cols = st.columns(3)
+                        with mc_cols[0]:
+                            debt_input_b = st.number_input(
+                                "Total Debt / Default Point ($B)",
+                                min_value=0.0,
+                                max_value=5000.0,
+                                value=round(latest_price * 1.0 * 0.25, 2),
+                                step=1.0,
+                                key="merton_debt_b",
+                                help="Face value of short-term debt + 0.5 * long-term debt (KMV default point in $ Billions)",
+                            )
+                        with mc_cols[1]:
+                            shares_b = st.number_input(
+                                "Common Shares Outstanding (Billion shares)",
+                                min_value=0.01,
+                                max_value=100.0,
+                                value=1.0,
+                                step=0.1,
+                                key="merton_shares_b",
+                                help="Total shares outstanding in Billions (defaults to 1.0B shares)",
+                            )
+                        with mc_cols[2]:
+                            rf_rate_pct = st.number_input(
+                                "Risk-Free Rate (% / yr)",
+                                min_value=0.0,
+                                max_value=20.0,
+                                value=4.5,
+                                step=0.25,
+                                key="merton_rf_pct",
+                            )
+
+                        mc_rec = evaluate_merton_credit_profile(
+                            ticker=selected_ticker,
+                            debt_value=debt_input_b * 1_000_000_000.0,
+                            shares_outstanding=shares_b * 1_000_000_000.0,
+                            asset_prices=df_obs[p_col],
+                            risk_free_rate_ann=rf_rate_pct / 100.0,
+                            horizon_years=1.0,
+                            lookback_window=min(len(df_obs) - 1, 60),
+                        )
+
+                        m1, m2, m3, m4 = st.columns(4)
+                        m1.metric(
+                            "Distance-to-Default (DD)",
+                            f"{mc_rec.distance_to_default:+.2f} σ",
+                            delta=f"d2 (RN): {mc_rec.risk_neutral_dd:+.2f}",
+                            help="Standard deviations to default point; DD >= 3.0 represents investment grade, DD < 1.0 imminent default",
+                        )
+                        m2.metric(
+                            "Default Probability (π)",
+                            f"{mc_rec.default_probability_pct:.4f}%",
+                            delta=f"Regime: {mc_rec.distress_regime}",
+                            help="Theoretical cumulative 1-year default probability Φ(-DD)",
+                        )
+                        m3.metric(
+                            "Structural Credit Spread",
+                            f"{mc_rec.implied_credit_spread_bps:.1f} bps",
+                            delta=f"Leverage: {mc_rec.leverage_ratio_pct:.1f}%",
+                            help="Merton implied theoretical yield spread over risk-free benchmark",
+                        )
+                        m4.metric(
+                            "Implied Asset Vol (σ_A)",
+                            f"{mc_rec.implied_asset_volatility * 100:.2f}%",
+                            delta=f"Equity Vol: {mc_rec.annualized_equity_volatility * 100:.2f}%",
+                            help="Option-inverted unlevered firm asset volatility",
+                        )
+
+                        st.caption(f"💳 **Merton Credit Profile:** {mc_rec.summary}")
+                        st.caption(f"🛡️ **Credit Audit Digest:** `{mc_rec.signature[:16]}...` (Verified: `{mc_rec.verify_integrity()}`)")
+                    except Exception as mc_ex:
+                        st.info(f"Merton structural credit evaluation deferred: {mc_ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 20 sessions) to evaluate Merton credit risk.")
+
 
 
 
