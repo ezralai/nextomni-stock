@@ -2729,6 +2729,60 @@ def liquidity_beta_command(args: argparse.Namespace) -> None:
     print(f"  Summary: {receipt.summary}")
     print("=" * 80 + "\n")
 
+def fama_macbeth_command(args: argparse.Namespace) -> None:
+    """Execute Fama & MacBeth (1973) Two-Pass Cross-Sectional Asset Pricing & Factor Premia estimation."""
+    import json
+    from src.analytics.fama_macbeth import evaluate_fama_macbeth_profile
+    from src.security.validators import validate_ticker
+
+    raw_tickers = [t.strip().upper() for t in args.universe.split(",") if t.strip()]
+    universe = [validate_ticker(t) for t in raw_tickers]
+    benchmark = validate_ticker(getattr(args, "benchmark", "SPY"))
+    lookback = int(getattr(args, "lookback", 120))
+
+    if len(universe) < 4:
+        print("\nError: Universe must contain at least 4 distinct tickers for cross-sectional regression.\n")
+        return
+
+    try:
+        receipt = evaluate_fama_macbeth_profile(
+            universe=universe,
+            benchmark_ticker=benchmark,
+            lookback_window=lookback,
+        )
+    except Exception as ex:
+        print(f"\nError: Fama-MacBeth evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    status_str = "REJECTED (p < 0.05)" if receipt.is_model_rejected_5pct else "SUPPORTED (p >= 0.05)"
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Fama & MacBeth (1973) Two-Pass Asset Pricing Engine")
+    print("=" * 80)
+    print(f"  Asset Universe ({len(receipt.universe)}):        {', '.join(receipt.universe)}")
+    print(f"  Sample Window:                {receipt.lookback_window} sessions (Total Aligned: {receipt.sample_sessions} sessions)")
+    print(f"  Cross-Sectional R-Squared:    {receipt.cross_sectional_r_squared * 100:>8.2f}%")
+    print(f"  Pricing Error RMSE:           {receipt.pricing_error_rmse_ann_pct:>8.2f}% Ann (Unexplained Alpha)")
+    print(f"  Pricing Model Test:           {status_str}")
+    print("-" * 80)
+    print("  Cross-Sectional Factor Risk Premia (with Shanken 1992 Errors-in-Variables):")
+    print(f"    {'Factor':<12} {'Premium (Ann)':<16} {'t-Stat (FM)':<14} {'t-Stat (Shanken)':<18} {'p-Val':<10} {'Sig (5%)':<8}")
+    for p in receipt.factor_premia:
+        sig_str = "YES" if p["is_significant_5pct"] else "no"
+        print(
+            f"    {p['factor_name']:<12} {p['risk_premium_ann_pct']:>12.2f}%  "
+            f"{p['t_stat_fm']:>12.2f}  "
+            f"{p['t_stat_shanken']:>16.2f}  "
+            f"{p['p_value_shanken']:>8.4f}  {sig_str:>6}"
+        )
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
 
 
 def main() -> None:
@@ -4048,6 +4102,35 @@ def main() -> None:
         help="Output Pástor-Stambaugh liquidity receipt as JSON",
     )
 
+    # Subparser: fama-macbeth
+    fm_parser = subparsers.add_parser(
+        "fama-macbeth",
+        help="Execute Fama & MacBeth (1973) two-pass cross-sectional regression with Shanken (1992) corrections",
+    )
+    fm_parser.add_argument(
+        "--universe",
+        type=str,
+        required=True,
+        help="Comma-separated stock universe (e.g. AAPL,MSFT,NVDA,GOOGL,AMZN)",
+    )
+    fm_parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="SPY",
+        help="Market benchmark ticker symbol (default: SPY)",
+    )
+    fm_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=120,
+        help="Observation lookback window in sessions (default: 120)",
+    )
+    fm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Fama-MacBeth receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4162,6 +4245,8 @@ def main() -> None:
         idiosyncratic_vol_command(args)
     elif args.command == "liquidity-beta":
         liquidity_beta_command(args)
+    elif args.command == "fama-macbeth":
+        fama_macbeth_command(args)
 
 
 if __name__ == "__main__":

@@ -430,6 +430,46 @@ def render_dashboard() -> None:
                                 st.caption(f"🛡️ **Black-Litterman Summary:** {bl_rec.summary}")
                             except Exception as bl_ex:
                                 st.info(f"Black-Litterman portfolio optimization deferred: {bl_ex}")
+
+                            # Fama & MacBeth (1973) Two-Pass Cross-Sectional Asset Pricing Engine
+                            st.markdown("---")
+                            st.subheader("🏛️ Fama & MacBeth (1973) Two-Pass Cross-Sectional Asset Pricing")
+                            st.caption(
+                                "Two-pass cross-sectional regression across universe assets to test multi-factor pricing "
+                                "and estimate factor risk premia (λ_k) with Shanken (1992) errors-in-variables corrections."
+                            )
+                            if len(port_rec.weights.keys()) >= 4:
+                                try:
+                                    from src.analytics.fama_macbeth import evaluate_fama_macbeth_profile
+                                    fm_rec = evaluate_fama_macbeth_profile(
+                                        universe=list(port_rec.weights.keys()),
+                                        benchmark_ticker="SPY",
+                                        lookback_window=120,
+                                    )
+                                    fm_c1, fm_c2, fm_c3, fm_c4 = st.columns(4)
+                                    fm_c1.metric("Cross-Sectional R²", f"{fm_rec.cross_sectional_r_squared * 100:.1f}%")
+                                    fm_c2.metric("Pricing RMSE", f"{fm_rec.pricing_error_rmse_ann_pct:.2f}% Ann", help="Root mean square unexplained pricing error alpha")
+                                    status_badge = "❌ Rejected" if fm_rec.is_model_rejected_5pct else "✅ Supported"
+                                    fm_c3.metric("Model Status", status_badge, help="Wald test of joint pricing error significance")
+                                    n_sig = sum(1 for p in fm_rec.factor_premia if p["is_significant_5pct"])
+                                    fm_c4.metric("Priced Factors", f"{n_sig} / {len(fm_rec.factor_premia)}", help="Factors with Shanken p < 0.05")
+
+                                    # Factor risk premia table
+                                    fm_df = pd.DataFrame([
+                                        {
+                                            "Factor": p["factor_name"],
+                                            "Risk Premium (λ)": f"{p['risk_premium_ann_pct']:+.2f}%/yr",
+                                            "t-Stat (FM)": f"{p['t_stat_fm']:+.2f}",
+                                            "t-Stat (Shanken)": f"{p['t_stat_shanken']:+.2f}",
+                                            "p-Value": f"{p['p_value_shanken']:.4f}",
+                                            "Priced (5%)": "YES" if p["is_significant_5pct"] else "no",
+                                        }
+                                        for p in fm_rec.factor_premia
+                                    ])
+                                    st.dataframe(fm_df, use_container_width=True, hide_index=True)
+                                    st.caption(f"🛡️ **Fama-MacBeth Summary:** {fm_rec.summary}")
+                                except Exception as fm_ex:
+                                    st.info(f"Fama-MacBeth cross-sectional asset pricing deferred: {fm_ex}")
                     else:
                         st.info("No synchronized assets with sufficient observation history found. Synchronize tickers first.")
 
