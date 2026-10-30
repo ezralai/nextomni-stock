@@ -2478,8 +2478,67 @@ def optimal_execution_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def fama_french_command(args: argparse.Namespace) -> None:
+    """Evaluate Fama-French (1993) and Carhart (1997) multi-factor risk and alpha attribution."""
+    import json
+    from src.analytics.fama_french import evaluate_fama_french_profile
+    import src.data.db as db
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    benchmark = validate_ticker(getattr(args, "benchmark", "SPY"))
+    lookback = int(getattr(args, "lookback", 60))
+
+    df_obs = db.get_observations(ticker)
+    if df_obs.empty or len(df_obs) < lookback + 1:
+        print(f"\nError: Insufficient observation history for {ticker}. Synchronize ticker first.\n")
+        return
+
+    price_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+    prices = df_obs[price_col]
+
+    receipt = evaluate_fama_french_profile(
+        ticker=ticker,
+        asset_prices=prices,
+        benchmark_ticker=benchmark,
+        lookback_window=lookback,
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    sig_label = "YES (p < 0.05)" if receipt.is_alpha_significant else "NO (p >= 0.05)"
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Fama-French & Carhart (1997) Multi-Factor Attribution Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker} (Benchmark: SPY)")
+    print(f"  Sample Window:                {receipt.lookback_window} sessions (Total History: {receipt.sample_sessions} sessions)")
+    print(f"  Adjusted R-Squared:           {receipt.r_squared_adjusted * 100:.2f}% (R^2: {receipt.r_squared * 100:.2f}%)")
+    print("-" * 80)
+    print("  Alpha & Factor Loadings (White HC0 Robust Standard Errors):")
+    print(f"    {'Factor':<22} {'Beta / Loading':<16} {'Std Error':<12} {'t-Stat':<12} {'p-Value':<10} {'Sig (5%)':<8}")
+    for f in receipt.factor_loadings:
+        sig_str = "YES" if f["is_significant_5pct"] else "no"
+        print(
+            f"    {f['factor_name']:<22} {f['beta']:>12.4f}    {f['std_error']:>10.4f}  "
+            f"{f['t_stat']:>10.2f}  {f['p_value']:>8.4f}  {sig_str:>6}"
+        )
+    print("-" * 80)
+    print("  Jensen's Alpha & Risk Decomposition (Annualized):")
+    print(f"    Annualized Alpha:           {receipt.annualized_alpha_pct:>+8.2f}% ({receipt.alpha_daily_bps:>+6.1f} bps/day | t={receipt.alpha_t_stat:+.2f}, Sig: {sig_label})")
+    print(f"    Total Return Volatility:    {receipt.total_annualized_vol_pct:>8.2f}% Ann")
+    print(f"    Systematic Factor Vol:      {receipt.systematic_annualized_vol_pct:>8.2f}% Ann")
+    print(f"    Idiosyncratic (Specific):   {receipt.idiosyncratic_annualized_vol_pct:>8.2f}% Ann ({receipt.idiosyncratic_variance_ratio_pct:.1f}% of Total Variance)")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
+
 
 
 
@@ -3662,7 +3721,37 @@ def main() -> None:
         help="Output execution trajectory receipt as JSON",
     )
 
+    # Subparser: fama-french
+    fama_parser = subparsers.add_parser(
+        "fama-french",
+        help="Evaluate Fama-French (1993) & Carhart (1997) multi-factor risk and alpha attribution",
+    )
+    fama_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    fama_parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="SPY",
+        help="Market benchmark ticker symbol (default: SPY)",
+    )
+    fama_parser.add_argument(
+        "--lookback",
+        type=int,
+        default=60,
+        help="Observation lookback window in sessions (default: 60)",
+    )
+    fama_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output factor attribution receipt as JSON",
+    )
+
     args = parser.parse_args()
+
     if args.command == "sync":
         sync_command(args)
     elif args.command == "status":
@@ -3767,7 +3856,8 @@ def main() -> None:
         downside_beta_command(args)
     elif args.command == "optimal-execution":
         optimal_execution_command(args)
-
+    elif args.command == "fama-french":
+        fama_french_command(args)
 
 
 if __name__ == "__main__":

@@ -1311,6 +1311,41 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate downside risk profile.")
 
+                # Fama-French (1993) & Carhart (1997) Multi-Factor Risk & Alpha Attribution
+                st.markdown("---")
+                st.subheader("🏛️ Fama-French & Carhart (1997) Multi-Factor Risk & Alpha Attribution")
+                st.caption(
+                    "Multi-factor asset pricing decomposition: Market (MKT), Size (SMB), Value (HML), and Momentum (UMD) with White HC0 robust standard errors."
+                )
+                from src.analytics.fama_french import evaluate_fama_french_profile
+                if len(df_obs) >= 22:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        ff_rec = evaluate_fama_french_profile(
+                            ticker=selected_ticker,
+                            asset_prices=df_obs[p_col],
+                            benchmark_ticker="SPY",
+                            lookback_window=min(len(df_obs) - 1, 60),
+                        )
+                        fq1, fq2, fq3, fq4 = st.columns(4)
+                        sig_alpha = "★ Sig" if ff_rec.is_alpha_significant else "Not Sig"
+                        fq1.metric("Annualized Alpha", f"{ff_rec.annualized_alpha_pct:+.2f}%", delta=f"t={ff_rec.alpha_t_stat:+.2f} ({sig_alpha})")
+                        fq2.metric("Market Beta (MKT)", f"{ff_rec.market_beta:.2f}", delta=f"Adj R²: {ff_rec.r_squared_adjusted * 100:.1f}%")
+                        fq3.metric("Size Tilt (SMB)", f"{ff_rec.size_beta:+.2f}", delta=f"Value (HML): {ff_rec.value_beta:+.2f}")
+                        fq4.metric("Idiosyncratic Vol", f"{ff_rec.idiosyncratic_annualized_vol_pct:.1f}% Ann", delta=f"{ff_rec.idiosyncratic_variance_ratio_pct:.1f}% of Var")
+
+                        # Factor loadings table expander
+                        with st.expander("📊 Factor Loadings & White HC0 Robust Inference", expanded=False):
+                            st.dataframe(pd.DataFrame(ff_rec.factor_loadings), use_container_width=True)
+
+                        st.caption(f"🛡️ **Multi-Factor Summary:** {ff_rec.summary}")
+                        st.caption(f"🛡️ **Factor Audit Digest:** `{ff_rec.signature[:16]}...` (Verified: `{ff_rec.verify_integrity()}`)")
+                    except Exception as ex:
+                        st.info(f"Fama-French factor attribution deferred: {ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history (minimum 22 sessions) to evaluate multi-factor model.")
+
+
 
 
     # =========================================================================
