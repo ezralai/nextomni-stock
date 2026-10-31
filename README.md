@@ -85,7 +85,7 @@ Predictions are recorded immutably with UUID4 identifiers and evaluated against 
 
 ## Empirical Walk-Forward Validation Results
 
-Chronological expanding-window walk-forward backtest (minimum initial training window: 120 trading sessions, evaluated fold-by-fold across historical out-of-sample data):
+Chronological expanding-window walk-forward backtest (minimum initial training window: 120 trading sessions, evaluated fold-by-fold across historical out-of-sample datas):
 
 ### JPMorgan Chase & Co. (`JPM` — NYSE)
 | Horizon | Model MAE | Baseline MAE | MAE Improvement | Model RMSE | Baseline RMSE | Directional Accuracy |
