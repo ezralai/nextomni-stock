@@ -115,7 +115,7 @@ stock/
 ├── README.md                 # Project documentation
 ├── data/                     # Local SQLite database & raw payload store
 │   └── stock_system.db
-├── models/                   # Serialized multi-horizon model weights (*.joblib)
+├── models/                   # Serialized multi-horizon model weight (*.joblib)
 ├── src/
 │   ├── cli.py                # Comprehensive command-line interface
 │   ├── config.py             # Exchanges, timezones, tickers, horizons
