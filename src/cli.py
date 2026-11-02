@@ -4118,6 +4118,74 @@ def bsv_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def innovation_command(args: argparse.Namespace) -> None:
+    """Evaluate Eberhart et al. (2004) / Cohen et al. (2013) Innovation Capital Misvaluation."""
+    import json
+    from src.analytics.innovation_capital import evaluate_innovation_capital_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    rd = getattr(args, "rd_expense", None)
+    if rd is not None:
+        rd = float(rd)
+    rev = getattr(args, "revenues", None)
+    if rev is not None:
+        rev = float(rev)
+    assets = getattr(args, "total_assets", None)
+    if assets is not None:
+        assets = float(assets)
+
+    try:
+        receipt = evaluate_innovation_capital_profile(
+            ticker=ticker,
+            current_rd_expense=rd,
+            annual_revenues=rev,
+            total_assets=assets,
+        )
+    except Exception as ex:
+        print(f"\nError: Innovation Capital evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    innovator_str = (
+        "YES (HIGH CONVICTION INTANGIBLE INNOVATION ALPHA)"
+        if receipt.is_high_innovation_alpha
+        else "NO"
+    )
+    laggard_str = (
+        "YES (HIGH OBSOLESCENCE RISK / R&D DEFICIT)"
+        if receipt.is_innovation_laggard
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Eberhart et al. (2004) / Cohen et al. (2013) Innovation Capital Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print(f"  Market Capitalization:        ${receipt.market_capitalization:,.0f}")
+    print("-" * 80)
+    print(f"  Annual R&D Expenditure:       ${receipt.current_rd_expense:,.0f}")
+    print(f"  Capitalized Knowledge Stock:  ${receipt.capitalized_knowledge_stock:,.0f} (Perpetual inventory, delta=20%)")
+    print(f"  R&D-to-Market Ratio (RD/M):   {receipt.rd_to_market_pct:.2f}%")
+    print(f"  R&D-to-Sales Intensity (RD/S):{receipt.rd_to_sales_pct:.2f}%")
+    print(f"  Knowledge-to-Assets Ratio:    {receipt.knowledge_to_assets_pct:.2f}%")
+    print("-" * 80)
+    print(f"  Innovation Misvaluation Index:{receipt.innovation_misvaluation_index:.2f} / 1.00 (Unpriced intangible patent power)")
+    print("  Asset Pricing Regime & Alpha Dynamics:")
+    print(f"    Behavioral Regime:          {receipt.regime}")
+    print(f"    High Conviction Innovator:  {innovator_str}")
+    print(f"    Innovation-Starved Laggard: {laggard_str}")
+    print(f"    Expected Innovation Alpha:  {receipt.expected_innovation_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -6263,6 +6331,42 @@ def main() -> None:
         help="Output BSV Sentiment receipt as JSON",
     )
 
+    # Eberhart et al. (2004) / Cohen et al. (2013) Innovation Capital Parser
+    innovation_parser = subparsers.add_parser(
+        "innovation",
+        aliases=["rd-anomaly", "knowledge-capital", "rnd-intensity"],
+        help="Evaluate Eberhart et al. (2004) / Cohen et al. (2013) innovation capital and R&D misvaluation",
+    )
+    innovation_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA, BMY)",
+    )
+    innovation_parser.add_argument(
+        "--rd-expense",
+        type=float,
+        default=None,
+        help="Annual R&D expenditure in dollars (optional)",
+    )
+    innovation_parser.add_argument(
+        "--revenues",
+        type=float,
+        default=None,
+        help="Annual revenues in dollars (optional)",
+    )
+    innovation_parser.add_argument(
+        "--total-assets",
+        type=float,
+        default=None,
+        help="Total assets in dollars (optional)",
+    )
+    innovation_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Innovation Capital receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -6419,6 +6523,8 @@ def main() -> None:
         dhs_command(args)
     elif args.command in ("bsv", "barberis", "conservatism-representativeness", "dual-heuristic"):
         bsv_command(args)
+    elif args.command in ("innovation", "rd-anomaly", "knowledge-capital", "rnd-intensity"):
+        innovation_command(args)
 
 
 if __name__ == "__main__":

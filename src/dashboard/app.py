@@ -2829,6 +2829,100 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate BSV sentiment profile.")
 
+                st.markdown("---")
+                st.subheader("💡 Allan C. Eberhart et al. (2004) / Cohen et al. (2013) Innovation Capital Engine")
+                st.caption(
+                    "Intangible capital misvaluation engine (Eberhart et al. 2004; Cohen et al. 2013): models conservative "
+                    "accounting distortion where 100% immediate expensing of R&D temporarily depresses reported net income "
+                    "while accumulating productive, unpriced knowledge capital stocks that deliver persistent abnormal alpha."
+                )
+                from src.analytics.innovation_capital import evaluate_innovation_capital_profile
+                if len(df_obs) >= 20:
+                    try:
+                        i_cols = st.columns(3)
+                        with i_cols[0]:
+                            i_rd = (
+                                st.number_input(
+                                    "Annual R&D Expenditure ($M)",
+                                    min_value=0.0,
+                                    max_value=80000.0,
+                                    value=3500.0,
+                                    step=100.0,
+                                    key="inno_rd_input",
+                                )
+                                * 1_000_000.0
+                            )
+                        with i_cols[1]:
+                            i_rev = (
+                                st.number_input(
+                                    "Annual Revenues ($M)",
+                                    min_value=1.0,
+                                    max_value=600000.0,
+                                    value=45000.0,
+                                    step=500.0,
+                                    key="inno_rev_input",
+                                )
+                                * 1_000_000.0
+                            )
+                        with i_cols[2]:
+                            i_assets = (
+                                st.number_input(
+                                    "Total Assets ($M)",
+                                    min_value=1.0,
+                                    max_value=800000.0,
+                                    value=60000.0,
+                                    step=500.0,
+                                    key="inno_assets_input",
+                                )
+                                * 1_000_000.0
+                            )
+
+                        i_rec = evaluate_innovation_capital_profile(
+                            ticker=selected_ticker,
+                            current_rd_expense=float(i_rd),
+                            annual_revenues=float(i_rev),
+                            total_assets=float(i_assets),
+                        )
+
+                        iy1, iy2, iy3, iy4 = st.columns(4)
+                        i_badge = (
+                            "💎 HIGH INNOVATION ALPHA"
+                            if i_rec.is_high_innovation_alpha
+                            else ("⚠️ OBSOLESCENCE LAGGARD" if i_rec.is_innovation_laggard else f"Regime: {i_rec.regime}")
+                        )
+                        iy1.metric(
+                            "R&D-to-Market (RD/M)",
+                            f"{i_rec.rd_to_market_pct:.2f}%",
+                            delta=f"RD/S: {i_rec.rd_to_sales_pct:.1f}%",
+                            help="R&D expenditure scaled by equity market capitalization",
+                        )
+                        iy2.metric(
+                            "Knowledge Stock (K)",
+                            f"${i_rec.capitalized_knowledge_stock / 1e9:.2f}B",
+                            delta=f"K/A: {i_rec.knowledge_to_assets_pct:.1f}%",
+                            help="Perpetual inventory knowledge accumulation (20% economic depreciation rate)",
+                        )
+                        iy3.metric(
+                            "Innovation Misvaluation (IMI)",
+                            f"{i_rec.innovation_misvaluation_index:.2f} / 1.00",
+                            delta=i_badge,
+                            delta_color="normal" if i_rec.is_high_innovation_alpha else ("inverse" if i_rec.is_innovation_laggard else "off"),
+                            help="Composite percentile score of unpriced corporate intangible innovation intensity",
+                        )
+                        iy4.metric(
+                            "Expected Innovation Alpha",
+                            f"{i_rec.expected_innovation_alpha_pct:+.2f}% Ann",
+                            delta="Patent Moat Premium" if i_rec.expected_innovation_alpha_pct > 0 else "Obsolescence Drag",
+                            help="Projected annualized abnormal return from intangible knowledge stock repricing",
+                        )
+
+                        st.caption(f"💡 **Innovation Summary:** {i_rec.summary}")
+                        st.caption(f"🛡️ **Innovation Audit Digest:** `{i_rec.signature[:16]}...` (Verified: `{i_rec.verify_integrity()}`)")
+                    except Exception as i_ex:
+                        st.info(f"Innovation Capital evaluation deferred: {i_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Innovation Capital profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
