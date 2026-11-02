@@ -2153,6 +2153,72 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history to evaluate financial distress hazard.")
 
+                st.markdown("---")
+                st.subheader("🎭 Malcolm Baker & Jeffrey Wurgler (2006) Cross-Sectional Investor Sentiment")
+                st.caption(
+                    "Limits-to-arbitrage & subjectivity engine: calculates Firm Speculative Index (S_i), sentiment beta, "
+                    "and predicts cross-sectional sentiment reversal alpha across euphoric and panicked macro sentiment regimes."
+                )
+                from src.analytics.investor_sentiment import evaluate_investor_sentiment_profile
+                if len(df_obs) >= 20:
+                    try:
+                        s_cols = st.columns(3)
+                        with s_cols[0]:
+                            sent_slider = st.slider(
+                                "Macro Market Sentiment (I_sent)",
+                                min_value=-3.0,
+                                max_value=3.0,
+                                value=0.0,
+                                step=0.25,
+                                help="Standardized macro sentiment wave: +2.0 = Euphoria/Bubble, -2.0 = Panic/Depression",
+                                key="sent_macro_slider",
+                            )
+                        with s_cols[1]:
+                            margin_input = st.number_input("Net Margin (%/yr)", min_value=-100.0, max_value=80.0, value=12.5, step=1.0, key="sent_margin_input")
+                        with s_cols[2]:
+                            st.write("")
+                            st.caption("Adjust macro sentiment to observe cross-sectional reversal alpha")
+
+                        sent_rec = evaluate_investor_sentiment_profile(
+                            ticker=selected_ticker,
+                            market_sentiment_index=float(sent_slider),
+                            net_profit_margin_pct=float(margin_input),
+                        )
+
+                        sn1, sn2, sn3, sn4 = st.columns(4)
+                        sn1.metric(
+                            "Firm Speculative Index",
+                            f"{sent_rec.speculative_index:.1f} / 100",
+                            delta=f"Vol: {sent_rec.annualized_volatility_pct:.1f}%",
+                            help="Baker & Wurgler subjectivity score: high score indicates hard to value and hard to arbitrage",
+                        )
+                        sn2.metric(
+                            "Sentiment Beta",
+                            f"{sent_rec.sentiment_beta:+.2f}",
+                            delta=f"MAX_5: {sent_rec.max_daily_return_5d_pct:.1f}%",
+                            help="Sensitivity to retail sentiment waves: beta_sent = (S_i - 50) / 25",
+                        )
+                        bubble_badge = "⚠️ BUBBLE CRASH" if sent_rec.is_speculative_bubble else ("💎 CONTRARIAN BUY" if sent_rec.is_contrarian_bargain else f"Regime: {sent_rec.regime}")
+                        sn3.metric(
+                            "Expected Sentiment Alpha",
+                            f"{sent_rec.expected_sentiment_alpha_pct:+.2f}% Ann",
+                            delta=bubble_badge,
+                            help="Projected annualized cross-sectional sentiment alpha: alpha_sent = -beta_sent * I_sent * 4.5%",
+                        )
+                        sn4.metric(
+                            "Sentiment Regime",
+                            sent_rec.regime,
+                            delta=f"Macro: {sent_rec.market_sentiment_index:+.2f}σ",
+                            help="Cross-sectional sentiment classification based on asset subjectivity and macro sentiment state",
+                        )
+
+                        st.caption(f"🎭 **Sentiment Summary:** {sent_rec.summary}")
+                        st.caption(f"🛡️ **Sentiment Audit Digest:** `{sent_rec.signature[:16]}...` (Verified: `{sent_rec.verify_integrity()}`)")
+                    except Exception as sent_ex:
+                        st.info(f"Investor sentiment evaluation deferred: {sent_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate investor sentiment.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

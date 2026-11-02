@@ -3374,6 +3374,73 @@ def distress_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def sentiment_command(args: argparse.Namespace) -> None:
+    """Evaluate Malcolm Baker & Jeffrey Wurgler (2006) Cross-Sectional Sentiment Profile."""
+    import json
+    from src.analytics.investor_sentiment import evaluate_investor_sentiment_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    sent_idx = float(getattr(args, "market_sentiment", 0.0) or 0.0)
+    margin = getattr(args, "net_margin", None)
+    if margin is not None:
+        margin = float(margin)
+    mcap = getattr(args, "market_cap", None)
+    if mcap is not None:
+        mcap = float(mcap)
+
+    try:
+        receipt = evaluate_investor_sentiment_profile(
+            ticker=ticker,
+            market_sentiment_index=sent_idx,
+            net_profit_margin_pct=margin,
+            market_cap=mcap,
+        )
+    except Exception as ex:
+        print(f"\nError: Investor sentiment evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    bubble_str = (
+        "YES (Euphoric Sentiment + High Speculation)"
+        if receipt.is_speculative_bubble
+        else "NO"
+    )
+    bargain_str = (
+        "YES (Panicked Sentiment + Oversold Speculation)"
+        if receipt.is_contrarian_bargain
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Baker & Wurgler (2006) Investor Sentiment Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print(f"  Market Capitalization:        ${receipt.market_cap:,.0f}")
+    print("-" * 80)
+    print("  Baker & Wurgler Subjectivity & Limits to Arbitrage Covariates:")
+    print(f"    Annualized Volatility:      {receipt.annualized_volatility_pct:>8.1f}% Ann (Arbitrage risk)")
+    print(f"    Net Profit Margin:          {receipt.net_profit_margin_pct:>+8.1f}% (Cash flow subjectivity)")
+    print(f"    MAX_5 Lottery Demand:       {receipt.max_daily_return_5d_pct:>8.2f}% (Retail speculation)")
+    print(f"    Firm Speculative Index (S): {receipt.speculative_index:>8.1f} / 100")
+    print("-" * 80)
+    print("  Cross-Sectional Sentiment Sensitivity & Reversal Dynamics:")
+    print(f"    Macro Sentiment Index (I):  {receipt.market_sentiment_index:>+8.2f}σ (Standardized wave)")
+    print(f"    Equity Sentiment Beta:      {receipt.sentiment_beta:>+8.2f} (Sensitivity to sentiment)")
+    print(f"    Speculative Bubble Risk:    {bubble_str}")
+    print(f"    Contrarian Bargain Rebound: {bargain_str}")
+    print(f"    Expected Sentiment Alpha:   {receipt.expected_sentiment_alpha_pct:>+8.2f}% / year")
+    print(f"    Sentiment Factor Regime:    {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -5076,6 +5143,41 @@ def main() -> None:
         help="Output distress receipt as JSON",
     )
 
+    # Subparser: sentiment
+    sent_parser = subparsers.add_parser(
+        "sentiment",
+        help="Evaluate Malcolm Baker & Jeffrey Wurgler (2006) Cross-Sectional Investor Sentiment & Limits to Arbitrage",
+    )
+    sent_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    sent_parser.add_argument(
+        "--market-sentiment",
+        type=float,
+        default=0.0,
+        help="Standardized macro investor sentiment index I_sent in [-3.0, +3.0] (default: 0.0)",
+    )
+    sent_parser.add_argument(
+        "--net-margin",
+        type=float,
+        default=None,
+        help="Net profit margin percentage (optional)",
+    )
+    sent_parser.add_argument(
+        "--market-cap",
+        type=float,
+        default=None,
+        help="Market capitalization in dollars (optional)",
+    )
+    sent_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output sentiment receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -5212,6 +5314,8 @@ def main() -> None:
         reversal_command(args)
     elif args.command == "distress":
         distress_command(args)
+    elif args.command == "sentiment":
+        sentiment_command(args)
 
 
 if __name__ == "__main__":
