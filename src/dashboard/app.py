@@ -2030,6 +2030,61 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 42 price sessions to evaluate Betting Against Beta.")
 
+                st.markdown("---")
+                st.subheader("🔄 Narasimhan Jegadeesh (1990) & Bruce Lehmann (1990) Short-Term Weekly Reversal")
+                st.caption(
+                    "Microstructure mean-reversion engine: computes 1-week/2-week returns, daily first-order serial correlation (ρ1), "
+                    "Roll (1984) bid-ask bounce spread, and trend confluence to separate high-conviction liquidity dips from falling knives."
+                )
+                from src.analytics.short_term_reversal import evaluate_short_term_reversal_profile
+                if len(df_obs) >= 30:
+                    try:
+                        r_cols = st.columns(2)
+                        with r_cols[0]:
+                            rev_bench_input = st.text_input("Benchmark Ticker", value="SPY", key="rev_bench_ticker")
+                        with r_cols[1]:
+                            st.write("")
+                            st.caption("Benchmark reference for relative 1-week spread calculation")
+
+                        rev_rec = evaluate_short_term_reversal_profile(
+                            ticker=selected_ticker,
+                            benchmark_ticker=rev_bench_input.strip() if rev_bench_input else "SPY",
+                        )
+
+                        rv1, rv2, rv3, rv4 = st.columns(4)
+                        rv1.metric(
+                            "1-Week Return (R_1w)",
+                            f"{rev_rec.return_1w_pct:+.2f}%",
+                            delta=f"2W: {rev_rec.return_2w_pct:+.1f}%",
+                            help="Trailing 5-day return (t-5 to t)",
+                        )
+                        rv2.metric(
+                            "Serial Correlation (ρ1)",
+                            f"{rev_rec.serial_correlation_rho1:.2f}",
+                            delta=f"Roll Spread: {rev_rec.roll_spread_proxy_pct:.2f}%",
+                            help="Daily first-order autocovariance; negative value indicates active mean-reverting dynamics",
+                        )
+                        dip_badge = "🎯 DIP BUY" if rev_rec.is_liquidity_dip_buy else ("⚠️ FALLING KNIFE" if rev_rec.is_falling_knife else f"Alpha: {rev_rec.expected_contrarian_alpha_pct:+.1f}%/yr")
+                        rv3.metric(
+                            "Expected Rebound Alpha",
+                            f"{rev_rec.expected_contrarian_alpha_pct:+.2f}% Ann",
+                            delta=dip_badge,
+                            help="Expected annualized contrarian rebound return net of Roll bid-ask bounce friction",
+                        )
+                        rv4.metric(
+                            "Reversal Regime",
+                            rev_rec.regime,
+                            delta="Trend: " + ("BULLISH" if rev_rec.is_bullish_intermediate_trend else "BEARISH"),
+                            help="Short-term contrarian classification paired with 12-2 intermediate momentum",
+                        )
+
+                        st.caption(f"🔄 **Reversal Summary:** {rev_rec.summary}")
+                        st.caption(f"🛡️ **Reversal Audit Digest:** `{rev_rec.signature[:16]}...` (Verified: `{rev_rec.verify_integrity()}`)")
+                    except Exception as rev_ex:
+                        st.info(f"Short-term reversal evaluation deferred: {rev_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 30 price sessions to evaluate short-term reversal.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

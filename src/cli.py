@@ -3240,6 +3240,73 @@ def bab_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def reversal_command(args: argparse.Namespace) -> None:
+    """Evaluate Narasimhan Jegadeesh (1990) & Bruce Lehmann (1990) Short-Term Reversal Profile."""
+    import json
+    from src.analytics.short_term_reversal import evaluate_short_term_reversal_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    bench = validate_ticker(getattr(args, "benchmark", "SPY") or "SPY")
+
+    try:
+        receipt = evaluate_short_term_reversal_profile(
+            ticker=ticker,
+            benchmark_ticker=bench,
+        )
+    except Exception as ex:
+        print(f"\nError: Short-term reversal evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    dip_str = (
+        "YES (High-Conviction Pullback in Bull Trend)"
+        if receipt.is_liquidity_dip_buy
+        else "NO"
+    )
+    knife_str = (
+        "YES (Avoid - Falling Knife in Bear Trend)"
+        if receipt.is_falling_knife
+        else "NO"
+    )
+    trend_str = (
+        "BULLISH (12-2 Mom > 0, Price >= SMA200)"
+        if receipt.is_bullish_intermediate_trend
+        else "BEARISH (Downtrend)"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Jegadeesh & Lehmann (1990) Short-Term Reversal Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker} (Benchmark: {receipt.benchmark_ticker})")
+    print(f"  Sessions Evaluated:           {receipt.sessions_evaluated} trading days")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Short-Term Weekly Returns & Microstructure Serial Correlation:")
+    print(f"    1-Week Return (R_1w):       {receipt.return_1w_pct:>+8.2f}% (t-5 to t)")
+    print(f"    2-Week Return (R_2w):       {receipt.return_2w_pct:>+8.2f}% (t-10 to t)")
+    print(f"    Benchmark 1-Week Return:    {receipt.benchmark_1w_pct:>+8.2f}%")
+    print(f"    Excess 1-Week Return:       {receipt.excess_return_1w_pct:>+8.2f}% vs {receipt.benchmark_ticker}")
+    print(f"    Serial Correlation (ρ_1):   {receipt.serial_correlation_rho1:>8.2f} (Daily first-order autocovariance)")
+    print(f"    Roll (1984) Spread Proxy:   {receipt.roll_spread_proxy_pct:>8.2f}% (Bid-ask bounce cost)")
+    print(f"    Volume Shock Z-Score:       {receipt.volume_shock_zscore:>8.2f}σ (Liquidity selling intensity)")
+    print("-" * 80)
+    print("  Trend Confluence & Liquidity Dip Filtering:")
+    print(f"    12-2 Intermediate Momentum: {receipt.intermediate_momentum_12_2_pct:>+8.2f}%")
+    print(f"    Macro Trend Status:         {trend_str}")
+    print(f"    Liquidity Dip Buy Signal:   {dip_str}")
+    print(f"    Falling Knife Warning:      {knife_str}")
+    print(f"    Expected Rebound Alpha:     {receipt.expected_contrarian_alpha_pct:>+8.2f}% / year")
+    print(f"    Reversal Regime:            {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -4878,6 +4945,29 @@ def main() -> None:
         help="Output BAB receipt as JSON",
     )
 
+    # Subparser: reversal
+    rev_parser = subparsers.add_parser(
+        "reversal",
+        help="Evaluate Narasimhan Jegadeesh (1990) & Bruce Lehmann (1990) Short-Term Reversal & Contrarian Alpha",
+    )
+    rev_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    rev_parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="SPY",
+        help="Reference benchmark ticker (default: SPY)",
+    )
+    rev_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output reversal receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -5010,6 +5100,8 @@ def main() -> None:
         dual_momentum_command(args)
     elif args.command == "bab":
         bab_command(args)
+    elif args.command == "reversal":
+        reversal_command(args)
 
 
 if __name__ == "__main__":
