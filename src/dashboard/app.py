@@ -2593,6 +2593,92 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Hong-Stein diffusion profile.")
 
+                st.markdown("---")
+                st.subheader("💎 Josef Lakonishok, Andrei Shleifer & Robert W. Vishny (1994) Contrarian Investment Engine")
+                st.caption(
+                    "Extrapolation bias & glamour overpricing engine (LSV 1994; Fama & French 1998): "
+                    "identifies systematic investor over-extrapolation of past growth. Contrarian value equities "
+                    "command asymmetric upside as low expectation hurdles are cleared, whereas glamour equities "
+                    "suffer severe multiple compression upon earnings normalization."
+                )
+                from src.analytics.contrarian_extrapolation import evaluate_contrarian_extrapolation_profile
+                if len(df_obs) >= 20:
+                    try:
+                        c_cols = st.columns(3)
+                        with c_cols[0]:
+                            c_sg = st.number_input(
+                                "Sales Growth (3-Yr Ann %)",
+                                min_value=-50.0,
+                                max_value=120.0,
+                                value=8.5,
+                                step=1.0,
+                                key="lsv_sg_input",
+                            )
+                        with c_cols[1]:
+                            c_eg = st.number_input(
+                                "Earnings Growth (3-Yr Ann %)",
+                                min_value=-60.0,
+                                max_value=150.0,
+                                value=10.0,
+                                step=1.0,
+                                key="lsv_eg_input",
+                            )
+                        with c_cols[2]:
+                            c_pe = st.number_input(
+                                "Trailing P/E Ratio",
+                                min_value=-50.0,
+                                max_value=250.0,
+                                value=17.5,
+                                step=1.0,
+                                key="lsv_pe_input",
+                            )
+
+                        c_rec = evaluate_contrarian_extrapolation_profile(
+                            ticker=selected_ticker,
+                            sales_growth_3yr_pct=float(c_sg),
+                            earnings_growth_3yr_pct=float(c_eg),
+                            price_to_earnings=float(c_pe),
+                        )
+
+                        cy1, cy2, cy3, cy4 = st.columns(4)
+                        c_badge = (
+                            "💎 CONTRARIAN VALUE"
+                            if c_rec.is_contrarian_value
+                            else ("⚠️ GLAMOUR TRAP" if c_rec.is_glamour_trap else f"Regime: {c_rec.regime}")
+                        )
+                        cy1.metric(
+                            "Naive Extrapolation (NEI)",
+                            f"{c_rec.naive_extrapolation_index:.2f} / 1.00",
+                            delta=f"SG: {c_rec.sales_growth_3yr_pct:+.1f}% | EG: {c_rec.earnings_growth_3yr_pct:+.1f}%",
+                            help="Degree to which past growth track record is extrapolated forward",
+                        )
+                        cy2.metric(
+                            "Valuation Multiple (VMC)",
+                            f"{c_rec.valuation_multiple_composite:.2f} / 1.00",
+                            delta=f"P/E: {c_rec.price_to_earnings:.1f} | P/CF: {c_rec.price_to_cash_flow:.1f}",
+                            help="Composite percentile of valuation multiples (P/E, P/CF, P/B)",
+                        )
+                        cy3.metric(
+                            "Expectation Discrepancy",
+                            f"{c_rec.expectation_discrepancy:>+.2f}",
+                            delta=c_badge,
+                            delta_color="normal" if c_rec.is_contrarian_value else ("inverse" if c_rec.is_glamour_trap else "off"),
+                            help="Valuation Multiple minus Naive Extrapolation Index (VMC - NEI)",
+                        )
+                        cy4.metric(
+                            "Expected Contrarian Alpha",
+                            f"{c_rec.expected_contrarian_alpha_pct:+.2f}% Ann",
+                            delta="Positive Value Premium" if c_rec.expected_contrarian_alpha_pct > 0 else "Multiple Vulnerability",
+                            help="Projected annualized alpha spread from multiple re-rating and expectation mean-reversion",
+                        )
+
+                        st.caption(f"💎 **Contrarian Summary:** {c_rec.summary}")
+                        st.caption(f"🛡️ **Contrarian Audit Digest:** `{c_rec.signature[:16]}...` (Verified: `{c_rec.verify_integrity()}`)")
+                    except Exception as c_ex:
+                        st.info(f"LSV Contrarian evaluation deferred: {c_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate LSV contrarian profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

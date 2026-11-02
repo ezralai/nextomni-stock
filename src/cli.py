@@ -3913,6 +3913,83 @@ def diffusion_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def contrarian_command(args: argparse.Namespace) -> None:
+    """Evaluate Josef Lakonishok, Andrei Shleifer & Robert W. Vishny (1994) Contrarian Investment."""
+    import json
+    from src.analytics.contrarian_extrapolation import evaluate_contrarian_extrapolation_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    sg = getattr(args, "sales_growth", None)
+    if sg is not None:
+        sg = float(sg)
+    eg = getattr(args, "earnings_growth", None)
+    if eg is not None:
+        eg = float(eg)
+    pe = getattr(args, "pe", None)
+    if pe is not None:
+        pe = float(pe)
+    pcf = getattr(args, "pcf", None)
+    if pcf is not None:
+        pcf = float(pcf)
+    pb = getattr(args, "pb", None)
+    if pb is not None:
+        pb = float(pb)
+
+    try:
+        receipt = evaluate_contrarian_extrapolation_profile(
+            ticker=ticker,
+            sales_growth_3yr_pct=sg,
+            earnings_growth_3yr_pct=eg,
+            price_to_earnings=pe,
+            price_to_cash_flow=pcf,
+            price_to_book=pb,
+        )
+    except Exception as ex:
+        print(f"\nError: LSV Contrarian evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    contrarian_str = (
+        "YES (HIGH CONVICTION CONTRARIAN VALUE BUY)"
+        if receipt.is_contrarian_value
+        else "NO"
+    )
+    glamour_str = (
+        "YES (VULNERABLE GLAMOUR OVERPRICING TRAP)"
+        if receipt.is_glamour_trap
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Lakonishok, Shleifer & Vishny (1994) Contrarian Investment Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print(f"  Sales Growth (3-Yr Ann):      {receipt.sales_growth_3yr_pct:>+8.2f}%")
+    print(f"  Earnings Growth (3-Yr Ann):   {receipt.earnings_growth_3yr_pct:>+8.2f}%")
+    print(f"  Trailing 1-Yr Momentum:       {receipt.trailing_momentum_pct:>+8.2f}%")
+    print(f"  Valuation Multiples:          P/E: {receipt.price_to_earnings:.1f} | P/CF: {receipt.price_to_cash_flow:.1f} | P/B: {receipt.price_to_book:.1f}")
+    print("-" * 80)
+    print(f"  Naive Extrapolation (NEI):    {receipt.naive_extrapolation_index:.2f} / 1.00 (Degree of past growth extrapolation)")
+    print(f"  Valuation Multiple (VMC):     {receipt.valuation_multiple_composite:.2f} / 1.00 (Normalized multiple composite)")
+    print(f"  Expectation Discrepancy (ED): {receipt.expectation_discrepancy:>+8.2f} (VMC - NEI)")
+    print("-" * 80)
+    print("  Contrarian Regime & Alpha Dynamics:")
+    print(f"    Behavioral Regime:          {receipt.regime}")
+    print(f"    Contrarian Value Pick:      {contrarian_str}")
+    print(f"    Vulnerable Glamour Trap:    {glamour_str}")
+    print(f"    Expected LSV Alpha Spread:  {receipt.expected_contrarian_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -5950,6 +6027,54 @@ def main() -> None:
         help="Output Hong-Stein diffusion receipt as JSON",
     )
 
+    # Lakonishok, Shleifer & Vishny (1994) Contrarian Investment Parser
+    contrarian_parser = subparsers.add_parser(
+        "contrarian",
+        aliases=["lsv", "extrapolation-bias", "glamour-overpricing"],
+        help="Evaluate Lakonishok, Shleifer & Vishny (1994) contrarian investment and extrapolation bias",
+    )
+    contrarian_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, MSFT)",
+    )
+    contrarian_parser.add_argument(
+        "--sales-growth",
+        type=float,
+        default=None,
+        help="Annualized 3-year sales growth rate % (optional)",
+    )
+    contrarian_parser.add_argument(
+        "--earnings-growth",
+        type=float,
+        default=None,
+        help="Annualized 3-year net income growth rate % (optional)",
+    )
+    contrarian_parser.add_argument(
+        "--pe",
+        type=float,
+        default=None,
+        help="Price-to-earnings (P/E) ratio (optional)",
+    )
+    contrarian_parser.add_argument(
+        "--pcf",
+        type=float,
+        default=None,
+        help="Price-to-cash-flow (P/CF) ratio (optional)",
+    )
+    contrarian_parser.add_argument(
+        "--pb",
+        type=float,
+        default=None,
+        help="Price-to-book (P/B) ratio (optional)",
+    )
+    contrarian_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output LSV Contrarian receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -6100,6 +6225,8 @@ def main() -> None:
         fscore_command(args)
     elif args.command in ("diffusion", "hong-stein", "information-diffusion", "momentum-regime"):
         diffusion_command(args)
+    elif args.command in ("contrarian", "lsv", "extrapolation-bias", "glamour-overpricing"):
+        contrarian_command(args)
 
 
 if __name__ == "__main__":
