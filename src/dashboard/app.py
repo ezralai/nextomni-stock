@@ -2679,6 +2679,81 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate LSV contrarian profile.")
 
+                st.markdown("---")
+                st.subheader("🧠 Kent Daniel, David Hirshleifer & Avanidhar Subrahmanyam (1998) Overconfidence & Self-Attribution Engine")
+                st.caption(
+                    "Dual-bias psychological asset pricing engine (DHS 1998, 2001): models cognitive overconfidence "
+                    "in private information signals and asymmetric self-attribution of subsequent public earnings outcomes. "
+                    "Confirmatory public news accelerates momentum overshooting, whereas contradictory news builds up latent crash fragility."
+                )
+                from src.analytics.dhs_overconfidence import evaluate_dhs_overconfidence_profile
+                if len(df_obs) >= 20:
+                    try:
+                        dh_cols = st.columns(2)
+                        with dh_cols[0]:
+                            dh_surp = st.number_input(
+                                "Public Earnings Surprise (%)",
+                                min_value=-60.0,
+                                max_value=80.0,
+                                value=4.5,
+                                step=0.5,
+                                key="dhs_surp_input",
+                            )
+                        with dh_cols[1]:
+                            dh_disp = st.number_input(
+                                "Analyst Forecast Dispersion (%)",
+                                min_value=1.0,
+                                max_value=50.0,
+                                value=12.0,
+                                step=0.5,
+                                key="dhs_disp_input",
+                            )
+
+                        dhs_rec = evaluate_dhs_overconfidence_profile(
+                            ticker=selected_ticker,
+                            earnings_surprise_pct=float(dh_surp),
+                            analyst_dispersion_pct=float(dh_disp),
+                        )
+
+                        dhy1, dhy2, dhy3, dhy4 = st.columns(4)
+                        dh_badge = (
+                            "⚠️ CONTRADICTION FRAGILITY"
+                            if dhs_rec.is_contradiction_fragile
+                            else ("🚀 ATTRIBUTION ACCEL" if dhs_rec.is_attribution_accelerating else f"Regime: {dhs_rec.regime}")
+                        )
+                        dhy1.metric(
+                            "Overconfidence Intensity (OCI)",
+                            f"{dhs_rec.overconfidence_intensity:.2f} / 1.00",
+                            delta=f"Vol: {dhs_rec.annualized_volatility_pct:.1f}% | Turn: {dhs_rec.turnover_ratio_pct:.2f}%",
+                            help="Overconfidence in private signal precision relative to public benchmarks",
+                        )
+                        dhy2.metric(
+                            "Biased Self-Attribution (BAI)",
+                            f"{dhs_rec.biased_self_attribution_index:>+.2f}",
+                            delta="Confirmatory Amplification" if dhs_rec.biased_self_attribution_index > 0 else "Contradiction Denial",
+                            help="Directional confirmation of prior momentum by recent public earnings news",
+                        )
+                        dhy3.metric(
+                            "Reversal Crash Hazard",
+                            f"{dhs_rec.reversal_crash_hazard_pct:.1f}%",
+                            delta=dh_badge,
+                            delta_color="inverse" if dhs_rec.is_contradiction_fragile else "normal",
+                            help="Estimated probability of sharp corrective price reversal / crash",
+                        )
+                        dhy4.metric(
+                            "Expected DHS Alpha",
+                            f"{dhs_rec.expected_dhs_alpha_pct:+.2f}% Ann",
+                            delta="Continuation Expansion" if dhs_rec.expected_dhs_alpha_pct > 0 else "Mean Reversion Drag",
+                            help="Projected annualized alpha spread based on psychological life-cycle horizon",
+                        )
+
+                        st.caption(f"🧠 **DHS Summary:** {dhs_rec.summary}")
+                        st.caption(f"🛡️ **DHS Audit Digest:** `{dhs_rec.signature[:16]}...` (Verified: `{dhs_rec.verify_integrity()}`)")
+                    except Exception as dh_ex:
+                        st.info(f"DHS Overconfidence evaluation deferred: {dh_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate DHS overconfidence profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

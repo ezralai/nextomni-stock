@@ -3990,6 +3990,70 @@ def contrarian_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def dhs_command(args: argparse.Namespace) -> None:
+    """Evaluate Daniel, Hirshleifer & Subrahmanyam (1998) Overconfidence & Self-Attribution."""
+    import json
+    from src.analytics.dhs_overconfidence import evaluate_dhs_overconfidence_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    surprise = getattr(args, "earnings_surprise", None)
+    if surprise is not None:
+        surprise = float(surprise)
+    dispersion = getattr(args, "dispersion", None)
+    if dispersion is not None:
+        dispersion = float(dispersion)
+
+    try:
+        receipt = evaluate_dhs_overconfidence_profile(
+            ticker=ticker,
+            earnings_surprise_pct=surprise,
+            analyst_dispersion_pct=dispersion,
+        )
+    except Exception as ex:
+        print(f"\nError: DHS Overconfidence evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    accel_str = (
+        "YES (CONFIRMATORY PUBLIC NEWS AMPLIFICATION)"
+        if receipt.is_attribution_accelerating
+        else "NO"
+    )
+    fragile_str = (
+        "YES (CONTRADICTORY PUBLIC NEWS CRASH HAZARD)"
+        if receipt.is_contradiction_fragile
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Daniel, Hirshleifer & Subrahmanyam (1998) DHS Behavioral Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print(f"  Trailing Momentum:            {receipt.trailing_momentum_pct:>+8.2f}% (Annual Volatility: {receipt.annualized_volatility_pct:.1f}%)")
+    print(f"  Earnings Surprise:            {receipt.earnings_surprise_pct:>+8.2f}% (Analyst Dispersion: {receipt.analyst_dispersion_pct:.1f}%)")
+    print(f"  Turnover Ratio:               {receipt.turnover_ratio_pct:.2f}%")
+    print("-" * 80)
+    print(f"  Overconfidence Intensity:     {receipt.overconfidence_intensity:.2f} / 1.00 (Private signal overestimation)")
+    print(f"  Biased Self-Attribution (BAI):{receipt.biased_self_attribution_index:>+8.2f} (Confirmation > 0, Contradiction < 0)")
+    print(f"  Reversal Crash Hazard:        {receipt.reversal_crash_hazard_pct:.1f}%")
+    print("-" * 80)
+    print("  Behavioral Life-Cycle & Alpha Dynamics:")
+    print(f"    Life-Cycle Regime:          {receipt.regime}")
+    print(f"    Self-Attribution Accelerating: {accel_str}")
+    print(f"    Contradiction Fragility:       {fragile_str}")
+    print(f"    Expected DHS Alpha Spread:  {receipt.expected_dhs_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -6075,6 +6139,36 @@ def main() -> None:
         help="Output LSV Contrarian receipt as JSON",
     )
 
+    # Daniel, Hirshleifer & Subrahmanyam (1998) Overconfidence & Self-Attribution Parser
+    dhs_parser = subparsers.add_parser(
+        "dhs",
+        aliases=["overconfidence", "self-attribution", "behavioral-lifecycle"],
+        help="Evaluate Daniel, Hirshleifer & Subrahmanyam (1998) overconfidence and self-attribution",
+    )
+    dhs_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    dhs_parser.add_argument(
+        "--earnings-surprise",
+        type=float,
+        default=None,
+        help="Public earnings surprise % (optional)",
+    )
+    dhs_parser.add_argument(
+        "--dispersion",
+        type=float,
+        default=None,
+        help="Analyst EPS forecast dispersion % (optional)",
+    )
+    dhs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output DHS Behavioral receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -6227,6 +6321,8 @@ def main() -> None:
         diffusion_command(args)
     elif args.command in ("contrarian", "lsv", "extrapolation-bias", "glamour-overpricing"):
         contrarian_command(args)
+    elif args.command in ("dhs", "overconfidence", "self-attribution", "behavioral-lifecycle"):
+        dhs_command(args)
 
 
 if __name__ == "__main__":
