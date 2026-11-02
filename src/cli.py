@@ -3515,6 +3515,78 @@ def arbitrage_asymmetry_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def q_factor_command(args: argparse.Namespace) -> None:
+    """Evaluate Kewei Hou, Chen Xue & Lu Zhang (2015, 2020) q-Factor Investment Profile."""
+    import json
+    from src.analytics.q_factor import evaluate_q_factor_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    roe = getattr(args, "roe", None)
+    if roe is not None:
+        roe = float(roe)
+    inv = getattr(args, "investment_rate", None)
+    if inv is None:
+        inv = getattr(args, "asset_growth", None)
+    if inv is not None:
+        inv = float(inv)
+    tobin = getattr(args, "tobin_q", None)
+    if tobin is not None:
+        tobin = float(tobin)
+
+    try:
+        receipt = evaluate_q_factor_profile(
+            ticker=ticker,
+            return_on_equity_pct=roe,
+            investment_to_assets_pct=inv,
+            tobin_q_proxy=tobin,
+        )
+    except Exception as ex:
+        print(f"\nError: q-Factor evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    compounder_str = (
+        "YES (High ROE + Conservative Investment)"
+        if receipt.is_disciplined_compounder
+        else "NO"
+    )
+    overinvestor_str = (
+        "YES (Low/Negative ROE + Aggressive Asset Expansion)"
+        if receipt.is_overinvestor_trap
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Hou, Xue & Zhang (2015) q-Factor Investment Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print(f"  Market Capitalization:        ${receipt.market_cap:,.0f}")
+    print("-" * 80)
+    print("  Neoclassical Investment & Profitability Covariates:")
+    print(f"    Return on Equity (ROE):     {receipt.return_on_equity_pct:>+8.1f}% (Marginal profitability)")
+    print(f"    Investment-to-Assets (I/A): {receipt.investment_to_assets_pct:>+8.1f}% Ann (Asset growth rate)")
+    print(f"    Tobin's q Proxy:            {receipt.tobin_q_proxy:>8.2f} (Market-to-book assets)")
+    print(f"    Operating Cash Flow/Assets: {receipt.cash_flow_to_assets_pct:>+8.1f}%")
+    print(f"    Profitability Score (ROE):  {receipt.profitability_score:>8.1f} / 100")
+    print(f"    Investment Score (I/A):     {receipt.investment_score:>8.1f} / 100 (Lower = More Conservative)")
+    print("-" * 80)
+    print("  Hou-Xue-Zhang Factor Dynamics & Alpha Projections:")
+    print(f"    Composite q-Alpha Score:    {receipt.q_alpha_score:>8.1f} / 100")
+    print(f"    Disciplined Compounder:     {compounder_str}")
+    print(f"    Over-Investment Trap:       {overinvestor_str}")
+    print(f"    Expected q-Factor Alpha:    {receipt.expected_q_alpha_pct:>+8.2f}% / year")
+    print(f"    Investment Factor Regime:   {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -5294,6 +5366,48 @@ def main() -> None:
         help="Output arbitrage asymmetry receipt as JSON",
     )
 
+    # Subparser: q-factor
+    q_parser = subparsers.add_parser(
+        "q-factor",
+        aliases=["qfactor", "hou-xue-zhang"],
+        help="Evaluate Kewei Hou, Chen Xue & Lu Zhang (2015, 2020) q-Factor Investment & Profitability Profile",
+    )
+    q_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, MSFT, TSLA)",
+    )
+    q_parser.add_argument(
+        "--roe",
+        type=float,
+        default=None,
+        help="Return on Equity percentage (Net Income / Book Equity) (optional)",
+    )
+    q_parser.add_argument(
+        "--investment-rate",
+        type=float,
+        default=None,
+        help="Annual Investment-to-Assets I/A percentage (Total Asset Growth %) (optional)",
+    )
+    q_parser.add_argument(
+        "--asset-growth",
+        type=float,
+        default=None,
+        help="Alias for --investment-rate",
+    )
+    q_parser.add_argument(
+        "--tobin-q",
+        type=float,
+        default=None,
+        help="Approximate Tobin's q ratio (optional)",
+    )
+    q_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output q-factor receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -5434,6 +5548,8 @@ def main() -> None:
         sentiment_command(args)
     elif args.command in ("arbitrage-asymmetry", "asymmetry", "short-impediment"):
         arbitrage_asymmetry_command(args)
+    elif args.command in ("q-factor", "qfactor", "hou-xue-zhang"):
+        q_factor_command(args)
 
 
 if __name__ == "__main__":

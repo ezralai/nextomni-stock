@@ -2279,6 +2279,65 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate arbitrage asymmetry.")
 
+                st.markdown("---")
+                st.subheader("🏭 Kewei Hou, Chen Xue & Lu Zhang (2015, 2020) q-Factor & Corporate Investment Engine")
+                st.caption(
+                    "Neoclassical investment asset pricing engine: links expected returns directly to corporate investment optimality "
+                    "(Expected Return = Marginal Profitability / Marginal Cost of Investment). Disentangles high-ROE disciplined compounders "
+                    "from capital-destructive over-investors across the corporate cross-section."
+                )
+                from src.analytics.q_factor import evaluate_q_factor_profile
+                if len(df_obs) >= 20:
+                    try:
+                        q_cols = st.columns(3)
+                        with q_cols[0]:
+                            q_roe_input = st.number_input("Return on Equity (ROE %)", min_value=-50.0, max_value=80.0, value=18.0, step=1.0, key="q_roe_input")
+                        with q_cols[1]:
+                            q_inv_input = st.number_input("Investment / Asset Growth (I/A %)", min_value=-20.0, max_value=80.0, value=5.5, step=0.5, key="q_inv_input")
+                        with q_cols[2]:
+                            q_tobin_input = st.number_input("Tobin's q Proxy", min_value=0.2, max_value=20.0, value=1.75, step=0.1, key="q_tobin_input")
+
+                        q_rec = evaluate_q_factor_profile(
+                            ticker=selected_ticker,
+                            return_on_equity_pct=float(q_roe_input),
+                            investment_to_assets_pct=float(q_inv_input),
+                            tobin_q_proxy=float(q_tobin_input),
+                        )
+
+                        qy1, qy2, qy3, qy4 = st.columns(4)
+                        compounder_badge = "💎 COMPOUNDER" if q_rec.is_disciplined_compounder else ("⚠️ OVER-INVESTOR" if q_rec.is_overinvestor_trap else f"Regime: {q_rec.regime}")
+                        qy1.metric(
+                            "Composite q-Alpha Score",
+                            f"{q_rec.q_alpha_score:.1f} / 100",
+                            delta=compounder_badge,
+                            help="Hou-Xue-Zhang composite score: balances high ROE profitability against conservative asset growth",
+                        )
+                        qy2.metric(
+                            "Profitability Score (ROE)",
+                            f"{q_rec.profitability_score:.1f} / 100",
+                            delta=f"ROE: {q_rec.return_on_equity_pct:+.1f}%",
+                            help="Marginal corporate profitability: higher ROE demands higher cost of capital and expected return",
+                        )
+                        qy3.metric(
+                            "Investment Score (I/A)",
+                            f"{q_rec.investment_score:.1f} / 100",
+                            delta=f"Growth: {q_rec.investment_to_assets_pct:+.1f}%",
+                            help="Asset expansion rate: lower investment indicates capital discipline and higher future returns",
+                        )
+                        qy4.metric(
+                            "Expected q-Factor Alpha",
+                            f"{q_rec.expected_q_alpha_pct:+.2f}% Ann",
+                            delta=f"Tobin's q: {q_rec.tobin_q_proxy:.2f}",
+                            help="Projected annualized q-factor alpha spread: alpha_q = (S_q - 50) * 0.16%",
+                        )
+
+                        st.caption(f"🏭 **q-Factor Summary:** {q_rec.summary}")
+                        st.caption(f"🛡️ **q-Factor Audit Digest:** `{q_rec.signature[:16]}...` (Verified: `{q_rec.verify_integrity()}`)")
+                    except Exception as q_ex:
+                        st.info(f"q-Factor investment evaluation deferred: {q_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate q-factor investment profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
