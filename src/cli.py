@@ -3056,6 +3056,69 @@ def max_lottery_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def profitability_command(args: argparse.Namespace) -> None:
+    """Evaluate Robert Novy-Marx (2013) Gross Profitability Premium & Asness et al. (2019) QMJ."""
+    import json
+    from src.analytics.gross_profitability import evaluate_gross_profitability_profile
+    import src.data.db as db
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    rev = getattr(args, "revenue", None)
+    if rev is not None:
+        rev = float(rev)
+    cost = getattr(args, "cogs", None)
+    if cost is not None:
+        cost = float(cost)
+    assets = getattr(args, "assets", None)
+    if assets is not None:
+        assets = float(assets)
+    debt = getattr(args, "debt", None)
+    if debt is not None:
+        debt = float(debt)
+
+    try:
+        receipt = evaluate_gross_profitability_profile(
+            ticker=ticker,
+            revenue=rev,
+            cogs=cost,
+            total_assets=assets,
+            total_debt=debt,
+        )
+    except Exception as ex:
+        print(f"\nError: Gross profitability evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    trap_str = "YES (Unprofitable/High Leverage)" if receipt.is_value_trap else "NO (Quality Compounder)"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Novy-Marx (2013) Gross Profitability & QMJ Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Total Revenue:                ${receipt.revenue:,.0f} (COGS: ${receipt.cogs:,.0f})")
+    print(f"  Gross Profit:                 ${receipt.gross_profit:,.0f} (Margin: {receipt.gross_margin_pct:>5.1f}%)")
+    print(f"  Total Book Assets:            ${receipt.total_assets:,.0f} (Debt: ${receipt.total_debt:,.0f})")
+    print("-" * 80)
+    print("  Novy-Marx Profitability to Capital & Turnover:")
+    print(f"    Gross Profitability (GP/A): {receipt.gross_profitability_pct:>8.2f}% (Gross Profit / Assets)")
+    print(f"    Asset Turnover (ATO):       {receipt.asset_turnover:>8.2f}x (Revenue / Assets)")
+    print(f"    Debt-to-Assets Leverage:    {receipt.debt_to_assets_pct:>8.2f}%")
+    print("-" * 80)
+    print("  Asness et al. (2019) QMJ Composite Quality & Value-Trap Screening:")
+    print(f"    Quality Score (Q):          {receipt.quality_score:>8.1f} / 100")
+    print(f"    Value-Trap Risk Hazard:     {trap_str}")
+    print(f"    Expected Annualized Alpha:  {receipt.expected_quality_alpha_ann_pct:>+8.2f}% / year")
+    print(f"    Quality Factor Regime:      {receipt.quality_regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 
 def main() -> None:
 
@@ -4590,6 +4653,47 @@ def main() -> None:
         help="Output MAX lottery receipt as JSON",
     )
 
+    # Subparser: profitability
+    gp_parser = subparsers.add_parser(
+        "profitability",
+        help="Evaluate Robert Novy-Marx (2013) gross profitability & Asness et al. (2019) QMJ quality",
+    )
+    gp_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    gp_parser.add_argument(
+        "--revenue",
+        type=float,
+        default=None,
+        help="Total annualized company revenue in dollars (optional)",
+    )
+    gp_parser.add_argument(
+        "--cogs",
+        type=float,
+        default=None,
+        help="Total Cost of Goods Sold in dollars (optional)",
+    )
+    gp_parser.add_argument(
+        "--assets",
+        type=float,
+        default=None,
+        help="Total Book Assets in dollars (optional)",
+    )
+    gp_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Total Debt Obligations in dollars (optional)",
+    )
+    gp_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output profitability receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4716,6 +4820,8 @@ def main() -> None:
         vrp_command(args)
     elif args.command == "max-lottery":
         max_lottery_command(args)
+    elif args.command == "profitability":
+        profitability_command(args)
 
 
 if __name__ == "__main__":
