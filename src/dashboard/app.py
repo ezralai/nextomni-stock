@@ -2754,6 +2754,81 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate DHS overconfidence profile.")
 
+                st.markdown("---")
+                st.subheader("⚖️ Nicholas Barberis, Andrei Shleifer & Robert Vishny (1998) Dual-Heuristic Sentiment Engine")
+                st.caption(
+                    "Dual-heuristic behavioral asset pricing engine (BSV 1998): unifies short-term underreaction and "
+                    "long-term overreaction via conservatism bias on isolated earnings shocks (PEAD drift) versus the "
+                    "representativeness heuristic / law of small numbers on streaks (regime-switching overreaction and reversals)."
+                )
+                from src.analytics.bsv_sentiment import evaluate_bsv_sentiment_profile
+                if len(df_obs) >= 20:
+                    try:
+                        b_cols = st.columns(2)
+                        with b_cols[0]:
+                            b_surp = st.number_input(
+                                "Latest Earnings Surprise (%)",
+                                min_value=-50.0,
+                                max_value=80.0,
+                                value=5.0,
+                                step=0.5,
+                                key="bsv_surp_input",
+                            )
+                        with b_cols[1]:
+                            b_streak = st.slider(
+                                "Consecutive Earnings Streak (Quarters)",
+                                min_value=1,
+                                max_value=8,
+                                value=2,
+                                step=1,
+                                key="bsv_streak_input",
+                            )
+
+                        b_rec = evaluate_bsv_sentiment_profile(
+                            ticker=selected_ticker,
+                            latest_surprise_pct=float(b_surp),
+                            consecutive_streak=int(b_streak),
+                        )
+
+                        by1, by2, by3, by4 = st.columns(4)
+                        b_badge = (
+                            "⚠️ STREAK OVERREACTION"
+                            if b_rec.is_representativeness_peak
+                            else ("🚀 PEAD DRIFT" if b_rec.is_conservatism_drift else f"Regime: {b_rec.regime}")
+                        )
+                        by1.metric(
+                            "Trending State Prob (pi_t)",
+                            f"{b_rec.trending_state_probability:.2f} / 1.00",
+                            delta=f"Streak: {b_rec.consecutive_streak_quarters}Q",
+                            help="Subjective Bayesian belief that firm is in a permanent trending regime",
+                        )
+                        by2.metric(
+                            "Conservatism Drift (CDI)",
+                            f"{b_rec.conservatism_drift_index:.2f} / 1.00",
+                            delta="High PEAD Drift" if b_rec.is_conservatism_drift else "Contained Drift",
+                            help="Degree of underreaction drift due to conservative prior belief updating",
+                        )
+                        by3.metric(
+                            "Representativeness (RSS)",
+                            f"{b_rec.representativeness_streak_score:.2f} / 1.00",
+                            delta=b_badge,
+                            delta_color="inverse" if b_rec.is_representativeness_peak else "normal",
+                            help="Degree of streak over-extrapolation based on the law of small numbers",
+                        )
+                        by4.metric(
+                            "Expected BSV Alpha",
+                            f"{b_rec.expected_bsv_alpha_pct:+.2f}% Ann",
+                            delta="Positive Drift Alpha" if b_rec.expected_bsv_alpha_pct > 0 else "Reversal Drag",
+                            help="Projected annualized alpha spread balancing conservatism drift versus representativeness reversal",
+                        )
+
+                        st.caption(f"⚖️ **BSV Summary:** {b_rec.summary}")
+                        st.caption(f"🛡️ **BSV Audit Digest:** `{b_rec.signature[:16]}...` (Verified: `{b_rec.verify_integrity()}`)")
+                    except Exception as b_ex:
+                        st.info(f"BSV Sentiment evaluation deferred: {b_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate BSV sentiment profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

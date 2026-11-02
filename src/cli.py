@@ -4054,6 +4054,70 @@ def dhs_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def bsv_command(args: argparse.Namespace) -> None:
+    """Evaluate Barberis, Shleifer & Vishny (1998) Dual-Heuristic Investor Sentiment."""
+    import json
+    from src.analytics.bsv_sentiment import evaluate_bsv_sentiment_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    surprise = getattr(args, "earnings_surprise", None)
+    if surprise is not None:
+        surprise = float(surprise)
+    streak = getattr(args, "streak", None)
+    if streak is not None:
+        streak = int(streak)
+
+    try:
+        receipt = evaluate_bsv_sentiment_profile(
+            ticker=ticker,
+            latest_surprise_pct=surprise,
+            consecutive_streak=streak,
+        )
+    except Exception as ex:
+        print(f"\nError: BSV Sentiment evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    pead_str = (
+        "YES (HIGH POST-EARNINGS UNDERREACTION DRIFT)"
+        if receipt.is_conservatism_drift
+        else "NO"
+    )
+    overreact_str = (
+        "YES (SPECULATIVE STREAK OVERREACTION / REVERSAL)"
+        if receipt.is_representativeness_peak
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Barberis, Shleifer & Vishny (1998) Dual-Heuristic Sentiment")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print(f"  Trailing Momentum:            {receipt.trailing_momentum_pct:>+8.2f}% (Annual Volatility: {receipt.annualized_volatility_pct:.1f}%)")
+    print(f"  Latest Earnings Surprise:     {receipt.latest_earnings_surprise_pct:>+8.2f}%")
+    print(f"  Consecutive Streak Length:    {receipt.consecutive_streak_quarters} quarters")
+    print("-" * 80)
+    print(f"  Trending State Prob (pi_t):   {receipt.trending_state_probability:.2f} / 1.00 (Subjective belief in persistent trend)")
+    print(f"  Conservatism Drift Index:     {receipt.conservatism_drift_index:.2f} / 1.00 (PEAD underreaction magnitude)")
+    print(f"  Representativeness Score:     {receipt.representativeness_streak_score:.2f} / 1.00 (Streak over-extrapolation)")
+    print("-" * 80)
+    print("  Cognitive Bias Regime & Alpha Dynamics:")
+    print(f"    Behavioral Regime:          {receipt.regime}")
+    print(f"    Conservatism Underreaction: {pead_str}")
+    print(f"    Representativeness Peak:    {overreact_str}")
+    print(f"    Expected BSV Alpha Spread:  {receipt.expected_bsv_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -6169,6 +6233,36 @@ def main() -> None:
         help="Output DHS Behavioral receipt as JSON",
     )
 
+    # Barberis, Shleifer & Vishny (1998) Dual-Heuristic Sentiment Parser
+    bsv_parser = subparsers.add_parser(
+        "bsv",
+        aliases=["barberis", "conservatism-representativeness", "dual-heuristic"],
+        help="Evaluate Barberis, Shleifer & Vishny (1998) conservatism and representativeness sentiment",
+    )
+    bsv_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, MSFT)",
+    )
+    bsv_parser.add_argument(
+        "--earnings-surprise",
+        type=float,
+        default=None,
+        help="Latest quarterly earnings surprise % (optional)",
+    )
+    bsv_parser.add_argument(
+        "--streak",
+        type=int,
+        default=None,
+        help="Consecutive quarters with earnings surprise in same direction (optional)",
+    )
+    bsv_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output BSV Sentiment receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -6323,6 +6417,8 @@ def main() -> None:
         contrarian_command(args)
     elif args.command in ("dhs", "overconfidence", "self-attribution", "behavioral-lifecycle"):
         dhs_command(args)
+    elif args.command in ("bsv", "barberis", "conservatism-representativeness", "dual-heuristic"):
+        bsv_command(args)
 
 
 if __name__ == "__main__":
