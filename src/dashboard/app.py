@@ -1916,7 +1916,61 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Insufficient price history to evaluate gross profitability.")
 
+                st.markdown("---")
+                st.subheader("🚀 Jegadeesh & Titman (1993) / Antonacci Dual Momentum & Industry Relative Strength")
+                st.caption(
+                    "Intermediate momentum (12-2, 6-1) with 1-month short-term microstructure reversal separation, "
+                    "Moskowitz & Grinblatt (1999) idiosyncratic alpha decomposition, and Antonacci dual absolute trend filtering."
+                )
+                from src.analytics.dual_momentum import evaluate_dual_momentum_profile
+                if len(df_obs) >= 42:
+                    try:
+                        dm_cols = st.columns(2)
+                        with dm_cols[0]:
+                            bench_input = st.text_input("Benchmark Ticker", value="SPY", key="dm_bench_ticker")
+                        with dm_cols[1]:
+                            rf_input = st.number_input("Risk-Free Rate (%/yr)", min_value=0.0, max_value=20.0, value=4.0, step=0.5, key="dm_rf_rate")
 
+                        dm_rec = evaluate_dual_momentum_profile(
+                            ticker=selected_ticker,
+                            benchmark_ticker=bench_input.strip() if bench_input else "SPY",
+                            rf_rate_pct=float(rf_input),
+                        )
+
+                        m1, m2, m3, m4 = st.columns(4)
+                        m1.metric(
+                            "12-2 Momentum",
+                            f"{dm_rec.momentum_12_2_pct:+.1f}%",
+                            delta=f"6-1: {dm_rec.momentum_6_1_pct:+.1f}%",
+                            help="Jegadeesh & Titman (1993) intermediate momentum skipping recent month (t-252 to t-21)",
+                        )
+                        m2.metric(
+                            "1-Month Reversal",
+                            f"{dm_rec.reversal_1_0_pct:+.1f}%",
+                            delta="Short-Term Bounce",
+                            help="Microstructure return over recent 21 trading days (t-21 to t)",
+                        )
+                        trend_label = "BULLISH" if dm_rec.is_absolute_trend_positive else "BEARISH"
+                        m3.metric(
+                            "Relative Spread vs Bench",
+                            f"{dm_rec.relative_momentum_spread_pct:+.1f}%",
+                            delta=f"Idio Alpha: {dm_rec.idiosyncratic_momentum_pct:+.1f}%",
+                            help="Relative momentum spread over benchmark (SPY) and beta-adjusted idiosyncratic alpha",
+                        )
+                        crash_badge = "⚠️ CRASH RISK" if dm_rec.has_momentum_crash_risk else f"Trend: {trend_label}"
+                        m4.metric(
+                            "Sharpe Momentum",
+                            f"{dm_rec.sharpe_momentum:.2f}",
+                            delta=crash_badge,
+                            help="Volatility-adjusted intermediate momentum ratio (R_{12,2} / Ann Vol)",
+                        )
+
+                        st.caption(f"🚀 **Dual Momentum Summary:** {dm_rec.summary}")
+                        st.caption(f"🛡️ **Momentum Audit Digest:** `{dm_rec.signature[:16]}...` (Verified: `{dm_rec.verify_integrity()}`)")
+                    except Exception as dm_ex:
+                        st.info(f"Dual momentum evaluation deferred: {dm_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 42 price sessions to evaluate dual momentum.")
 
 
     # =========================================================================

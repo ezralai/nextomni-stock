@@ -3119,6 +3119,71 @@ def profitability_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def dual_momentum_command(args: argparse.Namespace) -> None:
+    """Evaluate Jegadeesh & Titman (1993, 2001) / Antonacci (2014) Dual Momentum Profile."""
+    import json
+    from src.analytics.dual_momentum import evaluate_dual_momentum_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    bench = validate_ticker(getattr(args, "benchmark", "SPY") or "SPY")
+    rf_rate = float(getattr(args, "rf_rate", 4.0) or 4.0)
+
+    try:
+        receipt = evaluate_dual_momentum_profile(
+            ticker=ticker,
+            benchmark_ticker=bench,
+            rf_rate_pct=rf_rate,
+        )
+    except Exception as ex:
+        print(f"\nError: Dual momentum evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    crash_str = (
+        "YES (High Past Winner + Severe 1M Drop)"
+        if receipt.has_momentum_crash_risk
+        else "NO (Stable Drift)"
+    )
+    abs_str = (
+        "BULLISH (Positive Trend > Rf, >= SMA200)"
+        if receipt.is_absolute_trend_positive
+        else "BEARISH (Defensive / Cash Hedge)"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Jegadeesh & Titman (1993) / Antonacci Dual Momentum Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker} (Benchmark: {receipt.benchmark_ticker})")
+    print(f"  Sessions Evaluated:           {receipt.sessions_evaluated} trading days")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f} (SMA 200: ${receipt.sma_200:.2f})")
+    print("-" * 80)
+    print("  Jegadeesh & Titman (1993, 2001) Intermediate Momentum & Microstructure Reversal:")
+    print(f"    12-2 Intermediate Momentum: {receipt.momentum_12_2_pct:>+8.2f}% (t-252 to t-21, skipping 1M)")
+    print(f"    6-1 Intermediate Momentum:  {receipt.momentum_6_1_pct:>+8.2f}% (t-126 to t-21, skipping 1M)")
+    print(f"    1-Month Reversal (R_1,0):   {receipt.reversal_1_0_pct:>+8.2f}% (Microstructure bounce check)")
+    print(f"    Unlagged 12M Total Return:  {receipt.total_return_12m_pct:>+8.2f}%")
+    print("-" * 80)
+    print("  Cross-Sectional Relative Strength & Moskowitz-Grinblatt Decomposition:")
+    print(f"    Benchmark 12-2 Momentum:    {receipt.benchmark_12_2_pct:>+8.2f}%")
+    print(f"    Relative Momentum Spread:   {receipt.relative_momentum_spread_pct:>+8.2f}% vs {receipt.benchmark_ticker}")
+    print(f"    Idiosyncratic Alpha Mom:    {receipt.idiosyncratic_momentum_pct:>+8.2f}% (Market-beta adjusted)")
+    print(f"    Realized Market Beta:       {receipt.beta_to_benchmark:>8.2f}")
+    print(f"    Volatility-Adjusted Sharpe: {receipt.sharpe_momentum:>8.2f} (Ann Vol: {receipt.annualized_volatility_pct:.1f}%)")
+    print("-" * 80)
+    print("  Gary Antonacci Dual Momentum & Crash Risk Overlay:")
+    print(f"    Absolute Trend Filter:      {abs_str}")
+    print(f"    Momentum Crash Risk:        {crash_str}")
+    print(f"    Expected Annualized Alpha:  {receipt.expected_momentum_alpha_pct:>+8.2f}% / year")
+    print(f"    Momentum Regime:            {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
 
 def main() -> None:
 
@@ -4694,6 +4759,35 @@ def main() -> None:
         help="Output profitability receipt as JSON",
     )
 
+    # Subparser: dual-momentum
+    dm_parser = subparsers.add_parser(
+        "dual-momentum",
+        help="Evaluate Jegadeesh & Titman (1993) / Antonacci Dual Momentum & Industry Relative Strength",
+    )
+    dm_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    dm_parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="SPY",
+        help="Reference benchmark ticker (default: SPY)",
+    )
+    dm_parser.add_argument(
+        "--rf-rate",
+        type=float,
+        default=4.0,
+        help="Annualized risk-free hurdle rate percentage (default: 4.0)",
+    )
+    dm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output dual momentum receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4822,6 +4916,8 @@ def main() -> None:
         max_lottery_command(args)
     elif args.command == "profitability":
         profitability_command(args)
+    elif args.command == "dual-momentum":
+        dual_momentum_command(args)
 
 
 if __name__ == "__main__":
