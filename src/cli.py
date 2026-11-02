@@ -3658,6 +3658,98 @@ def accruals_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def beneish_command(args: argparse.Namespace) -> None:
+    """Evaluate Messod D. Beneish (1999) Forensic Accounting M-Score & Manipulation Risk."""
+    import json
+    from src.analytics.beneish_mscore import evaluate_beneish_mscore_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    dsri = getattr(args, "dsri", None)
+    if dsri is not None:
+        dsri = float(dsri)
+    gmi = getattr(args, "gmi", None)
+    if gmi is not None:
+        gmi = float(gmi)
+    aqi = getattr(args, "aqi", None)
+    if aqi is not None:
+        aqi = float(aqi)
+    sgi = getattr(args, "sgi", None)
+    if sgi is not None:
+        sgi = float(sgi)
+    depi = getattr(args, "depi", None)
+    if depi is not None:
+        depi = float(depi)
+    sgai = getattr(args, "sgai", None)
+    if sgai is not None:
+        sgai = float(sgai)
+    lvgi = getattr(args, "lvgi", None)
+    if lvgi is not None:
+        lvgi = float(lvgi)
+    tata = getattr(args, "tata", None)
+    if tata is not None:
+        tata = float(tata)
+
+    try:
+        receipt = evaluate_beneish_mscore_profile(
+            ticker=ticker,
+            dsri=dsri,
+            gmi=gmi,
+            aqi=aqi,
+            sgi=sgi,
+            depi=depi,
+            sgai=sgai,
+            lvgi=lvgi,
+            tata=tata,
+        )
+    except Exception as ex:
+        print(f"\nError: Beneish M-Score evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    fraud_str = (
+        "YES (HIGH MANIPULATION / FRAUD PROBABILITY)"
+        if receipt.is_manipulator_risk
+        else "NO"
+    )
+    clean_str = (
+        "YES (PRISTINE UNMANIPULATED FINANCIALS)"
+        if receipt.is_clean_profile
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Messod D. Beneish (1999) Forensic Accounting M-Score")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Beneish 8-Variable Forensic Covariates:")
+    print(f"    Days' Sales in Receivables: {receipt.dsri:>8.2f} (DSRI: Revenue acceleration)")
+    print(f"    Gross Margin Index:         {receipt.gmi:>8.2f} (GMI: Margin deterioration)")
+    print(f"    Asset Quality Index:        {receipt.aqi:>8.2f} (AQI: Expense capitalization)")
+    print(f"    Sales Growth Index:         {receipt.sgi:>8.2f} (SGI: Deceleration pressure)")
+    print(f"    Depreciation Index:         {receipt.depi:>8.2f} (DEPI: Asset life extension)")
+    print(f"    SG&A Expense Index:         {receipt.sgai:>8.2f} (SGAI: Operational inefficiency)")
+    print(f"    Leverage Index:             {receipt.lvgi:>8.2f} (LVGI: Debt covenant pressure)")
+    print(f"    Total Accruals to Assets:   {receipt.tata:>+8.3f} (TATA: Sloan paper profits)")
+    print("-" * 80)
+    print("  Forensic Model Inferences & Manipulation Probabilities:")
+    print(f"    Beneish M-Score:            {receipt.m_score:>+8.2f} (Cutoff: > -1.78)")
+    print(f"    Manipulation Probability:   {receipt.manipulation_probability_pct:>8.1f}% (Phi(M))")
+    print(f"    Manipulator Red Flag:       {fraud_str}")
+    print(f"    Clean Financial Profile:    {clean_str}")
+    print(f"    Expected Forensic Alpha:    {receipt.expected_forensic_alpha_pct:>+8.2f}% / year")
+    print(f"    Forensic Regime:            {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -5521,6 +5613,72 @@ def main() -> None:
         help="Output accrual anomaly receipt as JSON",
     )
 
+    # Subparser: beneish
+    beneish_parser = subparsers.add_parser(
+        "beneish",
+        aliases=["mscore", "forensic-audit", "fraud-risk"],
+        help="Evaluate Messod D. Beneish (1999) Forensic Accounting M-Score & Manipulation Risk",
+    )
+    beneish_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. ENRN, TSLA, AAPL)",
+    )
+    beneish_parser.add_argument(
+        "--dsri",
+        type=float,
+        default=None,
+        help="Days' Sales in Receivables Index (optional)",
+    )
+    beneish_parser.add_argument(
+        "--gmi",
+        type=float,
+        default=None,
+        help="Gross Margin Index (optional)",
+    )
+    beneish_parser.add_argument(
+        "--aqi",
+        type=float,
+        default=None,
+        help="Asset Quality Index (optional)",
+    )
+    beneish_parser.add_argument(
+        "--sgi",
+        type=float,
+        default=None,
+        help="Sales Growth Index (optional)",
+    )
+    beneish_parser.add_argument(
+        "--depi",
+        type=float,
+        default=None,
+        help="Depreciation Index (optional)",
+    )
+    beneish_parser.add_argument(
+        "--sgai",
+        type=float,
+        default=None,
+        help="SG&A Expense Index (optional)",
+    )
+    beneish_parser.add_argument(
+        "--lvgi",
+        type=float,
+        default=None,
+        help="Leverage Index (optional)",
+    )
+    beneish_parser.add_argument(
+        "--tata",
+        type=float,
+        default=None,
+        help="Total Accruals to Total Assets (optional)",
+    )
+    beneish_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Beneish M-Score receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -5665,6 +5823,8 @@ def main() -> None:
         q_factor_command(args)
     elif args.command in ("accruals", "accrual", "earnings-quality", "sloan"):
         accruals_command(args)
+    elif args.command in ("beneish", "mscore", "forensic-audit", "fraud-risk"):
+        beneish_command(args)
 
 
 if __name__ == "__main__":

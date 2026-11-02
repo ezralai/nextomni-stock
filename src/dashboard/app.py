@@ -2397,6 +2397,68 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate accrual anomaly profile.")
 
+                st.markdown("---")
+                st.subheader("🕵️ Messod D. Beneish (1999) Forensic Accounting M-Score & Manipulation Engine")
+                st.caption(
+                    "Forensic accounting probit model: synthesizes 8 structural balance-sheet and income-statement indices "
+                    "(DSRI, GMI, AQI, SGI, DEPI, SGAI, LVGI, TATA) to calculate the probability of corporate financial statement manipulation. "
+                    "Scores M > -1.78 identify high-risk earnings manipulation and impending restatement crash risks."
+                )
+                from src.analytics.beneish_mscore import evaluate_beneish_mscore_profile
+                if len(df_obs) >= 20:
+                    try:
+                        ben_cols = st.columns(4)
+                        with ben_cols[0]:
+                            ben_dsri = st.number_input("Days' Sales in Receivables (DSRI)", min_value=0.2, max_value=5.0, value=1.05, step=0.05, key="ben_dsri")
+                        with ben_cols[1]:
+                            ben_gmi = st.number_input("Gross Margin Index (GMI)", min_value=0.2, max_value=5.0, value=1.02, step=0.05, key="ben_gmi")
+                        with ben_cols[2]:
+                            ben_aqi = st.number_input("Asset Quality Index (AQI)", min_value=0.2, max_value=5.0, value=1.04, step=0.05, key="ben_aqi")
+                        with ben_cols[3]:
+                            ben_sgi = st.number_input("Sales Growth Index (SGI)", min_value=0.2, max_value=5.0, value=1.08, step=0.05, key="ben_sgi")
+
+                        ben_rec = evaluate_beneish_mscore_profile(
+                            ticker=selected_ticker,
+                            dsri=float(ben_dsri),
+                            gmi=float(ben_gmi),
+                            aqi=float(ben_aqi),
+                            sgi=float(ben_sgi),
+                        )
+
+                        by1, by2, by3, by4 = st.columns(4)
+                        fraud_badge = "🚨 FRAUD RED FLAG" if ben_rec.is_manipulator_risk else ("🛡️ CLEAN FINANCIALS" if ben_rec.is_clean_profile else f"Regime: {ben_rec.regime}")
+                        by1.metric(
+                            "Beneish M-Score",
+                            f"{ben_rec.m_score:.2f}",
+                            delta=fraud_badge,
+                            help="Beneish 8-Variable M-Score: scores greater than -1.78 indicate high probability of financial statement manipulation",
+                        )
+                        by2.metric(
+                            "Manipulation Probability",
+                            f"{ben_rec.manipulation_probability_pct:.1f}%",
+                            delta=f"Cutoff: > 3.8%",
+                            help="Probit probability Phi(M) of intentional accounting distortion or fraud",
+                        )
+                        by3.metric(
+                            "Revenue & Margin Flags",
+                            f"DSRI: {ben_rec.dsri:.2f}",
+                            delta=f"GMI: {ben_rec.gmi:.2f}",
+                            help="Days' sales in receivables and gross margin deterioration indices",
+                        )
+                        by4.metric(
+                            "Expected Forensic Drag",
+                            f"{ben_rec.expected_forensic_alpha_pct:+.2f}% Ann",
+                            delta=f"Regime: {ben_rec.regime}",
+                            help="Projected annualized underperformance associated with forensic manipulation risk",
+                        )
+
+                        st.caption(f"🕵️ **Beneish Summary:** {ben_rec.summary}")
+                        st.caption(f"🛡️ **Beneish Audit Digest:** `{ben_rec.signature[:16]}...` (Verified: `{ben_rec.verify_integrity()}`)")
+                    except Exception as ben_ex:
+                        st.info(f"Beneish M-Score evaluation deferred: {ben_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Beneish M-Score profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
