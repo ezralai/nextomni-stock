@@ -3441,6 +3441,80 @@ def sentiment_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def arbitrage_asymmetry_command(args: argparse.Namespace) -> None:
+    """Evaluate Robert F. Stambaugh, Jianfeng Yu & Yu Yuan (2012, 2015) Short-Sale Impediments & Arbitrage Asymmetry."""
+    import json
+    from src.analytics.arbitrage_asymmetry import evaluate_arbitrage_asymmetry_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    sent_idx = float(getattr(args, "market_sentiment", 0.0) or 0.0)
+    borrow_fee = getattr(args, "borrow_fee", None)
+    if borrow_fee is not None:
+        borrow_fee = float(borrow_fee)
+    short_interest = getattr(args, "short_interest", None)
+    if short_interest is not None:
+        short_interest = float(short_interest)
+    dtc = getattr(args, "days_to_cover", None)
+    if dtc is not None:
+        dtc = float(dtc)
+
+    try:
+        receipt = evaluate_arbitrage_asymmetry_profile(
+            ticker=ticker,
+            market_sentiment_index=sent_idx,
+            borrow_fee_annual_pct=borrow_fee,
+            short_interest_pct_float=short_interest,
+            days_to_cover=dtc,
+        )
+    except Exception as ex:
+        print(f"\nError: Arbitrage asymmetry evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    severe_str = (
+        "YES (High Overpricing Hazard)"
+        if receipt.is_severe_overpriced
+        else "NO"
+    )
+    squeeze_str = (
+        "YES (Acute Short Squeeze Risk)"
+        if receipt.is_squeeze_risk
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Stambaugh, Yu & Yuan (2012) Arbitrage Asymmetry Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print(f"  Market Capitalization:        ${receipt.market_cap:,.0f}")
+    print("-" * 80)
+    print("  Short-Sale Impediment & Friction Covariates:")
+    print(f"    Idiosyncratic Volatility:   {receipt.idiosyncratic_volatility_pct:>8.1f}% Ann (Arbitrage risk)")
+    print(f"    Annualized Borrow Fee:      {receipt.borrow_fee_annual_pct:>8.2f}% / yr (Cost to borrow)")
+    print(f"    Short Interest (% Float):   {receipt.short_interest_pct_float:>8.1f}% of float")
+    print(f"    Days to Cover (DTC):        {receipt.days_to_cover:>8.1f} sessions")
+    print(f"    Daily Share Turnover:       {receipt.daily_turnover_pct:>8.2f}% per session")
+    print(f"    Short Impediment Index (I): {receipt.short_sale_impediment_index:>8.1f} / 100")
+    print("-" * 80)
+    print("  Arbitrage Asymmetry & Overpricing Dynamics:")
+    print(f"    Macro Sentiment Index (I):  {receipt.market_sentiment_index:>+8.2f}σ (Standardized)")
+    print(f"    Overpricing Hazard Score:   {receipt.asymmetric_overpricing_hazard:>8.1f} / 100")
+    print(f"    Short Squeeze Vulnerability:{receipt.short_squeeze_vulnerability:>8.1f} / 100")
+    print(f"    Severe Overpriced Drag:     {severe_str}")
+    print(f"    Short Squeeze Powder Keg:   {squeeze_str}")
+    print(f"    Projected Mispricing Drag:  {receipt.expected_asymmetry_alpha_pct:>+8.2f}% / year")
+    print(f"    Arbitrage Asymmetry Regime: {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -5178,6 +5252,48 @@ def main() -> None:
         help="Output sentiment receipt as JSON",
     )
 
+    # Subparser: arbitrage-asymmetry
+    asym_parser = subparsers.add_parser(
+        "arbitrage-asymmetry",
+        aliases=["asymmetry", "short-impediment"],
+        help="Evaluate Robert F. Stambaugh, Jianfeng Yu & Yu Yuan (2012, 2015) Short-Sale Impediments & Arbitrage Asymmetry",
+    )
+    asym_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. TSLA, GME, AAPL)",
+    )
+    asym_parser.add_argument(
+        "--market-sentiment",
+        type=float,
+        default=0.0,
+        help="Standardized macro investor sentiment index I_sent in [-3.0, +3.0] (default: 0.0)",
+    )
+    asym_parser.add_argument(
+        "--borrow-fee",
+        type=float,
+        default=None,
+        help="Annualized cost to borrow equity shares (%/yr) (optional)",
+    )
+    asym_parser.add_argument(
+        "--short-interest",
+        type=float,
+        default=None,
+        help="Short interest as percentage of free float (%) (optional)",
+    )
+    asym_parser.add_argument(
+        "--days-to-cover",
+        type=float,
+        default=None,
+        help="Short ratio / days to cover in sessions (optional)",
+    )
+    asym_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output arbitrage asymmetry receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -5316,6 +5432,8 @@ def main() -> None:
         distress_command(args)
     elif args.command == "sentiment":
         sentiment_command(args)
+    elif args.command in ("arbitrage-asymmetry", "asymmetry", "short-impediment"):
+        arbitrage_asymmetry_command(args)
 
 
 if __name__ == "__main__":

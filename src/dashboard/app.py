@@ -2219,6 +2219,66 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate investor sentiment.")
 
+                st.markdown("---")
+                st.subheader("⚖️ Robert F. Stambaugh, Jianfeng Yu & Yu Yuan (2012, 2015) Arbitrage Asymmetry & Short-Sale Impediments")
+                st.caption(
+                    "Structural short-sale friction and anomaly overpricing engine: models borrow friction, idiosyncratic volatility risk, "
+                    "short interest, days-to-cover, and evaluates asymmetric overpricing hazard when positive sentiment interacts with shorting limits."
+                )
+                from src.analytics.arbitrage_asymmetry import evaluate_arbitrage_asymmetry_profile
+                if len(df_obs) >= 20:
+                    try:
+                        asym_cols = st.columns(3)
+                        with asym_cols[0]:
+                            asym_borrow = st.number_input("Borrow Fee Rate (%/yr)", min_value=0.25, max_value=80.0, value=1.25, step=0.5, key="asym_borrow_fee")
+                        with asym_cols[1]:
+                            asym_si = st.number_input("Short Interest (% Float)", min_value=0.0, max_value=80.0, value=5.0, step=1.0, key="asym_short_interest")
+                        with asym_cols[2]:
+                            asym_dtc = st.number_input("Days to Cover (DTC)", min_value=0.5, max_value=30.0, value=3.0, step=0.5, key="asym_days_to_cover")
+
+                        asym_rec = evaluate_arbitrage_asymmetry_profile(
+                            ticker=selected_ticker,
+                            market_sentiment_index=float(st.session_state.get("sent_macro_slider", 0.0)),
+                            borrow_fee_annual_pct=float(asym_borrow),
+                            short_interest_pct_float=float(asym_si),
+                            days_to_cover=float(asym_dtc),
+                        )
+
+                        ay1, ay2, ay3, ay4 = st.columns(4)
+                        ay1.metric(
+                            "Short Impediment Index",
+                            f"{asym_rec.short_sale_impediment_index:.1f} / 100",
+                            delta=f"Borrow: {asym_rec.borrow_fee_annual_pct:.2f}%",
+                            help="Stambaugh et al. short-sale friction index: synthesizes borrow fees, idiosyncratic volatility, and lendable supply scarcity",
+                        )
+                        hazard_badge = "⚠️ SEVERE OVERPRICED" if asym_rec.is_severe_overpriced else f"Hazard: {asym_rec.asymmetric_overpricing_hazard:.1f}"
+                        ay2.metric(
+                            "Overpricing Hazard Score",
+                            f"{asym_rec.asymmetric_overpricing_hazard:.1f} / 100",
+                            delta=hazard_badge,
+                            help="Asymmetric overpricing hazard: activated when positive sentiment interacts with high shorting impediments",
+                        )
+                        squeeze_badge = "🔥 SQUEEZE RISK" if asym_rec.is_squeeze_risk else f"DTC: {asym_rec.days_to_cover:.1f}D"
+                        ay3.metric(
+                            "Squeeze Vulnerability",
+                            f"{asym_rec.short_squeeze_vulnerability:.1f} / 100",
+                            delta=squeeze_badge,
+                            help="Short squeeze susceptibility based on borrow utilization, days to cover, and short interest concentration",
+                        )
+                        ay4.metric(
+                            "Expected Overpricing Drag",
+                            f"{asym_rec.expected_asymmetry_alpha_pct:+.2f}% Ann",
+                            delta=f"Regime: {asym_rec.regime}",
+                            help="Projected annualized underperformance as anomaly short-leg overpricing unravels",
+                        )
+
+                        st.caption(f"⚖️ **Arbitrage Summary:** {asym_rec.summary}")
+                        st.caption(f"🛡️ **Arbitrage Audit Digest:** `{asym_rec.signature[:16]}...` (Verified: `{asym_rec.verify_integrity()}`)")
+                    except Exception as asym_ex:
+                        st.info(f"Arbitrage asymmetry evaluation deferred: {asym_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate arbitrage asymmetry.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
