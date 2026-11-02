@@ -3750,6 +3750,111 @@ def beneish_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def fscore_command(args: argparse.Namespace) -> None:
+    """Evaluate Joseph D. Piotroski (2000) 9-Point Fundamental Accounting F-Score."""
+    import json
+    from src.analytics.piotroski_fscore import evaluate_piotroski_fscore_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    ni = getattr(args, "net_income", None)
+    if ni is not None:
+        ni = float(ni)
+    cfo = getattr(args, "operating_cash_flow", None)
+    if cfo is None:
+        cfo = getattr(args, "cash_flow", None)
+    if cfo is not None:
+        cfo = float(cfo)
+    assets = getattr(args, "total_assets", None)
+    if assets is not None:
+        assets = float(assets)
+    roa = getattr(args, "roa", None)
+    if roa is not None:
+        roa = float(roa)
+    d_roa = getattr(args, "delta_roa", None)
+    if d_roa is not None:
+        d_roa = float(d_roa)
+    d_debt = getattr(args, "delta_debt", None)
+    if d_debt is not None:
+        d_debt = float(d_debt)
+    d_liq = getattr(args, "delta_current_ratio", None)
+    if d_liq is not None:
+        d_liq = float(d_liq)
+    dilut = getattr(args, "shares_dilution", None)
+    if dilut is not None:
+        dilut = float(dilut)
+    d_margin = getattr(args, "delta_gross_margin", None)
+    if d_margin is not None:
+        d_margin = float(d_margin)
+    d_turnover = getattr(args, "delta_asset_turnover", None)
+    if d_turnover is not None:
+        d_turnover = float(d_turnover)
+
+    try:
+        receipt = evaluate_piotroski_fscore_profile(
+            ticker=ticker,
+            net_income=ni,
+            operating_cash_flow=cfo,
+            total_assets=assets,
+            return_on_assets_pct=roa,
+            delta_roa_pct=d_roa,
+            delta_long_term_debt=d_debt,
+            delta_current_ratio=d_liq,
+            shares_dilution_pct=dilut,
+            delta_gross_margin_pct=d_margin,
+            delta_asset_turnover=d_turnover,
+        )
+    except Exception as ex:
+        print(f"\nError: Piotroski F-Score evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    compounder_str = (
+        "YES (HIGH CONVICTION FUNDAMENTAL COMPOUNDER)"
+        if receipt.is_strong_compounder
+        else "NO"
+    )
+    trap_str = (
+        "YES (HIGH RISK VALUE TRAP / DISTRESS)"
+        if receipt.is_value_trap
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Joseph D. Piotroski (2000) Fundamental F-Score Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print(f"  Aggregate Piotroski F-Score:  {receipt.f_score} / 9 Points ({receipt.regime})")
+    print("  Fundamental Subscore Breakdown:")
+    print(f"    1. Profitability Signals:   {receipt.profitability_points} / 4 Points")
+    print(f"       - Return on Assets > 0:       {'PASS [1]' if receipt.f_roa else 'FAIL [0]'} (ROA: {receipt.return_on_assets_pct:+.1f}%)")
+    print(f"       - Cash Flow from Ops > 0:     {'PASS [1]' if receipt.f_cfo else 'FAIL [0]'} (CFO: ${receipt.operating_cash_flow:,.0f})")
+    print(f"       - Improving ROA (ΔROA > 0):   {'PASS [1]' if receipt.f_delta_roa else 'FAIL [0]'} (ΔROA: {receipt.delta_roa_pct:+.1f}%)")
+    print(f"       - Accrual Quality (CFO > NI): {'PASS [1]' if receipt.f_accrual else 'FAIL [0]'} (Net Income: ${receipt.net_income:,.0f})")
+    print(f"    2. Leverage & Liquidity:    {receipt.leverage_liquidity_points} / 3 Points")
+    print(f"       - De-leveraging (ΔDebt <= 0): {'PASS [1]' if receipt.f_delta_leverage else 'FAIL [0]'}")
+    print(f"       - Expanding Liquidity (ΔCR):  {'PASS [1]' if receipt.f_delta_liquidity else 'FAIL [0]'}")
+    print(f"       - Zero Share Dilution:        {'PASS [1]' if receipt.f_no_dilution else 'FAIL [0]'}")
+    print(f"    3. Operating Efficiency:    {receipt.operating_efficiency_points} / 2 Points")
+    print(f"       - Expanding Margin (ΔMargin): {'PASS [1]' if receipt.f_delta_margin else 'FAIL [0]'}")
+    print(f"       - Higher Turnover (ΔTurnover):{'PASS [1]' if receipt.f_delta_turnover else 'FAIL [0]'}")
+    print("-" * 80)
+    print("  Valuation Health & Alpha Spread Dynamics:")
+    print(f"    Strong Compounder Quality:  {compounder_str}")
+    print(f"    Vulnerable Value Trap Trap: {trap_str}")
+    print(f"    Expected Fundamental Alpha: {receipt.expected_fundamental_alpha_pct:>+8.2f}% / year")
+    print(f"    Fundamental Health Regime:  {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -5679,6 +5784,90 @@ def main() -> None:
         help="Output Beneish M-Score receipt as JSON",
     )
 
+    # Subparser: fscore
+    fscore_parser = subparsers.add_parser(
+        "fscore",
+        aliases=["piotroski", "fundamental-health", "value-quality"],
+        help="Evaluate Joseph D. Piotroski (2000) 9-Point Fundamental Accounting F-Score",
+    )
+    fscore_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. BRK.B, JNJ, TSLA)",
+    )
+    fscore_parser.add_argument(
+        "--net-income",
+        type=float,
+        default=None,
+        help="Current net income ($) (optional)",
+    )
+    fscore_parser.add_argument(
+        "--operating-cash-flow",
+        type=float,
+        default=None,
+        help="Operating cash flow ($) (optional)",
+    )
+    fscore_parser.add_argument(
+        "--cash-flow",
+        type=float,
+        default=None,
+        help="Alias for --operating-cash-flow",
+    )
+    fscore_parser.add_argument(
+        "--total-assets",
+        type=float,
+        default=None,
+        help="Total assets ($) (optional)",
+    )
+    fscore_parser.add_argument(
+        "--roa",
+        type=float,
+        default=None,
+        help="Return on assets % (optional)",
+    )
+    fscore_parser.add_argument(
+        "--delta-roa",
+        type=float,
+        default=None,
+        help="Change in return on assets % (optional)",
+    )
+    fscore_parser.add_argument(
+        "--delta-debt",
+        type=float,
+        default=None,
+        help="Change in long-term debt ($) (negative = debt repaid) (optional)",
+    )
+    fscore_parser.add_argument(
+        "--delta-current-ratio",
+        type=float,
+        default=None,
+        help="Change in current ratio (positive = liquidity expanded) (optional)",
+    )
+    fscore_parser.add_argument(
+        "--shares-dilution",
+        type=float,
+        default=None,
+        help="Share dilution % (negative = repurchased) (optional)",
+    )
+    fscore_parser.add_argument(
+        "--delta-gross-margin",
+        type=float,
+        default=None,
+        help="Change in gross margin % (optional)",
+    )
+    fscore_parser.add_argument(
+        "--delta-asset-turnover",
+        type=float,
+        default=None,
+        help="Change in asset turnover (optional)",
+    )
+    fscore_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Piotroski F-Score receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -5825,6 +6014,8 @@ def main() -> None:
         accruals_command(args)
     elif args.command in ("beneish", "mscore", "forensic-audit", "fraud-risk"):
         beneish_command(args)
+    elif args.command in ("fscore", "piotroski", "fundamental-health", "value-quality"):
+        fscore_command(args)
 
 
 if __name__ == "__main__":

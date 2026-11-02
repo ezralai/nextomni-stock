@@ -2459,6 +2459,71 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Beneish M-Score profile.")
 
+                st.markdown("---")
+                st.subheader("🏆 Joseph D. Piotroski (2000) Fundamental Accounting F-Score Engine")
+                st.caption(
+                    "Value separation & fundamental health engine: scores 9 discrete accounting signals across "
+                    "Profitability (4 pts), Leverage/Liquidity (3 pts), and Operating Efficiency (2 pts). "
+                    "Isolates high-conviction fundamental compounders (F >= 8) while eliminating value traps (F <= 3)."
+                )
+                from src.analytics.piotroski_fscore import evaluate_piotroski_fscore_profile
+                if len(df_obs) >= 20:
+                    try:
+                        f_cols = st.columns(3)
+                        with f_cols[0]:
+                            f_roa = st.number_input("Return on Assets (ROA %)", min_value=-50.0, max_value=80.0, value=12.0, step=1.0, key="f_roa_input")
+                        with f_cols[1]:
+                            f_droa = st.number_input("Change in ROA (ΔROA %)", min_value=-20.0, max_value=30.0, value=1.2, step=0.2, key="f_droa_input")
+                        with f_cols[2]:
+                            f_cfo_mult = st.number_input("CFO / Net Income Multiplier", min_value=0.2, max_value=5.0, value=1.25, step=0.05, key="f_cfo_mult")
+
+                        assets_proxy = 10_000_000_000.0
+                        ni_proxy = assets_proxy * (float(f_roa) / 100.0)
+                        cfo_proxy = ni_proxy * float(f_cfo_mult)
+
+                        f_rec = evaluate_piotroski_fscore_profile(
+                            ticker=selected_ticker,
+                            net_income=ni_proxy,
+                            operating_cash_flow=cfo_proxy,
+                            total_assets=assets_proxy,
+                            return_on_assets_pct=float(f_roa),
+                            delta_roa_pct=float(f_droa),
+                        )
+
+                        fy1, fy2, fy3, fy4 = st.columns(4)
+                        compounder_badge = "💎 COMPOUNDER" if f_rec.is_strong_compounder else ("⚠️ VALUE TRAP" if f_rec.is_value_trap else f"Regime: {f_rec.regime}")
+                        fy1.metric(
+                            "Piotroski F-Score",
+                            f"{f_rec.f_score} / 9",
+                            delta=compounder_badge,
+                            help="Aggregate 9-point fundamental accounting score",
+                        )
+                        fy2.metric(
+                            "Profitability Points",
+                            f"{f_rec.profitability_points} / 4",
+                            delta=f"ROA: {f_rec.return_on_assets_pct:+.1f}%",
+                            help="Subtotal: ROA > 0, CFO > 0, ΔROA > 0, and CFO > Net Income",
+                        )
+                        fy3.metric(
+                            "Leverage & Liquidity",
+                            f"{f_rec.leverage_liquidity_points} / 3",
+                            delta="Deleveraged" if f_rec.f_delta_leverage else "Debt Expanded",
+                            help="Subtotal: De-leveraging, current ratio expansion, and zero share dilution",
+                        )
+                        fy4.metric(
+                            "Expected Fundamental Alpha",
+                            f"{f_rec.expected_fundamental_alpha_pct:+.2f}% Ann",
+                            delta=f"Efficiency: {f_rec.operating_efficiency_points}/2",
+                            help="Projected annualized alpha spread: alpha_F = (F - 4.5) * 1.6%",
+                        )
+
+                        st.caption(f"🏆 **F-Score Summary:** {f_rec.summary}")
+                        st.caption(f"🛡️ **F-Score Audit Digest:** `{f_rec.signature[:16]}...` (Verified: `{f_rec.verify_integrity()}`)")
+                    except Exception as f_ex:
+                        st.info(f"Piotroski F-Score evaluation deferred: {f_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Piotroski F-Score profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
