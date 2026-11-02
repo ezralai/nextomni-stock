@@ -2524,6 +2524,75 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Piotroski F-Score profile.")
 
+                st.markdown("---")
+                st.subheader("🌊 Harrison Hong & Jeremy C. Stein (1999) Gradual Information Diffusion Engine")
+                st.caption(
+                    "Unified behavioral asset pricing engine (Hong & Stein 1999; Chordia & Shivakumar 2002): "
+                    "models gradual news diffusion across boundedly rational newswatchers (underreaction expansion) "
+                    "versus extrapolative trend chasing (overreaction peaks, momentum crowding, and crash hazard)."
+                )
+                from src.analytics.gradual_diffusion import evaluate_gradual_diffusion_profile
+                if len(df_obs) >= 20:
+                    try:
+                        d_cols = st.columns(2)
+                        with d_cols[0]:
+                            d_cov = st.number_input(
+                                "Analyst Coverage Count (Proxy)",
+                                min_value=1,
+                                max_value=80,
+                                value=15,
+                                step=1,
+                                key="diff_cov_input",
+                            )
+                        with d_cols[1]:
+                            st.write("")
+                            st.write("")
+                            st.caption("ℹ️ Higher analyst coverage accelerates diffusion velocity (IDV), compressing underreaction lag.")
+
+                        d_rec = evaluate_gradual_diffusion_profile(
+                            ticker=selected_ticker,
+                            analyst_coverage=int(d_cov),
+                        )
+
+                        dy1, dy2, dy3, dy4 = st.columns(4)
+                        crowd_badge = (
+                            "⚠️ CROWDED PEAK"
+                            if d_rec.is_crowded_overreaction
+                            else ("🚀 UNDERREACTION" if d_rec.is_early_underreaction else "STABLE DYNAMICS")
+                        )
+                        dy1.metric(
+                            "Diffusion Velocity (IDV)",
+                            f"{d_rec.information_diffusion_velocity:.2f} / 1.00",
+                            delta=f"Turnover: {d_rec.turnover_ratio_pct:.2f}%",
+                            help="Speed at which private information permeates market prices",
+                        )
+                        dy2.metric(
+                            "Trend Maturity (TMI)",
+                            f"{d_rec.trend_maturity_index:.2f} / 1.00",
+                            delta=f"Momentum: {d_rec.cumulative_momentum_pct:+.1f}%",
+                            help="Degree of speculative exhaustion and trend aging",
+                        )
+                        dy3.metric(
+                            "Momentum Crowding Risk",
+                            f"{d_rec.momentum_crowding_risk_pct:.1f}%",
+                            delta=crowd_badge,
+                            delta_color="inverse" if d_rec.is_crowded_overreaction else "normal",
+                            help="Estimated probability of sharp momentum reversal / crash",
+                        )
+                        dy4.metric(
+                            "Expected Hong-Stein Alpha",
+                            f"{d_rec.expected_hong_stein_alpha_pct:+.2f}% Ann",
+                            delta=f"Regime: {d_rec.regime}",
+                            help="Projected annualized alpha spread based on diffusion phase",
+                        )
+
+                        st.caption(f"🌊 **Diffusion Summary:** {d_rec.summary}")
+                        st.caption(f"🛡️ **Diffusion Audit Digest:** `{d_rec.signature[:16]}...` (Verified: `{d_rec.verify_integrity()}`)")
+                    except Exception as d_ex:
+                        st.info(f"Hong-Stein Diffusion evaluation deferred: {d_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Hong-Stein diffusion profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

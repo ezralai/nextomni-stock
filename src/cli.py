@@ -3855,6 +3855,64 @@ def fscore_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def diffusion_command(args: argparse.Namespace) -> None:
+    """Evaluate Hong & Stein (1999) / Chordia & Shivakumar (2002) Gradual Information Diffusion."""
+    import json
+    from src.analytics.gradual_diffusion import evaluate_gradual_diffusion_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    coverage = getattr(args, "analyst_coverage", None)
+    if coverage is not None:
+        coverage = int(coverage)
+
+    try:
+        receipt = evaluate_gradual_diffusion_profile(
+            ticker=ticker,
+            analyst_coverage=coverage,
+        )
+    except Exception as ex:
+        print(f"\nError: Hong-Stein Diffusion evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    underreaction_str = (
+        "YES (HIGH CONVICTION CONTINUATION MOMENTUM)"
+        if receipt.is_early_underreaction
+        else "NO"
+    )
+    overreaction_str = (
+        "YES (HIGH REVERSAL / CROWDING CRASH RISK)"
+        if receipt.is_crowded_overreaction
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Hong & Stein (1999) Gradual Information Diffusion Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print(f"  Cumulative Momentum:          {receipt.cumulative_momentum_pct:>+8.2f}% (Annual Volatility: {receipt.annualized_volatility_pct:.1f}%)")
+    print(f"  Daily Turnover Ratio:         {receipt.turnover_ratio_pct:.2f}%")
+    print(f"  Information Diffusion (IDV):  {receipt.information_diffusion_velocity:.2f} / 1.00 (Speed of news permeation)")
+    print(f"  Trend Maturity Index (TMI):   {receipt.trend_maturity_index:.2f} / 1.00 (Speculative exhaustion)")
+    print(f"  Momentum Crowding Risk (MCR): {receipt.momentum_crowding_risk_pct:.1f}%")
+    print("-" * 80)
+    print("  Behavioral Regime & Alpha Dynamics:")
+    print(f"    Behavioral Regime:          {receipt.regime}")
+    print(f"    Early Underreaction Phase:  {underreaction_str}")
+    print(f"    Crowded Overreaction Peak:  {overreaction_str}")
+    print(f"    Expected Hong-Stein Alpha:  {receipt.expected_hong_stein_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -5868,6 +5926,30 @@ def main() -> None:
         help="Output Piotroski F-Score receipt as JSON",
     )
 
+    # Hong & Stein (1999) Gradual Information Diffusion Parser
+    diffusion_parser = subparsers.add_parser(
+        "diffusion",
+        aliases=["hong-stein", "information-diffusion", "momentum-regime"],
+        help="Evaluate Hong & Stein (1999) gradual information diffusion and trend maturity",
+    )
+    diffusion_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, MSFT)",
+    )
+    diffusion_parser.add_argument(
+        "--analyst-coverage",
+        type=int,
+        default=None,
+        help="Number of equity research analysts covering the firm (optional)",
+    )
+    diffusion_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Hong-Stein diffusion receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -6016,6 +6098,8 @@ def main() -> None:
         beneish_command(args)
     elif args.command in ("fscore", "piotroski", "fundamental-health", "value-quality"):
         fscore_command(args)
+    elif args.command in ("diffusion", "hong-stein", "information-diffusion", "momentum-regime"):
+        diffusion_command(args)
 
 
 if __name__ == "__main__":
