@@ -2085,6 +2085,74 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 30 price sessions to evaluate short-term reversal.")
 
+                st.markdown("---")
+                st.subheader("⚠️ John Y. Campbell et al. (2008) Financial Distress Risk Hazard Engine")
+                st.caption(
+                    "Empirical multi-period logit hazard model forecasting 12-month corporate failure probability and "
+                    "solving the Financial Distress Risk Puzzle to eliminate chronically underperforming zombie value traps."
+                )
+                from src.analytics.distress_risk import evaluate_distress_risk_profile
+                if len(df_obs) >= 1:
+                    try:
+                        p_col = "adj_close" if "adj_close" in df_obs.columns else "close"
+                        latest_p = float(df_obs[p_col].dropna().iloc[-1])
+                        est_mcap_b = round(latest_p * 0.05, 2)
+                        est_debt_b = round(est_mcap_b * 0.40, 2)
+                        est_ni_b = round(est_mcap_b * 0.07, 2)
+                        est_cash_b = round(est_mcap_b * 0.15, 2)
+
+                        dst_cols = st.columns(4)
+                        with dst_cols[0]:
+                            mcap_input = st.number_input("Market Cap ($B)", min_value=0.1, max_value=3000.0, value=max(0.1, est_mcap_b), step=5.0, key="dst_mcap_b")
+                        with dst_cols[1]:
+                            debt_input = st.number_input("Total Debt ($B)", min_value=0.0, max_value=2000.0, value=max(0.0, est_debt_b), step=2.0, key="dst_debt_b")
+                        with dst_cols[2]:
+                            ni_input = st.number_input("Net Income ($B)", min_value=-500.0, max_value=500.0, value=est_ni_b, step=1.0, key="dst_ni_b")
+                        with dst_cols[3]:
+                            cash_input = st.number_input("Cash Buffer ($B)", min_value=0.0, max_value=1000.0, value=max(0.0, est_cash_b), step=2.0, key="dst_cash_b")
+
+                        dst_rec = evaluate_distress_risk_profile(
+                            ticker=selected_ticker,
+                            market_cap=mcap_input * 1_000_000_000.0,
+                            total_liabilities=debt_input * 1_000_000_000.0,
+                            net_income=ni_input * 1_000_000_000.0,
+                            cash_equivalents=cash_input * 1_000_000_000.0,
+                        )
+
+                        d1, d2, d3, d4 = st.columns(4)
+                        hazard_badge = "⚠️ HIGH HAZARD" if dst_rec.is_distress_trap else ("💎 SAFE HAVEN" if dst_rec.is_solvent_safe_haven else "NORMAL")
+                        d1.metric(
+                            "12M Failure Hazard",
+                            f"{dst_rec.distress_probability_12m_pct:.2f}%",
+                            delta=hazard_badge,
+                            help="Campbell, Hilscher & Szilagyi (2008) multi-period dynamic logit failure probability over 12 months",
+                        )
+                        d2.metric(
+                            "Market Leverage (TLMTA)",
+                            f"{dst_rec.tlmta_pct:.1f}%",
+                            delta=f"Cash: {dst_rec.cashmta_pct:.1f}%",
+                            help="Total liabilities divided by Market-Adjusted Total Assets (MTA = Market Cap + Debt)",
+                        )
+                        d3.metric(
+                            "Capital Return (NIMTA)",
+                            f"{dst_rec.nimta_pct:+.2f}%",
+                            delta=f"Vol: {dst_rec.annualized_volatility_pct:.1f}%",
+                            help="Net income divided by Market-Adjusted Total Assets; key gauge of capital efficiency",
+                        )
+                        d4.metric(
+                            "Expected Distress Alpha",
+                            f"{dst_rec.expected_distress_alpha_pct:+.2f}% Ann",
+                            delta=f"Regime: {dst_rec.regime}",
+                            help="Expected annualized return spread; distressed equities incur heavy -8% to -14% annual underperformance",
+                        )
+
+                        st.caption(f"⚠️ **Distress Summary:** {dst_rec.summary}")
+                        st.caption(f"🛡️ **Distress Audit Digest:** `{dst_rec.signature[:16]}...` (Verified: `{dst_rec.verify_integrity()}`)")
+                    except Exception as dst_ex:
+                        st.info(f"Financial distress evaluation deferred: {dst_ex}")
+                else:
+                    st.info("ℹ️ Insufficient price history to evaluate financial distress hazard.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

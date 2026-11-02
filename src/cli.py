@@ -3307,6 +3307,73 @@ def reversal_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def distress_command(args: argparse.Namespace) -> None:
+    """Evaluate John Y. Campbell et al. (2008) Financial Distress Risk Hazard Profile."""
+    import json
+    from src.analytics.distress_risk import evaluate_distress_risk_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    mcap = getattr(args, "market_cap", None)
+    if mcap is not None:
+        mcap = float(mcap)
+    debt = getattr(args, "debt", None)
+    if debt is not None:
+        debt = float(debt)
+    ni = getattr(args, "net_income", None)
+    if ni is not None:
+        ni = float(ni)
+    cash = getattr(args, "cash", None)
+    if cash is not None:
+        cash = float(cash)
+
+    try:
+        receipt = evaluate_distress_risk_profile(
+            ticker=ticker,
+            market_cap=mcap,
+            total_liabilities=debt,
+            net_income=ni,
+            cash_equivalents=cash,
+        )
+    except Exception as ex:
+        print(f"\nError: Financial distress evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    safe_str = "YES (Impeccable Solvency)" if receipt.is_solvent_safe_haven else "NO"
+    trap_str = "YES (High Failure Risk - Avoid Zombie)" if receipt.is_distress_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Campbell, Hilscher & Szilagyi (2008) Distress Risk Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print(f"  Market Capitalization:        ${receipt.market_cap:,.0f}")
+    print(f"  Market-Adjusted Assets (MTA): ${receipt.market_adjusted_assets:,.0f}")
+    print("-" * 80)
+    print("  Campbell et al. Dynamic Multi-Period Balance Sheet & Market Covariates:")
+    print(f"    Total Liabilities / MTA:    {receipt.tlmta_pct:>8.2f}% (Market-implied leverage)")
+    print(f"    Net Income / MTA (NIMTA):   {receipt.nimta_pct:>+8.2f}% (Operating capital efficiency)")
+    print(f"    Cash Buffer / MTA (CASHMTA):{receipt.cashmta_pct:>8.2f}% (Liquidity cushion)")
+    print(f"    Annualized Volatility:      {receipt.annualized_volatility_pct:>8.1f}% Ann (SIGMA)")
+    print(f"    Excess Trailing Return:     {receipt.excess_trailing_return_pct:>+8.2f}% (EXRET momentum)")
+    print("-" * 80)
+    print("  Dynamic Failure Hazard & Financial Distress Puzzle Spread:")
+    print(f"    CHS Linear Logit Score (z): {receipt.chs_linear_index:>8.2f}")
+    print(f"    12-Month Failure Hazard (P):{receipt.distress_probability_12m_pct:>8.2f}% (Default/Bankruptcy probability)")
+    print(f"    Solvent Safe Haven:         {safe_str}")
+    print(f"    Distress Risk Trap:         {trap_str}")
+    print(f"    Expected Annualized Alpha:  {receipt.expected_distress_alpha_pct:>+8.2f}% / year")
+    print(f"    Solvency Factor Regime:     {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -4968,6 +5035,47 @@ def main() -> None:
         help="Output reversal receipt as JSON",
     )
 
+    # Subparser: distress
+    distress_parser = subparsers.add_parser(
+        "distress",
+        help="Evaluate Campbell, Hilscher & Szilagyi (2008) Financial Distress Risk Hazard & Insolvency Alpha",
+    )
+    distress_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    distress_parser.add_argument(
+        "--market-cap",
+        type=float,
+        default=None,
+        help="Market capitalization in dollars (optional)",
+    )
+    distress_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Total debt liabilities in dollars (optional)",
+    )
+    distress_parser.add_argument(
+        "--net-income",
+        type=float,
+        default=None,
+        help="Annual net income in dollars (optional)",
+    )
+    distress_parser.add_argument(
+        "--cash",
+        type=float,
+        default=None,
+        help="Cash and liquid reserves in dollars (optional)",
+    )
+    distress_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output distress receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -5102,6 +5210,8 @@ def main() -> None:
         bab_command(args)
     elif args.command == "reversal":
         reversal_command(args)
+    elif args.command == "distress":
+        distress_command(args)
 
 
 if __name__ == "__main__":
