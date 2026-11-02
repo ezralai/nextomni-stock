@@ -2338,6 +2338,65 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate q-factor investment profile.")
 
+                st.markdown("---")
+                st.subheader("📊 Richard G. Sloan (1996) Accrual Anomaly & Earnings Quality Engine")
+                st.caption(
+                    "Earnings quality decomposition engine: separates reported net income into persistent operating cash flows "
+                    "and non-cash accounting accruals. Identifies high-cash-flow quality compounders while screening out "
+                    "accrual manipulation traps vulnerable to sharp mean-reversion crashes."
+                )
+                from src.analytics.accrual_anomaly import evaluate_accrual_anomaly_profile
+                if len(df_obs) >= 20:
+                    try:
+                        acc_cols = st.columns(3)
+                        with acc_cols[0]:
+                            acc_ni_input = st.number_input("Reported Net Income ($M)", min_value=-50_000.0, max_value=200_000.0, value=1_200.0, step=100.0, key="acc_ni_input")
+                        with acc_cols[1]:
+                            acc_cfo_input = st.number_input("Operating Cash Flow ($M)", min_value=-50_000.0, max_value=250_000.0, value=1_500.0, step=100.0, key="acc_cfo_input")
+                        with acc_cols[2]:
+                            acc_assets_input = st.number_input("Average Total Assets ($M)", min_value=100.0, max_value=1_000_000.0, value=12_000.0, step=500.0, key="acc_assets_input")
+
+                        acc_rec = evaluate_accrual_anomaly_profile(
+                            ticker=selected_ticker,
+                            net_income=float(acc_ni_input * 1_000_000.0),
+                            operating_cash_flow=float(acc_cfo_input * 1_000_000.0),
+                            average_total_assets=float(acc_assets_input * 1_000_000.0),
+                        )
+
+                        ay1, ay2, ay3, ay4 = st.columns(4)
+                        quality_badge = "💎 CASH QUALITY" if acc_rec.is_cash_quality_compounder else ("⚠️ ACCRUAL TRAP" if acc_rec.is_accrual_trap else f"Regime: {acc_rec.regime}")
+                        ay1.metric(
+                            "Earnings Quality Index",
+                            f"{acc_rec.earnings_quality_index:.1f} / 100",
+                            delta=quality_badge,
+                            help="Sloan Earnings Quality Index: high index indicates earnings driven by cash flows rather than paper accruals",
+                        )
+                        ay2.metric(
+                            "Accrual Ratio (CFA)",
+                            f"{acc_rec.accrual_ratio_pct:+.2f}%",
+                            delta=f"Accruals: ${acc_rec.total_accruals / 1e6:,.0f}M",
+                            help="Normalized accruals / average assets: negative accruals reflect conservative accounting and cash generation",
+                        )
+                        ay3.metric(
+                            "Cash Conversion Multiplier",
+                            f"{acc_rec.cash_flow_to_net_income:.2f}x",
+                            delta=f"CFO: ${acc_rec.operating_cash_flow / 1e6:,.0f}M",
+                            help="Ratio of operating cash flow to net income (CFNI): healthy franchises consistently convert >1.0x",
+                        )
+                        ay4.metric(
+                            "Expected Accrual Alpha",
+                            f"{acc_rec.expected_accrual_alpha_pct:+.2f}% Ann",
+                            delta=f"Regime: {acc_rec.regime}",
+                            help="Projected annualized accrual reversal alpha spread: alpha = (EQI - 50) * 0.18%",
+                        )
+
+                        st.caption(f"📊 **Accrual Summary:** {acc_rec.summary}")
+                        st.caption(f"🛡️ **Accrual Audit Digest:** `{acc_rec.signature[:16]}...` (Verified: `{acc_rec.verify_integrity()}`)")
+                    except Exception as acc_ex:
+                        st.info(f"Accrual anomaly evaluation deferred: {acc_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate accrual anomaly profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

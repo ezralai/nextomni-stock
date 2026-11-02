@@ -3587,6 +3587,77 @@ def q_factor_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def accruals_command(args: argparse.Namespace) -> None:
+    """Evaluate Richard G. Sloan (1996) Accrual Anomaly & Earnings Quality Decomposition."""
+    import json
+    from src.analytics.accrual_anomaly import evaluate_accrual_anomaly_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    ni = getattr(args, "net_income", None)
+    if ni is not None:
+        ni = float(ni)
+    cfo = getattr(args, "operating_cash_flow", None)
+    if cfo is None:
+        cfo = getattr(args, "cash_flow", None)
+    if cfo is not None:
+        cfo = float(cfo)
+    assets = getattr(args, "total_assets", None)
+    if assets is not None:
+        assets = float(assets)
+
+    try:
+        receipt = evaluate_accrual_anomaly_profile(
+            ticker=ticker,
+            net_income=ni,
+            operating_cash_flow=cfo,
+            average_total_assets=assets,
+        )
+    except Exception as ex:
+        print(f"\nError: Accrual anomaly evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    compounder_str = (
+        "YES (High Cash Conversion & Persistent Earnings)"
+        if receipt.is_cash_quality_compounder
+        else "NO"
+    )
+    trap_str = (
+        "YES (Aggressive Accrual Distortion Trap)"
+        if receipt.is_accrual_trap
+        else "NO"
+    )
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Richard G. Sloan (1996) Accrual Anomaly Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print(f"  Average Total Assets:         ${receipt.average_total_assets:,.0f}")
+    print("-" * 80)
+    print("  Earnings Decomposition & Cash Conversion Covariates:")
+    print(f"    Reported Net Income:        ${receipt.net_income:,.0f}")
+    print(f"    Operating Cash Flow:        ${receipt.operating_cash_flow:,.0f}")
+    print(f"    Total Accounting Accruals:  ${receipt.total_accruals:>+15,.0f} (Net Income - Cash Flow)")
+    print(f"    Accruals / Assets (CFA):    {receipt.accrual_ratio_pct:>+8.2f}% (Normalized Accrual Ratio)")
+    print(f"    Cash Flow / Net Income:     {receipt.cash_flow_to_net_income:>8.2f}x (Cash Conversion Multiplier)")
+    print(f"    Earnings Quality Index:     {receipt.earnings_quality_index:>8.1f} / 100")
+    print("-" * 80)
+    print("  Sloan Accrual Fixation & Alpha Spread Dynamics:")
+    print(f"    Cash Quality Compounder:    {compounder_str}")
+    print(f"    Accrual Inflation Trap:     {trap_str}")
+    print(f"    Expected Accrual Alpha:     {receipt.expected_accrual_alpha_pct:>+8.2f}% / year")
+    print(f"    Earnings Quality Regime:    {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -5408,6 +5479,48 @@ def main() -> None:
         help="Output q-factor receipt as JSON",
     )
 
+    # Subparser: accruals
+    accrual_parser = subparsers.add_parser(
+        "accruals",
+        aliases=["accrual", "earnings-quality", "sloan"],
+        help="Evaluate Richard G. Sloan (1996) Accrual Anomaly & Earnings Quality Decomposition",
+    )
+    accrual_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, BRK.B, TSLA)",
+    )
+    accrual_parser.add_argument(
+        "--net-income",
+        type=float,
+        default=None,
+        help="Reported headline net income ($) (optional)",
+    )
+    accrual_parser.add_argument(
+        "--operating-cash-flow",
+        type=float,
+        default=None,
+        help="Operating cash flow from operations ($) (optional)",
+    )
+    accrual_parser.add_argument(
+        "--cash-flow",
+        type=float,
+        default=None,
+        help="Alias for --operating-cash-flow",
+    )
+    accrual_parser.add_argument(
+        "--total-assets",
+        type=float,
+        default=None,
+        help="Average total assets ($) (optional)",
+    )
+    accrual_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output accrual anomaly receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -5550,6 +5663,8 @@ def main() -> None:
         arbitrage_asymmetry_command(args)
     elif args.command in ("q-factor", "qfactor", "hou-xue-zhang"):
         q_factor_command(args)
+    elif args.command in ("accruals", "accrual", "earnings-quality", "sloan"):
+        accruals_command(args)
 
 
 if __name__ == "__main__":
