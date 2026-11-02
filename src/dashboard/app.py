@@ -1972,6 +1972,64 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 42 price sessions to evaluate dual momentum.")
 
+                st.markdown("---")
+                st.subheader("⚖️ Andrea Frazzini & Lasse Heje Pedersen (2014) Betting Against Beta (BAB)")
+                st.caption(
+                    "Structural leverage constraint engine: estimates Vasicek (1973) Bayesian shrunk beta, "
+                    "Jensen's alpha on the flattened Security Market Line, and optimal zero-beta leverage multipliers (1/beta)."
+                )
+                from src.analytics.betting_against_beta import evaluate_bab_profile
+                if len(df_obs) >= 42:
+                    try:
+                        b_cols = st.columns(3)
+                        with b_cols[0]:
+                            bab_bench_input = st.text_input("Benchmark Ticker", value="SPY", key="bab_bench_ticker")
+                        with b_cols[1]:
+                            bab_rf_input = st.number_input("Risk-Free Rate (%/yr)", min_value=0.0, max_value=20.0, value=4.0, step=0.5, key="bab_rf_rate")
+                        with b_cols[2]:
+                            bab_erp_input = st.number_input("Equity Risk Premium (%/yr)", min_value=1.0, max_value=15.0, value=6.0, step=0.5, key="bab_erp")
+
+                        bab_rec = evaluate_bab_profile(
+                            ticker=selected_ticker,
+                            benchmark_ticker=bab_bench_input.strip() if bab_bench_input else "SPY",
+                            rf_rate_pct=float(bab_rf_input),
+                            equity_risk_premium_pct=float(bab_erp_input),
+                        )
+
+                        b1, b2, b3, b4 = st.columns(4)
+                        b1.metric(
+                            "Vasicek Shrunk Beta",
+                            f"{bab_rec.shrunk_beta:.2f}",
+                            delta=f"Raw: {bab_rec.raw_beta:.2f} (ρ={bab_rec.correlation_to_benchmark:.2f})",
+                            help="Vasicek (1973) Bayesian shrinkage beta toward market unity: 0.60·β_raw + 0.40·1.0",
+                        )
+                        b2.metric(
+                            "Jensen's Alpha",
+                            f"{bab_rec.jensen_alpha_pct:+.2f}% Ann",
+                            delta=f"Realized: {bab_rec.realized_annualized_return_pct:+.1f}%",
+                            help="Excess risk-adjusted return over CAPM expected benchmark return",
+                        )
+                        b3.metric(
+                            "Optimal BAB Multiplier",
+                            f"{bab_rec.bab_leverage_multiplier:.2f}x",
+                            delta=f"Spread: {bab_rec.expected_bab_spread_pct:+.1f}%/yr",
+                            help="Frazzini-Pedersen optimal zero-beta portfolio weighting: 1.0 / beta",
+                        )
+                        overpriced_badge = "⚠️ OVERPRICED DRAG" if bab_rec.is_high_beta_overpriced else ("💎 LOW-BETA ALPHA" if bab_rec.is_low_beta_compounder else f"Regime: {bab_rec.regime}")
+                        b4.metric(
+                            "BAB Factor Regime",
+                            bab_rec.regime,
+                            delta=overpriced_badge,
+                            help="Asset classification according to leverage constraints and flattened SML dynamics",
+                        )
+
+                        st.caption(f"⚖️ **BAB Summary:** {bab_rec.summary}")
+                        st.caption(f"🛡️ **BAB Audit Digest:** `{bab_rec.signature[:16]}...` (Verified: `{bab_rec.verify_integrity()}`)")
+                    except Exception as bab_ex:
+                        st.info(f"Betting Against Beta evaluation deferred: {bab_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 42 price sessions to evaluate Betting Against Beta.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

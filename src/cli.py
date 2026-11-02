@@ -3185,6 +3185,61 @@ def dual_momentum_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def bab_command(args: argparse.Namespace) -> None:
+    """Evaluate Andrea Frazzini & Lasse Heje Pedersen (2014) Betting Against Beta (BAB) Profile."""
+    import json
+    from src.analytics.betting_against_beta import evaluate_bab_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    bench = validate_ticker(getattr(args, "benchmark", "SPY") or "SPY")
+    rf_rate = float(getattr(args, "rf_rate", 4.0) or 4.0)
+    erp = float(getattr(args, "market_premium", 6.0) or 6.0)
+
+    try:
+        receipt = evaluate_bab_profile(
+            ticker=ticker,
+            benchmark_ticker=bench,
+            rf_rate_pct=rf_rate,
+            equity_risk_premium_pct=erp,
+        )
+    except Exception as ex:
+        print(f"\nError: Betting Against Beta evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Frazzini & Pedersen (2014) Betting Against Beta (BAB) Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker} (Benchmark: {receipt.benchmark_ticker})")
+    print(f"  Sessions Evaluated:           {receipt.sessions_evaluated} trading days")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Systematic Market Risk & Vasicek (1973) Bayesian Shrinkage:")
+    print(f"    Raw Sample Beta (β_raw):    {receipt.raw_beta:>8.2f} (ρ = {receipt.correlation_to_benchmark:.2f})")
+    print(f"    Vasicek Shrunk Beta (β*):   {receipt.shrunk_beta:>8.2f} (0.60·β_raw + 0.40·1.0)")
+    print(f"    Asset Realized Volatility:  {receipt.asset_annualized_volatility_pct:>8.1f}% Ann (Bench Vol: {receipt.benchmark_annualized_volatility_pct:.1f}%)")
+    print("-" * 80)
+    print("  Security Market Line (SML) & Jensen's Alpha:")
+    print(f"    Realized Annual Return:     {receipt.realized_annualized_return_pct:>+8.2f}% / year")
+    print(f"    CAPM Expected Return:       {receipt.capm_expected_return_pct:>+8.2f}% / year (Rf={rf_rate:.1f}%, ERP={erp:.1f}%)")
+    print(f"    Jensen's Alpha (α_i):       {receipt.jensen_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print("  Frazzini-Pedersen Leverage Multiplier & BAB Spread:")
+    print(f"    Optimal BAB Multiplier:     {receipt.bab_leverage_multiplier:>8.2f}x (1.0 / β*)")
+    print(f"    Expected BAB Factor Alpha:  {receipt.expected_bab_spread_pct:>+8.2f}% / year")
+    print(f"    Low-Beta Compounder:        {'YES' if receipt.is_low_beta_compounder else 'NO'}")
+    print(f"    High-Beta Overpriced Drag:  {'YES (Overpriced)' if receipt.is_high_beta_overpriced else 'NO'}")
+    print(f"    BAB Factor Regime:          {receipt.regime}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -4788,6 +4843,41 @@ def main() -> None:
         help="Output dual momentum receipt as JSON",
     )
 
+    # Subparser: bab
+    bab_parser = subparsers.add_parser(
+        "bab",
+        help="Evaluate Andrea Frazzini & Lasse Heje Pedersen (2014) Betting Against Beta & Leverage Multipliers",
+    )
+    bab_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA)",
+    )
+    bab_parser.add_argument(
+        "--benchmark",
+        type=str,
+        default="SPY",
+        help="Reference benchmark ticker (default: SPY)",
+    )
+    bab_parser.add_argument(
+        "--rf-rate",
+        type=float,
+        default=4.0,
+        help="Annualized risk-free hurdle rate percentage (default: 4.0)",
+    )
+    bab_parser.add_argument(
+        "--market-premium",
+        type=float,
+        default=6.0,
+        help="Annualized expected equity risk premium ERP = E[Rm] - Rf (default: 6.0)",
+    )
+    bab_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output BAB receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -4918,6 +5008,8 @@ def main() -> None:
         profitability_command(args)
     elif args.command == "dual-momentum":
         dual_momentum_command(args)
+    elif args.command == "bab":
+        bab_command(args)
 
 
 if __name__ == "__main__":
