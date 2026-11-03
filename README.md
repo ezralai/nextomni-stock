@@ -101,7 +101,7 @@ Chronological expanding-window walk-forward backtest (minimum initial training w
 | **5 Sessions ($P_{t+5}$)** | 0.1065 | 0.1163 | **+8.43%** | 0.1345 | 0.1507 | **69.31%** |
 | **21 Sessions ($P_{t+21}$)** | 0.1477 | 0.2440 | **+39.46%** | 0.1770 | 0.2762 | **95.29%** |
 
-> **Key Quantitative Finding:** On ultra-short horizons (1 day), daily price variance is dominated by microstructural noise, meaning the persistence baseline ($\Delta P = 0$) achieves lower MAE. However, as the forecasting horizon extends to **5 sessions (1 week)** and **21 sessions (1 month)**, structural momentum and mean-reversion signals dominate noise, allowing the Ridge regression model to convincingly outperform the persistence baseline by **+12.05% (JPM)** and **+39.46% (Maybank)** with Directional Accuracy of **68.89%** and **95.29%**.
+> **Key Quantitative Findings:** On ultra-short horizons (1 day), daily price variance is dominated by microstructural noise, meaning the persistence baseline ($\Delta P = 0$) achieves lower MAE. However, as the forecasting horizon extends to **5 sessions (1 week)** and **21 sessions (1 month)**, structural momentum and mean-reversion signals dominate noise, allowing the Ridge regression model to convincingly outperform the persistence baseline by **+12.05% (JPM)** and **+39.46% (Maybank)** with Directional Accuracy of **68.89%** and **95.29%**.
 
 ---
 
