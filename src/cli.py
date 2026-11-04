@@ -4711,6 +4711,78 @@ def noa_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def dispersion_command(args: argparse.Namespace) -> None:
+    """Evaluate Diether, Malloy & Scherbina (2002) & Miller (1977) Analyst Forecast Dispersion."""
+    import json
+    from src.analytics.belief_dispersion import evaluate_belief_dispersion_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    mean_eps = getattr(args, "mean_eps", None)
+    if mean_eps is not None:
+        mean_eps = float(mean_eps)
+    std_eps = getattr(args, "std_eps", None)
+    if std_eps is not None:
+        std_eps = float(std_eps)
+    analysts = getattr(args, "analysts", None)
+    if analysts is not None:
+        analysts = int(analysts)
+    fee = getattr(args, "borrow_fee", None)
+    if fee is not None:
+        fee = float(fee)
+    inst_own = getattr(args, "inst_ownership", None)
+    if inst_own is not None:
+        inst_own = float(inst_own)
+
+    try:
+        receipt = evaluate_belief_dispersion_profile(
+            ticker=ticker,
+            consensus_mean_eps=mean_eps,
+            forecast_std_eps=std_eps,
+            analyst_count=analysts,
+            short_borrow_fee_pct=fee,
+            institutional_ownership_pct=inst_own,
+        )
+    except Exception as ex:
+        print(f"\nError: Analyst Forecast Dispersion evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    cons_str = "YES (HIGH-CONSENSUS COMPOUNDER)" if receipt.is_high_consensus_compounder else "NO"
+    trap_str = "YES (MILLER OPTIMISM OVERPRICING TRAP)" if receipt.is_miller_overpricing_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Diether et al. (2002) & Miller (1977) Belief Dispersion Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Analyst Consensus & Short-Sale Friction Inputs:")
+    print(f"    Consensus Mean EPS Forecast:    ${receipt.consensus_mean_eps:>10.4f}")
+    print(f"    Forecast Std Deviation (sigma): ${receipt.forecast_std_eps:>10.4f}")
+    print(f"    Covering Analyst Count (N):     {receipt.analyst_count:>10d} analysts")
+    print(f"    Annual Short Borrow Fee:        {receipt.short_borrow_fee_pct:>10.2f}%")
+    print(f"    Institutional Ownership:        {receipt.institutional_ownership_pct:>10.2f}%")
+    print("-" * 80)
+    print("  Belief Dispersion & Miller (1977) Overpricing Inferences:")
+    print(f"    Diether-Malloy Dispersion (Dt): {receipt.dispersion_ratio:>10.4f} (sigma / |Mean EPS|)")
+    print(f"    Short-Sale Friction Index:      {receipt.short_sale_friction_index:>10.2f} / 1.00")
+    print(f"    Miller Overpricing Wedge:       {receipt.miller_overpricing_wedge:>10.2f} / 3.50")
+    print("-" * 80)
+    print("  Dispersion Regime & Alpha Projections:")
+    print(f"    Belief Dispersion Regime:       {receipt.regime}")
+    print(f"    High-Consensus Compounder:      {cons_str}")
+    print(f"    Miller Overpricing Trap:        {trap_str}")
+    print(f"    Expected Dispersion Alpha:      {receipt.expected_dispersion_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -7246,6 +7318,53 @@ def main() -> None:
         help="Output NOA Bloat receipt as JSON",
     )
 
+    dispersion_parser = subparsers.add_parser(
+        "dispersion",
+        aliases=["diether-malloy", "miller-opinion", "forecast-dispersion"],
+        help="Run Diether, Malloy & Scherbina (2002) & Miller (1977) Analyst Forecast Dispersion Engine",
+    )
+    dispersion_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    dispersion_parser.add_argument(
+        "--mean-eps",
+        type=float,
+        default=None,
+        help="Consensus mean EPS forecast in $ (optional; defaults to return-proxy estimation)",
+    )
+    dispersion_parser.add_argument(
+        "--std-eps",
+        type=float,
+        default=None,
+        help="Standard deviation across analyst EPS forecasts in $ (optional)",
+    )
+    dispersion_parser.add_argument(
+        "--analysts",
+        type=int,
+        default=None,
+        help="Number of analysts covering the firm (optional)",
+    )
+    dispersion_parser.add_argument(
+        "--borrow-fee",
+        type=float,
+        default=None,
+        help="Annualized stock loan borrow fee in % (optional)",
+    )
+    dispersion_parser.add_argument(
+        "--inst-ownership",
+        type=float,
+        default=None,
+        help="Institutional ownership fraction in [0, 1] (optional)",
+    )
+    dispersion_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Belief Dispersion receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -7418,6 +7537,8 @@ def main() -> None:
         payout_command(args)
     elif args.command in ("noa", "bloat", "hirshleifer-teoh", "balance-sheet-bloat"):
         noa_command(args)
+    elif args.command in ("dispersion", "diether-malloy", "miller-opinion", "forecast-dispersion"):
+        dispersion_command(args)
 
 
 if __name__ == "__main__":

@@ -3559,6 +3559,75 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate NOA & Balance Sheet Bloat profile.")
 
+                st.divider()
+                st.markdown("#### 🔮 Diether, Malloy & Scherbina (2002) & Miller (1977) Analyst Forecast Dispersion & Divergence of Opinion")
+                if len(prices) >= 20:
+                    try:
+                        from src.analytics.belief_dispersion import evaluate_belief_dispersion_profile
+
+                        with st.expander("⚙️ Optional I/B/E/S Consensus & Short-Sale Friction Inputs (Diether-Malloy-Scherbina 2002)", expanded=False):
+                            bd_c1, bd_c2, bd_c3 = st.columns(3)
+                            bd_mean_eps = bd_c1.number_input("Consensus Mean EPS ($)", value=0.0, step=0.25, key="bd_mean_eps")
+                            bd_std_eps = bd_c2.number_input("Analyst EPS Std Dev ($)", value=0.0, min_value=0.0, step=0.05, key="bd_std_eps")
+                            bd_analysts = bd_c3.number_input("Analyst Coverage (N)", value=0, min_value=0, step=1, key="bd_analysts")
+                            bd_c4, bd_c5 = st.columns(2)
+                            bd_borrow_fee = bd_c4.number_input("Annualized Stock Loan Borrow Fee (%)", value=0.0, min_value=0.0, step=0.25, key="bd_borrow_fee")
+                            bd_inst_own = bd_c5.number_input("Institutional Ownership (%)", value=0.0, min_value=0.0, max_value=100.0, step=5.0, key="bd_inst_own")
+
+                        use_custom_bd = (bd_mean_eps != 0.0 or bd_std_eps > 0.0)
+                        bd_rec = evaluate_belief_dispersion_profile(
+                            ticker=selected_ticker,
+                            consensus_mean_eps=bd_mean_eps if use_custom_bd else None,
+                            forecast_std_eps=bd_std_eps if use_custom_bd else None,
+                            analyst_count=int(bd_analysts) if bd_analysts >= 2 else None,
+                            short_borrow_fee_pct=bd_borrow_fee if bd_borrow_fee > 0 else None,
+                            institutional_ownership_pct=bd_inst_own if bd_inst_own > 0 else None,
+                        )
+
+                        bd1, bd2, bd3, bd4 = st.columns(4)
+                        bd_badge = (
+                            "🟢 HIGH-CONSENSUS COMPOUNDER"
+                            if bd_rec.is_high_consensus_compounder
+                            else (
+                                "🔴 MILLER OVERPRICING TRAP"
+                                if bd_rec.is_miller_overpricing_trap
+                                else f"Regime: {bd_rec.regime}"
+                            )
+                        )
+                        bd1.metric(
+                            "Analyst Dispersion (D_t)",
+                            f"{bd_rec.dispersion_ratio:.4f}",
+                            delta=bd_badge,
+                            delta_color="normal" if bd_rec.is_high_consensus_compounder else ("inverse" if bd_rec.is_miller_overpricing_trap else "off"),
+                            help="Diether, Malloy & Scherbina (2002) Analyst EPS Forecast Dispersion sigma(EPS) / max(|mean(EPS)|, 0.10) (Tight <= 0.05, Trap >= 0.28)",
+                        )
+                        bd2.metric(
+                            "Miller Overpricing Wedge",
+                            f"{bd_rec.miller_overpricing_wedge:.2f} / 3.50",
+                            delta=f"SSFI: {bd_rec.short_sale_friction_index:.2f}",
+                            delta_color="inverse" if bd_rec.miller_overpricing_wedge >= 1.35 else "normal",
+                            help="Miller (1977) Overpricing Wedge: interaction of belief dispersion and short-sale binding friction",
+                        )
+                        bd3.metric(
+                            "Short-Sale Friction",
+                            f"{bd_rec.short_sale_friction_index:.2f} / 1.00",
+                            delta=f"Coverage: {bd_rec.analyst_count} Analysts",
+                            help="Composite short-sale binding impediment score from borrow fee and institutional lendable float",
+                        )
+                        bd4.metric(
+                            "Expected Dispersion Alpha",
+                            f"{bd_rec.expected_dispersion_alpha_pct:+.2f}% Ann",
+                            delta="Consensus Premium" if bd_rec.expected_dispersion_alpha_pct > 0 else "Optimist Overpricing Drag",
+                            help="Projected annualized abnormal return from cross-analyst belief dispersion and Miller (1977) friction",
+                        )
+
+                        st.caption(f"🧾 **Dispersion Summary:** {bd_rec.summary}")
+                        st.caption(f"🛡️ **Dispersion Audit Digest:** `{bd_rec.signature[:16]}...` (Verified: `{bd_rec.verify_integrity()}`)")
+                    except Exception as bd_ex:
+                        st.info(f"Belief Dispersion evaluation deferred: {bd_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Analyst Forecast Dispersion profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
