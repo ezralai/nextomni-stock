@@ -4317,6 +4317,79 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Pástor-Veronesi Uncertainty profile.")
 
+                st.divider()
+                st.markdown("#### 🌊 Bansal & Yaron (2004) Long-Run Risks (LRR) & Epstein-Zin Cash-Flow Beta Engine")
+                st.caption(
+                    "Evaluates Epstein-Zin preference for early resolution of uncertainty ($\\Theta_{EZ} = \\gamma - 1/\\psi$), "
+                    "persistent cash-flow growth beta ($\\beta_{x,i}$), macroeconomic volatility shock beta ($\\beta_{\\sigma,i}$), and LRR alpha."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.long_run_risks import (
+                            evaluate_long_run_risks_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Bansal-Yaron Long-Run Risks Parameters (Optional)", expanded=False):
+                            lr_c1, lr_c2, lr_c3, lr_c4, lr_c5 = st.columns(5)
+                            lr_bx = lr_c1.number_input("Cash-Flow Beta [-2..4]", value=0.0, min_value=-2.0, max_value=4.0, step=0.1, key="lr_bx")
+                            lr_bs = lr_c2.number_input("Uncertainty Beta [-3..3]", value=0.0, min_value=-3.0, max_value=3.0, step=0.1, key="lr_bs")
+                            lr_rho = lr_c3.number_input("Persistence rho [0.5..0.995]", value=0.0, min_value=0.0, max_value=0.995, step=0.01, key="lr_rho")
+                            lr_ies = lr_c4.number_input("Epstein-Zin IES [0.5..3.0]", value=0.0, min_value=0.0, max_value=3.0, step=0.1, key="lr_ies")
+                            lr_rra = lr_c5.number_input("Risk Aversion [1.5..20]", value=0.0, min_value=0.0, max_value=20.0, step=0.5, key="lr_rra")
+
+                        lr_rec = evaluate_long_run_risks_profile(
+                            ticker=selected_ticker,
+                            cashflow_growth_beta=lr_bx if lr_bx != 0.0 else None,
+                            uncertainty_shock_beta=lr_bs if lr_bs != 0.0 else None,
+                            growth_persistence_rho=lr_rho if lr_rho >= 0.50 else None,
+                            intertemporal_elasticity_ies=lr_ies if lr_ies >= 0.50 else None,
+                            relative_risk_aversion=lr_rra if lr_rra >= 1.50 else None,
+                        )
+
+                        lr1, lr2, lr3, lr4 = st.columns(4)
+                        lr_badge = (
+                            "🟢 HIGH LRR GROWTH LEADER"
+                            if lr_rec.is_high_lrr_growth_premium_leader
+                            else (
+                                "🛡️ MACRO SAFE-HAVEN HEDGE"
+                                if lr_rec.is_macro_uncertainty_safe_haven
+                                else f"Regime: {lr_rec.regime}"
+                            )
+                        )
+                        lr1.metric(
+                            "Cash-Flow Growth Beta",
+                            f"{lr_rec.cashflow_growth_beta:+.2f}",
+                            delta=f"Growth Prem: {lr_rec.persistent_growth_premium_pct:+.2f}%",
+                            delta_color="normal" if lr_rec.is_high_lrr_growth_premium_leader else "off",
+                            help="Bansal, Dittmar & Lundblad (2005) persistent cash-flow growth beta and annualized growth risk premium",
+                        )
+                        lr2.metric(
+                            "Uncertainty Shock Beta",
+                            f"{lr_rec.uncertainty_shock_beta:+.2f}",
+                            delta=f"Vol Prem: {lr_rec.uncertainty_volatility_premium_pct:+.2f}%",
+                            help="Exposure to macroeconomic consumption volatility shocks under Epstein-Zin preferences",
+                        )
+                        lr3.metric(
+                            "Bansal-Yaron Impulse (LRRI)",
+                            f"{lr_rec.bansal_yaron_lrr_impulse:+.3f}",
+                            delta=lr_badge,
+                            delta_color="normal" if lr_rec.bansal_yaron_lrr_impulse >= 0.45 else ("inverse" if lr_rec.bansal_yaron_lrr_impulse <= -0.45 else "off"),
+                            help="Composite Bansal & Yaron (2004) Long-Run Risks pricing impulse",
+                        )
+                        lr4.metric(
+                            "Expected LRR Risk Premium",
+                            f"{lr_rec.expected_lrr_alpha_pct:+.2f}% Ann",
+                            delta=f"A_x: {lr_rec.wealth_growth_sensitivity_ax:+.1f} | Theta: {lr_rec.early_resolution_preference_theta:.1f}",
+                            help="Total projected annualized Long-Run Risks equilibrium risk premium",
+                        )
+
+                        st.caption(f"🧾 **Long-Run Risks Summary:** {lr_rec.summary}")
+                        st.caption(f"🛡️ **LRR Audit Digest:** `{lr_rec.signature[:16]}...` (Verified: `{lr_rec.verify_integrity()}`)")
+                    except Exception as lr_ex:
+                        st.info(f"Long-Run Risks evaluation deferred: {lr_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Long-Run Risks profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

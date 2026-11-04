@@ -5508,6 +5508,84 @@ def pastor_veronesi_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def lrr_command(args: argparse.Namespace) -> None:
+    """CLI handler for Bansal & Yaron (2004) Long-Run Risks (LRR) Pricing Engine."""
+    import json
+    from src.analytics.long_run_risks import evaluate_long_run_risks_profile
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    bx = getattr(args, "cashflow_growth_beta", None)
+    if bx is not None:
+        bx = float(bx)
+    bsig = getattr(args, "uncertainty_shock_beta", None)
+    if bsig is not None:
+        bsig = float(bsig)
+    rho = getattr(args, "growth_persistence", None)
+    if rho is not None:
+        rho = float(rho)
+    ies = getattr(args, "ies", None)
+    if ies is not None:
+        ies = float(ies)
+    rra = getattr(args, "risk_aversion", None)
+    if rra is not None:
+        rra = float(rra)
+
+    try:
+        receipt = evaluate_long_run_risks_profile(
+            ticker=ticker,
+            cashflow_growth_beta=bx,
+            uncertainty_shock_beta=bsig,
+            growth_persistence_rho=rho,
+            intertemporal_elasticity_ies=ies,
+            relative_risk_aversion=rra,
+        )
+    except Exception as ex:
+        print(f"\nError: Long-Run Risks evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    lead_str = "YES (HIGH LRR CASH-FLOW GROWTH LEADER)" if receipt.is_high_lrr_growth_premium_leader else "NO"
+    hedge_str = "YES (MACRO UNCERTAINTY SAFE-HAVEN HEDGE)" if receipt.is_macro_uncertainty_safe_haven else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Bansal & Yaron (2004) Long-Run Risks (LRR) Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Cash-Flow Betas & Epstein-Zin Preference Inputs:")
+    print(f"    Cash-Flow Growth Beta (beta_x): {receipt.cashflow_growth_beta:>+10.2f}")
+    print(f"    Uncertainty Shock Beta (beta_s):{receipt.uncertainty_shock_beta:>+10.2f}")
+    print(f"    Growth Persistence (rho_x):     {receipt.growth_persistence_rho:>10.3f}")
+    print(f"    Epstein-Zin IES (psi_IES):      {receipt.intertemporal_elasticity_ies:>10.2f}")
+    print(f"    Relative Risk Aversion (gamma): {receipt.relative_risk_aversion:>10.2f}")
+    print("-" * 80)
+    print("  Bansal-Yaron Long-Run Risks Inferences:")
+    print(f"    Early Resolution Pref (Theta):  {receipt.early_resolution_preference_theta:>+10.2f}")
+    print(f"    Wealth-Growth Sensitivity (A_x):{receipt.wealth_growth_sensitivity_ax:>+10.2f}")
+    print(f"    Persistent Growth Premium:      {receipt.persistent_growth_premium_pct:>+10.2f}% / yr")
+    print(f"    Uncertainty Volatility Premium: {receipt.uncertainty_volatility_premium_pct:>+10.2f}% / yr")
+    print(f"    Bansal-Yaron Impulse (LRRI_t):  {receipt.bansal_yaron_lrr_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Long-Run Risks Regime & Alpha Projections:")
+    print(f"    Long-Run Risks Regime:          {receipt.regime}")
+    print(f"    High LRR Growth Leader:         {lead_str}")
+    print(f"    Macro Uncertainty Safe Haven:   {hedge_str}")
+    print(f"    Expected LRR Risk Premium:      {receipt.expected_lrr_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -8548,6 +8626,53 @@ def main() -> None:
         help="Output Pástor-Veronesi Uncertainty receipt as JSON",
     )
 
+    lrr_parser = subparsers.add_parser(
+        "lrr",
+        aliases=["bansal-yaron", "long-run-risks", "epstein-zin"],
+        help="Run Bansal & Yaron (2004) Long-Run Risks (LRR), Persistent Cash-Flow Growth & Uncertainty Pricing Engine",
+    )
+    lrr_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    lrr_parser.add_argument(
+        "--cashflow-growth-beta",
+        type=float,
+        default=None,
+        help="Persistent cash-flow growth beta beta_{x,i} in [-2.0, 4.0] (optional)",
+    )
+    lrr_parser.add_argument(
+        "--uncertainty-shock-beta",
+        type=float,
+        default=None,
+        help="Macroeconomic volatility shock beta beta_{sigma,i} in [-3.0, 3.0] (optional)",
+    )
+    lrr_parser.add_argument(
+        "--growth-persistence",
+        type=float,
+        default=None,
+        help="Long-run growth persistence rho_x in [0.50, 0.995] (optional)",
+    )
+    lrr_parser.add_argument(
+        "--ies",
+        type=float,
+        default=None,
+        help="Epstein-Zin intertemporal elasticity of substitution psi_IES in [0.50, 3.0] (optional)",
+    )
+    lrr_parser.add_argument(
+        "--risk-aversion",
+        type=float,
+        default=None,
+        help="Epstein-Zin relative risk aversion gamma_RRA in [1.5, 20.0] (optional)",
+    )
+    lrr_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Long-Run Risks receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -8742,6 +8867,8 @@ def main() -> None:
         high52_command(args)
     elif args.command in ("pastor-veronesi", "learning-uncertainty", "profitability-learning", "uncertainty-convexity"):
         pastor_veronesi_command(args)
+    elif args.command in ("lrr", "bansal-yaron", "long-run-risks", "epstein-zin"):
+        lrr_command(args)
 
 
 if __name__ == "__main__":
