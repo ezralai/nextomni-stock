@@ -3367,6 +3367,105 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Asset Growth & Empire-Building profile.")
 
+                st.markdown("---")
+                st.subheader("💰 Boudoukh, Michaely, Richardson & Roberts (2007) / Pontiff & Woodgate (2008) Net Payout & Share Issuance Engine")
+                st.caption(
+                    "Total shareholder yield and share cannibalization engine: synthesizes Cash Dividends, Gross Share "
+                    "Repurchases, and Equity Issuance into Net Payout Yield (NPY) and Composite Share Issuance (CSI), "
+                    "guarded by Free Cash Flow Payout Coverage (PCR)."
+                )
+                from src.analytics.net_payout_yield import evaluate_net_payout_profile
+                if len(df_obs) >= 20:
+                    try:
+                        np_cols = st.columns(3)
+                        with np_cols[0]:
+                            np_buybacks = st.number_input(
+                                "Annual Share Repurchases ($M)",
+                                min_value=0.0,
+                                max_value=200_000.0,
+                                value=380.0,
+                                step=20.0,
+                                key="npy_buybacks_input",
+                            )
+                        with np_cols[1]:
+                            np_issuance = st.number_input(
+                                "Annual Equity Issuance ($M)",
+                                min_value=0.0,
+                                max_value=200_000.0,
+                                value=60.0,
+                                step=20.0,
+                                key="npy_issuance_input",
+                            )
+                        with np_cols[2]:
+                            np_cur_sh = st.number_input(
+                                "Current Diluted Shares (M, Prior=100M)",
+                                min_value=10.0,
+                                max_value=1_000.0,
+                                value=97.0,
+                                step=1.0,
+                                key="npy_shares_input",
+                            )
+
+                        np_rec = evaluate_net_payout_profile(
+                            ticker=selected_ticker,
+                            market_cap=10_000.0,
+                            dividends=180.0,
+                            share_repurchases=float(np_buybacks),
+                            equity_issuance=float(np_issuance),
+                            current_shares=float(np_cur_sh),
+                            prior_shares=100.0,
+                            free_cash_flow=750.0,
+                        )
+
+                        ny1, ny2, ny3, ny4 = st.columns(4)
+                        np_badge = (
+                            "💎 SHARE CANNIBAL"
+                            if np_rec.is_share_cannibal
+                            else (
+                                "🚨 DILUTION TRAP"
+                                if np_rec.is_dilution_trap
+                                else (
+                                    "⚠️ DEBT-FUNDED PAYOUT"
+                                    if np_rec.is_unsustainable_debt_payout
+                                    else f"Regime: {np_rec.regime}"
+                                )
+                            )
+                        )
+                        ny1.metric(
+                            "Net Payout Yield (NPY)",
+                            f"{np_rec.net_payout_yield_pct:+.2f}%",
+                            delta=np_badge,
+                            delta_color="normal" if np_rec.is_share_cannibal else ("inverse" if (np_rec.is_dilution_trap or np_rec.is_unsustainable_debt_payout) else "off"),
+                            help="Boudoukh et al. (2007) Total Net Payout = (Dividends + Buybacks - Issuance) / Market Cap",
+                        )
+                        ny2.metric(
+                            "Composite Share Issuance",
+                            f"{np_rec.composite_share_issuance_pct:+.2f}%",
+                            delta=f"Buyback Yld: {np_rec.gross_buyback_yield_pct:.1f}%",
+                            delta_color="inverse" if np_rec.composite_share_issuance_pct > 0 else "normal",
+                            help="Pontiff & Woodgate (2008) log change in split-adjusted shares outstanding",
+                        )
+                        ny3.metric(
+                            "FCF Payout Coverage",
+                            f"{np_rec.fcf_payout_coverage_ratio:.2f}x",
+                            delta="Sustainable" if np_rec.fcf_payout_coverage_ratio >= 1.0 else "Uncovered",
+                            delta_color="normal" if np_rec.fcf_payout_coverage_ratio >= 0.75 else "inverse",
+                            help="Ratio of annual Free Cash Flow to total gross distributions (Dividends + Repurchases)",
+                        )
+                        ny4.metric(
+                            "Expected Shareholder Alpha",
+                            f"{np_rec.expected_payout_alpha_pct:+.2f}% Ann",
+                            delta="Cannibalization Premium" if np_rec.expected_payout_alpha_pct > 0 else "Dilution Drag",
+                            help="Projected annualized abnormal return from total net payout yield and share shrinkage",
+                        )
+
+                        st.caption(f"💰 **Payout Summary:** {np_rec.summary}")
+                        st.caption(f"🛡️ **Payout Audit Digest:** `{np_rec.signature[:16]}...` (Verified: `{np_rec.verify_integrity()}`)")
+                    except Exception as np_ex:
+                        st.info(f"Net Payout Yield evaluation deferred: {np_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Net Payout Yield profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

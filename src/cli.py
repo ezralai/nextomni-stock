@@ -4549,6 +4549,89 @@ def empire_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def payout_command(args: argparse.Namespace) -> None:
+    """Evaluate Boudoukh et al. (2007) & Pontiff & Woodgate (2008) Net Payout Yield & Share Issuance."""
+    import json
+    from src.analytics.net_payout_yield import evaluate_net_payout_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    mcap = getattr(args, "market_cap", None)
+    if mcap is not None:
+        mcap = float(mcap)
+    div = getattr(args, "dividends", None)
+    if div is not None:
+        div = float(div)
+    buybacks = getattr(args, "repurchases", None)
+    if buybacks is not None:
+        buybacks = float(buybacks)
+    issuance = getattr(args, "issuance", None)
+    if issuance is not None:
+        issuance = float(issuance)
+    cur_sh = getattr(args, "current_shares", None)
+    if cur_sh is not None:
+        cur_sh = float(cur_sh)
+    pri_sh = getattr(args, "prior_shares", None)
+    if pri_sh is not None:
+        pri_sh = float(pri_sh)
+    fcf = getattr(args, "free_cash_flow", None)
+    if fcf is not None:
+        fcf = float(fcf)
+
+    try:
+        receipt = evaluate_net_payout_profile(
+            ticker=ticker,
+            market_cap=mcap,
+            dividends=div,
+            share_repurchases=buybacks,
+            equity_issuance=issuance,
+            current_shares=cur_sh,
+            prior_shares=pri_sh,
+            free_cash_flow=fcf,
+        )
+    except Exception as ex:
+        print(f"\nError: Net Payout Yield & Share Issuance evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    can_str = "YES (SHARE-CANNIBAL COMPOUNDER)" if receipt.is_share_cannibal else "NO"
+    uns_str = "YES (UNCOVERED DEBT-FUNDED PAYOUT TRAP)" if receipt.is_unsustainable_debt_payout else "NO"
+    dil_str = "YES (NET EQUITY ISSUANCE / DILUTION TRAP)" if receipt.is_dilution_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Boudoukh et al. (2007) & Pontiff-Woodgate (2008) Payout Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print(f"  Market Capitalization:        ${receipt.market_cap:,.2f}M")
+    print("-" * 80)
+    print("  Corporate Distribution & Net Payout Yield Components:")
+    print(f"    Cash Dividend Yield (D/P):      {receipt.dividend_yield_pct:>10.2f}%")
+    print(f"    Gross Buyback Yield (B/P):      {receipt.gross_buyback_yield_pct:>10.2f}%")
+    print(f"    Gross Issuance Dilution (I/P):  {receipt.gross_issuance_yield_pct:>10.2f}%")
+    print(f"    Total Net Payout Yield (NPY):   {receipt.net_payout_yield_pct:>+10.2f}% (Boudoukh et al.)")
+    print("-" * 80)
+    print("  Share Count Dynamics & Free Cash Flow Coverage:")
+    print(f"    Current Diluted Shares (t):     {receipt.current_shares:>10.2f}M")
+    print(f"    Prior Diluted Shares (t-1):     {receipt.prior_shares:>10.2f}M")
+    print(f"    Composite Share Issuance (CSI): {receipt.composite_share_issuance_pct:>+10.2f}% (Pontiff-Woodgate)")
+    print(f"    FCF Payout Coverage Ratio:      {receipt.fcf_payout_coverage_ratio:>10.2f}x (Safe >= 1.00x)")
+    print("-" * 80)
+    print("  Payout Regime & Shareholder-Yield Alpha Dynamics:")
+    print(f"    Capital Distribution Regime:    {receipt.regime}")
+    print(f"    Share-Cannibal Compounder:      {can_str}")
+    print(f"    Unsustainable Debt Payout:      {uns_str}")
+    print(f"    Shareholder Dilution Trap:      {dil_str}")
+    print(f"    Expected Shareholder Alpha:     {receipt.expected_payout_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -6970,6 +7053,66 @@ def main() -> None:
         help="Output Asset Growth & Empire-Building receipt as JSON",
     )
 
+    # Boudoukh et al. (2007) / Pontiff & Woodgate (2008) Net Payout Yield & Share Issuance Parser
+    payout_parser = subparsers.add_parser(
+        "payout",
+        aliases=["net-payout", "boudoukh", "share-issuance"],
+        help="Evaluate Boudoukh et al. (2007) & Pontiff-Woodgate (2008) Net Payout Yield & Share Issuance",
+    )
+    payout_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA, TSLA)",
+    )
+    payout_parser.add_argument(
+        "--market-cap",
+        type=float,
+        default=None,
+        help="Total market capitalization in $M (optional)",
+    )
+    payout_parser.add_argument(
+        "--dividends",
+        type=float,
+        default=None,
+        help="Annual cash dividends in $M (optional)",
+    )
+    payout_parser.add_argument(
+        "--repurchases",
+        type=float,
+        default=None,
+        help="Annual gross share repurchases in $M (optional)",
+    )
+    payout_parser.add_argument(
+        "--issuance",
+        type=float,
+        default=None,
+        help="Annual gross equity issuance in $M (optional)",
+    )
+    payout_parser.add_argument(
+        "--current-shares",
+        type=float,
+        default=None,
+        help="Current split-adjusted diluted shares in M (optional)",
+    )
+    payout_parser.add_argument(
+        "--prior-shares",
+        type=float,
+        default=None,
+        help="Prior split-adjusted diluted shares in M (optional)",
+    )
+    payout_parser.add_argument(
+        "--free-cash-flow",
+        type=float,
+        default=None,
+        help="Annual free cash flow in $M (optional)",
+    )
+    payout_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Net Payout Yield receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -7138,6 +7281,8 @@ def main() -> None:
         pead_command(args)
     elif args.command in ("empire", "asset-growth", "cooper-gulen", "titman-capex"):
         empire_command(args)
+    elif args.command in ("payout", "net-payout", "boudoukh", "share-issuance"):
+        payout_command(args)
 
 
 if __name__ == "__main__":
