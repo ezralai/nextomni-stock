@@ -5012,6 +5012,78 @@ def supply_chain_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def governance_command(args: argparse.Namespace) -> None:
+    """Evaluate Gompers, Ishii & Metrick (2003) & Bebchuk et al. (2009) Corporate Governance & Entrenchment."""
+    import json
+    from src.analytics.governance_entrenchment import evaluate_governance_entrenchment_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    e_idx = getattr(args, "e_index", None)
+    if e_idx is not None:
+        e_idx = int(e_idx)
+    g_idx = getattr(args, "g_index", None)
+    if g_idx is not None:
+        g_idx = int(g_idx)
+    wedge = getattr(args, "dual_class_wedge", None)
+    if wedge is not None:
+        wedge = float(wedge)
+    indep = getattr(args, "board_independence", None)
+    if indep is not None:
+        indep = float(indep)
+    fcf_ret = getattr(args, "fcf_retention", None)
+    if fcf_ret is not None:
+        fcf_ret = float(fcf_ret)
+
+    try:
+        receipt = evaluate_governance_entrenchment_profile(
+            ticker=ticker,
+            bebchuk_e_index=e_idx,
+            gompers_g_index=g_idx,
+            dual_class_voting_wedge=wedge,
+            board_independence_ratio=indep,
+            unreturned_fcf_ratio=fcf_ret,
+        )
+    except Exception as ex:
+        print(f"\nError: Corporate Governance evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    dem_str = "YES (SHAREHOLDER DEMOCRACY COMPOUNDER)" if receipt.is_shareholder_democracy else "NO"
+    dict_str = "YES (MANAGERIAL DICTATORSHIP TRAP)" if receipt.is_managerial_dictatorship_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Gompers et al. (2003) & Bebchuk et al. (2009) Governance Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Constitutional Charter & Managerial Agency Inputs:")
+    print(f"    Bebchuk Entrenchment (E-Index): {receipt.bebchuk_e_index:>10d} / 6")
+    print(f"    Gompers Governance (G-Index):   {receipt.gompers_g_index:>10d} / 24")
+    print(f"    Other IRRC Provisions (G - E):  {receipt.other_irrc_provisions:>10d} / 18")
+    print(f"    Dual-Class Voting Wedge:        {receipt.dual_class_voting_wedge:>10.1%}")
+    print(f"    Board Independence Ratio:       {receipt.board_independence_ratio:>10.1%}")
+    print(f"    Unreturned Free Cash Flow:      {receipt.unreturned_fcf_ratio:>10.1%}")
+    print("-" * 80)
+    print("  Entrenchment & Jensen (1986) Agency Cost Inferences:")
+    print(f"    Composite Entrenchment (CMES):  {receipt.composite_entrenchment_score:>10.4f} / 1.00")
+    print(f"    Agency Cost Wedge Index (ACWI): {receipt.agency_cost_wedge_index:>10.4f} / 2.50")
+    print("-" * 80)
+    print("  Governance Regime & Alpha Projections:")
+    print(f"    Corporate Governance Regime:    {receipt.regime}")
+    print(f"    Shareholder Democracy:          {dem_str}")
+    print(f"    Managerial Dictatorship Trap:   {dict_str}")
+    print(f"    Expected Governance Alpha:      {receipt.expected_governance_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -7747,6 +7819,53 @@ def main() -> None:
         help="Output Supply-Chain Momentum receipt as JSON",
     )
 
+    governance_parser = subparsers.add_parser(
+        "governance",
+        aliases=["gompers-ishii", "bebchuk-entrenchment", "g-index", "e-index"],
+        help="Run Gompers, Ishii & Metrick (2003) & Bebchuk et al. (2009) Corporate Governance Engine",
+    )
+    governance_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    governance_parser.add_argument(
+        "--e-index",
+        type=int,
+        default=None,
+        help="Bebchuk Entrenchment Index in [0, 6] (optional)",
+    )
+    governance_parser.add_argument(
+        "--g-index",
+        type=int,
+        default=None,
+        help="Gompers Governance Index in [0, 24] (>= e-index) (optional)",
+    )
+    governance_parser.add_argument(
+        "--dual-class-wedge",
+        type=float,
+        default=None,
+        help="Dual-class voting control wedge in [0, 0.95] (optional)",
+    )
+    governance_parser.add_argument(
+        "--board-independence",
+        type=float,
+        default=None,
+        help="Independent board director fraction in [0, 1] (optional)",
+    )
+    governance_parser.add_argument(
+        "--fcf-retention",
+        type=float,
+        default=None,
+        help="Unreturned free cash flow retention fraction in [0, 1] (optional)",
+    )
+    governance_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Corporate Governance receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -7927,6 +8046,8 @@ def main() -> None:
         commonality_command(args)
     elif args.command in ("supply-chain", "cohen-frazzini", "customer-momentum", "economic-links"):
         supply_chain_command(args)
+    elif args.command in ("governance", "gompers-ishii", "bebchuk-entrenchment", "g-index", "e-index"):
+        governance_command(args)
 
 
 if __name__ == "__main__":

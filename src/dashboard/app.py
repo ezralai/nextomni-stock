@@ -3839,6 +3839,75 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Supply-Chain Customer Momentum profile.")
 
+                st.divider()
+                st.markdown("#### 🏛️ Gompers, Ishii & Metrick (2003) & Bebchuk et al. (2009) Corporate Governance & Managerial Entrenchment (G-Index / E-Index)")
+                if len(prices) >= 20:
+                    try:
+                        from src.analytics.governance_entrenchment import evaluate_governance_entrenchment_profile
+
+                        with st.expander("⚙️ Optional Constitutional Governance & Agency Inputs (Gompers-Bebchuk)", expanded=False):
+                            ge_c1, ge_c2, ge_c3 = st.columns(3)
+                            ge_e = ge_c1.number_input("Bebchuk E-Index [0..6]", value=1, min_value=0, max_value=6, step=1, key="ge_e")
+                            ge_g = ge_c2.number_input("Gompers G-Index [0..24] (>= E)", value=5, min_value=0, max_value=24, step=1, key="ge_g")
+                            ge_wedge = ge_c3.number_input("Dual-Class Voting Wedge [0..0.95]", value=0.0, min_value=0.0, max_value=0.95, step=0.05, key="ge_wedge")
+                            ge_c4, ge_c5 = st.columns(2)
+                            ge_indep = ge_c4.number_input("Board Independence Ratio [0..1]", value=0.85, min_value=0.0, max_value=1.0, step=0.05, key="ge_indep")
+                            ge_fcf = ge_c5.number_input("Unreturned FCF Retention [0..1]", value=0.22, min_value=0.0, max_value=1.0, step=0.05, key="ge_fcf")
+
+                        ge_rec = evaluate_governance_entrenchment_profile(
+                            ticker=selected_ticker,
+                            bebchuk_e_index=int(ge_e),
+                            gompers_g_index=max(int(ge_g), int(ge_e)),
+                            dual_class_voting_wedge=float(ge_wedge),
+                            board_independence_ratio=float(ge_indep),
+                            unreturned_fcf_ratio=float(ge_fcf),
+                        )
+
+                        ge1, ge2, ge3, ge4 = st.columns(4)
+                        ge_badge = (
+                            "🟢 SHAREHOLDER DEMOCRACY"
+                            if ge_rec.is_shareholder_democracy
+                            else (
+                                "🔴 DICTATORSHIP TRAP"
+                                if ge_rec.is_managerial_dictatorship_trap
+                                else f"Regime: {ge_rec.regime}"
+                            )
+                        )
+                        ge1.metric(
+                            "Bebchuk E-Index",
+                            f"{ge_rec.bebchuk_e_index} / 6",
+                            delta=ge_badge,
+                            delta_color="normal" if ge_rec.is_shareholder_democracy else ("inverse" if ge_rec.is_managerial_dictatorship_trap else "off"),
+                            help="Bebchuk, Cohen & Ferrell (2009) 6-provision Entrenchment Index (Democracy <= 1, Dictatorship >= 5)",
+                        )
+                        ge2.metric(
+                            "Gompers G-Index",
+                            f"{ge_rec.gompers_g_index} / 24",
+                            delta=f"Other IRRC: {ge_rec.other_irrc_provisions} / 18",
+                            delta_color="inverse" if ge_rec.gompers_g_index >= 14 else "normal",
+                            help="Gompers, Ishii & Metrick (2003) 24-provision Governance Index",
+                        )
+                        ge3.metric(
+                            "Entrenchment (CMES)",
+                            f"{ge_rec.composite_entrenchment_score:.2f} / 1.00",
+                            delta=f"Agency Wedge: {ge_rec.agency_cost_wedge_index:.2f}",
+                            delta_color="inverse" if ge_rec.composite_entrenchment_score >= 0.72 else "normal",
+                            help="Composite Managerial Entrenchment Score combining E-Index, G-Index, and dual-class voting wedge",
+                        )
+                        ge4.metric(
+                            "Expected Governance Alpha",
+                            f"{ge_rec.expected_governance_alpha_pct:+.2f}% Ann",
+                            delta="Democracy Premium" if ge_rec.expected_governance_alpha_pct > 0 else "Entrenchment Drag",
+                            help="Projected annualized abnormal return from Gompers-Bebchuk shareholder rights discipline",
+                        )
+
+                        st.caption(f"🧾 **Governance Summary:** {ge_rec.summary}")
+                        st.caption(f"🛡️ **Governance Audit Digest:** `{ge_rec.signature[:16]}...` (Verified: `{ge_rec.verify_integrity()}`)")
+                    except Exception as ge_ex:
+                        st.info(f"Corporate Governance evaluation deferred: {ge_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Corporate Governance profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
