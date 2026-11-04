@@ -5357,6 +5357,77 @@ def cgo_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def high52_command(args: argparse.Namespace) -> None:
+    """CLI handler for George & Hwang (2004) 52-Week High Psychological Anchoring Engine."""
+    import json
+    from src.analytics.fifty_two_week_high import evaluate_fifty_two_week_high_profile
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    high_52w = getattr(args, "high_52w", None)
+    if high_52w is not None:
+        high_52w = float(high_52w)
+    low_52w = getattr(args, "low_52w", None)
+    if low_52w is not None:
+        low_52w = float(low_52w)
+    past_ret = getattr(args, "past_return", None)
+    if past_ret is not None:
+        past_ret = float(past_ret)
+    vol_ratio = getattr(args, "breakout_volume_ratio", None)
+    if vol_ratio is not None:
+        vol_ratio = float(vol_ratio)
+
+    try:
+        receipt = evaluate_fifty_two_week_high_profile(
+            ticker=ticker,
+            high_52w=high_52w,
+            low_52w=low_52w,
+            past_return_20d=past_ret,
+            breakout_volume_ratio=vol_ratio,
+        )
+    except Exception as ex:
+        print(f"\nError: 52-Week High Anchoring evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    lead_str = "YES (52W-HIGH ANCHOR BREAKOUT LEADER)" if receipt.is_52w_high_breakout_leader else "NO"
+    trap_str = "YES (DEEP 52W-ANCHOR OVERHANG TRAP)" if receipt.is_deep_anchor_overhang_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: George & Hwang (2004) 52-Week High Anchoring Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  52-Week Extremum & Past Return Inputs:")
+    print(f"    52-Week High Anchor (H_52,t):   ${receipt.high_52w:>10.2f}")
+    print(f"    52-Week Low Bound (L_52,t):     ${receipt.low_52w:>10.2f}")
+    print(f"    Recent 20d Return (PRET_t):     {receipt.past_return_20d:>+10.2%}")
+    print(f"    Breakout Volume Ratio:          {receipt.breakout_volume_ratio:>10.2f}x")
+    print("-" * 80)
+    print("  George-Hwang Psychological Anchoring Inferences:")
+    print(f"    Nearness to 52W High (NH_52,t): {receipt.nearness_to_52w_high:>10.2%}")
+    print(f"    52-Week Range Position:         {receipt.range_position_52w:>10.2%}")
+    print(f"    George-Hwang Impulse (GHAI_t):  {receipt.george_hwang_anchoring_impulse:>+10.4f} [-2.0..+2.5]")
+    print("-" * 80)
+    print("  Anchoring Regime & Drift Alpha Projections:")
+    print(f"    52-Week High Regime:            {receipt.regime}")
+    print(f"    52W-High Breakout Leader:       {lead_str}")
+    print(f"    Deep Anchor Overhang Trap:      {trap_str}")
+    print(f"    Expected Anchoring Alpha:       {receipt.expected_anchoring_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -8309,6 +8380,47 @@ def main() -> None:
         help="Output Capital Gains Overhang receipt as JSON",
     )
 
+    high52_parser = subparsers.add_parser(
+        "high52",
+        aliases=["george-hwang", "52-week-high", "anchoring-momentum"],
+        help="Run George & Hwang (2004) 52-Week High Psychological Anchoring & Nearness-to-High Momentum Engine",
+    )
+    high52_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    high52_parser.add_argument(
+        "--high-52w",
+        type=float,
+        default=None,
+        help="Rolling 252-day (52-week) maximum price H_{52,t} in $ (>= P_t) (optional)",
+    )
+    high52_parser.add_argument(
+        "--low-52w",
+        type=float,
+        default=None,
+        help="Rolling 252-day (52-week) minimum price L_{52,t} in $ (<= P_t) (optional)",
+    )
+    high52_parser.add_argument(
+        "--past-return",
+        type=float,
+        default=None,
+        help="Standard intermediate past return PRET_t in (-0.95, 5.0] (optional)",
+    )
+    high52_parser.add_argument(
+        "--breakout-volume-ratio",
+        type=float,
+        default=None,
+        help="Ratio of recent volume to 52-week average volume in [0.1, 10.0] (optional)",
+    )
+    high52_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output 52-Week High Anchoring receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -8499,6 +8611,8 @@ def main() -> None:
         benchmark_mandate_command(args)
     elif args.command in ("cgo", "grinblatt-han", "frazzini-disposition", "disposition-effect", "capital-gains-overhang"):
         cgo_command(args)
+    elif args.command in ("high52", "george-hwang", "52-week-high", "anchoring-momentum"):
+        high52_command(args)
 
 
 if __name__ == "__main__":

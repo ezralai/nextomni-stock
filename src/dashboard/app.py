@@ -4173,6 +4173,77 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Capital Gains Overhang profile.")
 
+                st.divider()
+                st.markdown("#### 🎯 George & Hwang (2004) 52-Week High Psychological Anchoring Engine")
+                st.caption(
+                    "Evaluates nearness to the 52-week high ($NH_{52,t} = P_t / H_{52,t}$), psychological anchor resistance, "
+                    "non-reversal stability, and George-Hwang anchoring continuation vs. dead-cat bounce divergence."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.fifty_two_week_high import (
+                            evaluate_fifty_two_week_high_profile,
+                        )
+
+                        with st.expander("⚙️ Customize 52-Week High & Past Return Parameters (Optional)", expanded=False):
+                            gh_c1, gh_c2, gh_c3, gh_c4 = st.columns(4)
+                            gh_high = gh_c1.number_input("52-Week High H_52 ($ >= P_t, 0=Auto)", value=0.0, min_value=0.0, max_value=100000.0, step=1.0, key="gh_high")
+                            gh_low = gh_c2.number_input("52-Week Low L_52 ($ <= P_t, 0=Auto)", value=0.0, min_value=0.0, max_value=100000.0, step=1.0, key="gh_low")
+                            gh_pret = gh_c3.number_input("Past Return PRET_t (-0.95..5.0]", value=0.0, min_value=-0.90, max_value=5.0, step=0.05, key="gh_pret")
+                            gh_vol = gh_c4.number_input("Breakout Volume Ratio [0.1..10]", value=0.0, min_value=0.0, max_value=10.0, step=0.1, key="gh_vol")
+
+                        gh_rec = evaluate_fifty_two_week_high_profile(
+                            ticker=selected_ticker,
+                            high_52w=gh_high if gh_high > 0.0 else None,
+                            low_52w=gh_low if gh_low > 0.0 else None,
+                            past_return_20d=gh_pret if gh_pret != 0.0 else None,
+                            breakout_volume_ratio=gh_vol if gh_vol > 0.0 else None,
+                        )
+
+                        gh1, gh2, gh3, gh4 = st.columns(4)
+                        gh_badge = (
+                            "🟢 52W-HIGH BREAKOUT LEADER"
+                            if gh_rec.is_52w_high_breakout_leader
+                            else (
+                                "🔴 DEEP ANCHOR OVERHANG TRAP"
+                                if gh_rec.is_deep_anchor_overhang_trap
+                                else f"Regime: {gh_rec.regime}"
+                            )
+                        )
+                        gh1.metric(
+                            "Nearness to 52W High",
+                            f"{gh_rec.nearness_to_52w_high:.2%}",
+                            delta=gh_badge,
+                            delta_color="normal" if gh_rec.is_52w_high_breakout_leader else ("inverse" if gh_rec.is_deep_anchor_overhang_trap else "off"),
+                            help="George & Hwang (2004) NH_52,t = P_t / H_52,t nearness ratio to 252-day maximum price",
+                        )
+                        gh2.metric(
+                            "52-Week High Anchor",
+                            f"${gh_rec.high_52w:,.2f}",
+                            delta=f"Range Pos: {gh_rec.range_position_52w:.1%}",
+                            help="Rolling 252-session maximum price reference point and position in 52-week range",
+                        )
+                        gh3.metric(
+                            "George-Hwang Impulse (GHAI)",
+                            f"{gh_rec.george_hwang_anchoring_impulse:+.3f}",
+                            delta=f"Vol Ratio: {gh_rec.breakout_volume_ratio:.2f}x",
+                            delta_color="normal" if gh_rec.george_hwang_anchoring_impulse >= 0.45 else ("inverse" if gh_rec.george_hwang_anchoring_impulse <= -0.35 else "off"),
+                            help="George & Hwang (2004) anchoring continuation impulse and breakout volume ratio",
+                        )
+                        gh4.metric(
+                            "Expected Anchoring Alpha",
+                            f"{gh_rec.expected_anchoring_alpha_pct:+.2f}% Ann",
+                            delta="Anchor Underreaction Drift" if gh_rec.expected_anchoring_alpha_pct > 0 else "Distant-From-High Drag",
+                            help="Projected annualized abnormal return from George & Hwang (2004) 52-week high anchoring",
+                        )
+
+                        st.caption(f"🧾 **52W-High Summary:** {gh_rec.summary}")
+                        st.caption(f"🛡️ **52W-High Audit Digest:** `{gh_rec.signature[:16]}...` (Verified: `{gh_rec.verify_integrity()}`)")
+                    except Exception as gh_ex:
+                        st.info(f"52-Week High Anchoring evaluation deferred: {gh_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate 52-Week High Anchoring profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
