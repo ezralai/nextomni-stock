@@ -3973,6 +3973,72 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Frog in the Pan profile.")
 
+                st.divider()
+                st.markdown("#### 🔥 Barber & Odean (2008) & Da, Engelberg & Gao (2011) Retail Attention Spike (ASVI) & Buying Pressure Reversal")
+                if len(prices) >= 20:
+                    try:
+                        from src.analytics.attention_salience import evaluate_attention_salience_profile
+
+                        with st.expander("⚙️ Optional Retail Attention & Salience Inputs (Barber-Odean / Da-Engelberg-Gao)", expanded=False):
+                            at_c1, at_c2, at_c3, at_c4 = st.columns(4)
+                            at_asvi = at_c1.number_input("Abnormal SVI Log Change [-3..5]", value=0.0, min_value=-3.0, max_value=5.0, step=0.10, key="at_asvi")
+                            at_vol = at_c2.number_input("Abnormal Volume Ratio (>0)", value=0.0, min_value=0.0, step=0.25, key="at_vol")
+                            at_ret = at_c3.number_input("Extreme 1-Day Return (decimal)", value=0.0, min_value=-0.95, max_value=5.0, step=0.01, key="at_ret")
+                            at_imb = at_c4.number_input("Retail Buy Imbalance [-1..1]", value=0.0, min_value=-1.0, max_value=1.0, step=0.05, key="at_imb")
+
+                        at_rec = evaluate_attention_salience_profile(
+                            ticker=selected_ticker,
+                            abnormal_svi_log_change=at_asvi if at_asvi != 0.0 else None,
+                            abnormal_volume_ratio=at_vol if at_vol > 0.0 else None,
+                            extreme_day_return=at_ret if at_ret != 0.0 else None,
+                            retail_buy_imbalance=at_imb if at_imb != 0.0 else None,
+                        )
+
+                        at1, at2, at3, at4 = st.columns(4)
+                        at_badge = (
+                            "🟢 UNDER-THE-RADAR COMPOUNDER"
+                            if at_rec.is_under_the_radar_compounder
+                            else (
+                                "🔴 GLITTER BUYING CLIMAX TRAP"
+                                if at_rec.is_glitter_buying_climax_trap
+                                else f"Regime: {at_rec.regime}"
+                            )
+                        )
+                        at1.metric(
+                            "Barber-Odean Salience",
+                            f"{at_rec.barber_odean_salience_score:.2f} / 3.00",
+                            delta=at_badge,
+                            delta_color="normal" if at_rec.is_under_the_radar_compounder else ("inverse" if at_rec.is_glitter_buying_climax_trap else "off"),
+                            help="Barber & Odean (2008) 3-pillar attention salience score combining abnormal volume, extreme return, and ASVI",
+                        )
+                        at2.metric(
+                            "Abnormal Search (ASVI)",
+                            f"{at_rec.abnormal_svi_log_change:+.2f}",
+                            delta=f"1-2Wk Boost: +{at_rec.short_term_pressure_bps:.0f}bps",
+                            delta_color="inverse" if at_rec.abnormal_svi_log_change >= 0.45 else "normal",
+                            help="Da, Engelberg & Gao (2011) log Search Volume Index change vs 8-week median",
+                        )
+                        at3.metric(
+                            "Reversal Overhang (ARRO)",
+                            f"{at_rec.retail_reversal_overhang_index:.2f} / 3.50",
+                            delta=f"Vol Ratio: {at_rec.abnormal_volume_ratio:.2f}x",
+                            delta_color="inverse" if at_rec.retail_reversal_overhang_index >= 1.85 else "normal",
+                            help="Asymmetric retail buying climax overhang index",
+                        )
+                        at4.metric(
+                            "Expected Reversal Alpha",
+                            f"{at_rec.expected_reversal_alpha_pct:+.2f}% Ann",
+                            delta="Quiet Compounding" if at_rec.expected_reversal_alpha_pct > 0 else "Post-Hype Reversal Drag",
+                            help="Projected annualized abnormal return net of post-attention retail reversal",
+                        )
+
+                        st.caption(f"🧾 **Attention Summary:** {at_rec.summary}")
+                        st.caption(f"🛡️ **Attention Audit Digest:** `{at_rec.signature[:16]}...` (Verified: `{at_rec.verify_integrity()}`)")
+                    except Exception as at_ex:
+                        st.info(f"Attention Salience evaluation deferred: {at_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Retail Attention Salience profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

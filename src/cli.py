@@ -5151,6 +5151,73 @@ def fip_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def attention_command(args: argparse.Namespace) -> None:
+    """Evaluate Barber & Odean (2008) & Da, Engelberg & Gao (2011) Retail Attention Spike & Reversal."""
+    import json
+    from src.analytics.attention_salience import evaluate_attention_salience_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    asvi = getattr(args, "asvi", None)
+    if asvi is not None:
+        asvi = float(asvi)
+    abn_vol = getattr(args, "abnormal_volume", None)
+    if abn_vol is not None:
+        abn_vol = float(abn_vol)
+    ext_ret = getattr(args, "extreme_return", None)
+    if ext_ret is not None:
+        ext_ret = float(ext_ret)
+    ret_imb = getattr(args, "retail_buy_imbalance", None)
+    if ret_imb is not None:
+        ret_imb = float(ret_imb)
+
+    try:
+        receipt = evaluate_attention_salience_profile(
+            ticker=ticker,
+            abnormal_svi_log_change=asvi,
+            abnormal_volume_ratio=abn_vol,
+            extreme_day_return=ext_ret,
+            retail_buy_imbalance=ret_imb,
+        )
+    except Exception as ex:
+        print(f"\nError: Retail Attention Salience evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    comp_str = "YES (UNDER-THE-RADAR STEADY COMPOUNDER)" if receipt.is_under_the_radar_compounder else "NO"
+    trap_str = "YES (GLITTER ATTENTION BUYING CLIMAX TRAP)" if receipt.is_glitter_buying_climax_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Barber & Odean (2008) & Da et al. (2011) Attention Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Retail Search Attention & Salience Inputs:")
+    print(f"    Abnormal Search Volume (ASVI):  {receipt.abnormal_svi_log_change:>+10.4f} (log vs 8-wk median)")
+    print(f"    Abnormal Trading Volume Ratio:  {receipt.abnormal_volume_ratio:>10.2f}x")
+    print(f"    Extreme 1-Day Salient Return:   {receipt.extreme_day_return:>+10.2%}")
+    print(f"    Retail Buy Order Imbalance:     {receipt.retail_buy_imbalance:>+10.2f}")
+    print("-" * 80)
+    print("  Barber-Odean & Da-Engelberg-Gao Inferences:")
+    print(f"    Barber-Odean Salience (BASS):   {receipt.barber_odean_salience_score:>10.4f} / 3.00")
+    print(f"    Retail Reversal Overhang (ARRO):{receipt.retail_reversal_overhang_index:>10.4f} / 3.50")
+    print(f"    1-2 Wk Transient Price Boost:   +{receipt.short_term_pressure_bps:>9.1f} bps")
+    print("-" * 80)
+    print("  Attention Regime & Post-Spike Reversal Projections:")
+    print(f"    Attention Salience Regime:      {receipt.regime}")
+    print(f"    Under-the-Radar Compounder:     {comp_str}")
+    print(f"    Glitter Buying Climax Trap:     {trap_str}")
+    print(f"    Expected Reversal-Adj. Alpha:   {receipt.expected_reversal_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -7974,6 +8041,47 @@ def main() -> None:
         help="Output Frog in the Pan receipt as JSON",
     )
 
+    attention_parser = subparsers.add_parser(
+        "attention",
+        aliases=["barber-odean", "da-engelberg", "svi-attention", "attention-spike"],
+        help="Run Barber & Odean (2008) & Da, Engelberg & Gao (2011) Retail Attention Salience Engine",
+    )
+    attention_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    attention_parser.add_argument(
+        "--asvi",
+        type=float,
+        default=None,
+        help="Abnormal Search Volume Index log change in [-3.0, 5.0] (optional)",
+    )
+    attention_parser.add_argument(
+        "--abnormal-volume",
+        type=float,
+        default=None,
+        help="Abnormal trading volume ratio > 0 (optional)",
+    )
+    attention_parser.add_argument(
+        "--extreme-return",
+        type=float,
+        default=None,
+        help="Most salient recent 1-day return in decimal (optional)",
+    )
+    attention_parser.add_argument(
+        "--retail-buy-imbalance",
+        type=float,
+        default=None,
+        help="Net retail buy order imbalance in [-1, 1] (optional)",
+    )
+    attention_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Attention Salience receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -8158,6 +8266,8 @@ def main() -> None:
         governance_command(args)
     elif args.command in ("fip", "frog-in-the-pan", "da-gurun", "information-discreteness"):
         fip_command(args)
+    elif args.command in ("attention", "barber-odean", "da-engelberg", "svi-attention", "attention-spike"):
+        attention_command(args)
 
 
 if __name__ == "__main__":
