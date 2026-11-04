@@ -3276,6 +3276,97 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate PEAD & SUE profile.")
 
+                st.markdown("---")
+                st.subheader("🏗️ Cooper, Gulen & Schill (2008) / Titman, Wei & Xie (2004) Asset Growth & Empire-Building Engine")
+                st.caption(
+                    "Corporate asset expansion and abnormal capital investment engine: measures YoY Total Asset Growth (AG%) "
+                    "and Abnormal Capital Investment (ACI) conditioned on Jensen (1986) Free Cash Flow agency discretion. "
+                    "Separates disciplined capital allocators from value-destructive empire-building overinvestors."
+                )
+                from src.analytics.asset_growth_empire import evaluate_asset_growth_profile
+                if len(df_obs) >= 20:
+                    try:
+                        em_cols = st.columns(3)
+                        with em_cols[0]:
+                            em_cur_ta = st.number_input(
+                                "Current Total Assets ($M)",
+                                min_value=10.0,
+                                max_value=1_000_000.0,
+                                value=10_400.0,
+                                step=200.0,
+                                key="emp_cur_ta_input",
+                            )
+                        with em_cols[1]:
+                            em_pri_ta = st.number_input(
+                                "Prior Total Assets ($M)",
+                                min_value=10.0,
+                                max_value=1_000_000.0,
+                                value=10_000.0,
+                                step=200.0,
+                                key="emp_pri_ta_input",
+                            )
+                        with em_cols[2]:
+                            em_capex = st.number_input(
+                                "Current CapEx / Sales (%)",
+                                min_value=0.0,
+                                max_value=80.0,
+                                value=5.8,
+                                step=0.5,
+                                key="emp_capex_input",
+                            )
+
+                        em_rec = evaluate_asset_growth_profile(
+                            ticker=selected_ticker,
+                            current_total_assets=float(em_cur_ta),
+                            prior_total_assets=float(em_pri_ta),
+                            current_capex_to_sales_pct=float(em_capex),
+                        )
+
+                        ey1, ey2, ey3, ey4 = st.columns(4)
+                        em_badge = (
+                            "💎 DISCIPLINED ALLOCATOR"
+                            if em_rec.is_disciplined_allocator
+                            else (
+                                "🚨 EMPIRE BUILDER TRAP"
+                                if em_rec.is_empire_builder_trap
+                                else f"Regime: {em_rec.regime}"
+                            )
+                        )
+                        ey1.metric(
+                            "Total Asset Growth (AG)",
+                            f"{em_rec.asset_growth_pct:+.2f}%",
+                            delta=em_badge,
+                            delta_color="normal" if em_rec.is_disciplined_allocator else ("inverse" if em_rec.is_empire_builder_trap else "off"),
+                            help="Cooper, Gulen & Schill (2008) YoY balance sheet asset expansion",
+                        )
+                        ey2.metric(
+                            "Abnormal CapEx (ACI)",
+                            f"{em_rec.abnormal_capital_investment:+.2f}",
+                            delta=f"3Yr Avg: {em_rec.historical_3yr_capex_to_sales_pct:.1f}%",
+                            delta_color="inverse" if em_rec.abnormal_capital_investment > 0.30 else "normal",
+                            help="Titman, Wei & Xie (2004) CapEx/Sales deviation from 3-year baseline",
+                        )
+                        ey3.metric(
+                            "Empire-Building Score",
+                            f"{em_rec.empire_building_score:+.2f}",
+                            delta=f"Jensen Agency: {em_rec.jensen_agency_discretion_index:.2f}",
+                            delta_color="inverse" if em_rec.empire_building_score >= 1.25 else "normal",
+                            help="Composite overinvestment score amplified by free cash flow agency discretion",
+                        )
+                        ey4.metric(
+                            "Expected Allocation Alpha",
+                            f"{em_rec.expected_allocation_alpha_pct:+.2f}% Ann",
+                            delta="Capital Restraint" if em_rec.expected_allocation_alpha_pct > 0 else "Overinvestment Drag",
+                            help="Projected annualized abnormal return from corporate capital allocation discipline",
+                        )
+
+                        st.caption(f"🏗️ **Allocation Summary:** {em_rec.summary}")
+                        st.caption(f"🛡️ **Allocation Audit Digest:** `{em_rec.signature[:16]}...` (Verified: `{em_rec.verify_integrity()}`)")
+                    except Exception as em_ex:
+                        st.info(f"Asset Growth & Empire-Building evaluation deferred: {em_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Asset Growth & Empire-Building profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

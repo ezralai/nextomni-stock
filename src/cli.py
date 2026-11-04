@@ -4473,6 +4473,82 @@ def pead_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def empire_command(args: argparse.Namespace) -> None:
+    """Evaluate Cooper et al. (2008) & Titman et al. (2004) Asset Growth & Empire-Building."""
+    import json
+    from src.analytics.asset_growth_empire import evaluate_asset_growth_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    cur_assets = getattr(args, "current_assets", None)
+    if cur_assets is not None:
+        cur_assets = float(cur_assets)
+    prior_assets = getattr(args, "prior_assets", None)
+    if prior_assets is not None:
+        prior_assets = float(prior_assets)
+    cur_capex = getattr(args, "current_capex", None)
+    if cur_capex is not None:
+        cur_capex = float(cur_capex)
+    hist_capex = getattr(args, "historical_capex", None)
+    if hist_capex is not None:
+        hist_capex = float(hist_capex)
+    fcf_pct = getattr(args, "fcf_to_assets", None)
+    if fcf_pct is not None:
+        fcf_pct = float(fcf_pct)
+    debt_pct = getattr(args, "debt_to_assets", None)
+    if debt_pct is not None:
+        debt_pct = float(debt_pct)
+
+    try:
+        receipt = evaluate_asset_growth_profile(
+            ticker=ticker,
+            current_total_assets=cur_assets,
+            prior_total_assets=prior_assets,
+            current_capex_to_sales_pct=cur_capex,
+            historical_3yr_capex_to_sales_pct=hist_capex,
+            fcf_to_assets_pct=fcf_pct,
+            debt_to_assets_pct=debt_pct,
+        )
+    except Exception as ex:
+        print(f"\nError: Asset Growth & Empire-Building evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    disc_str = "YES (DISCIPLINED CAPITAL RESTRAINT / RETURN)" if receipt.is_disciplined_allocator else "NO"
+    trap_str = "YES (EMPIRE-BUILDING OVERINVESTMENT TRAP)" if receipt.is_empire_builder_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Cooper et al. (2008) & Titman et al. (2004) Asset Growth Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Balance Sheet Asset Growth & CapEx Intensity:")
+    print(f"    Current Total Assets (t):       ${receipt.current_total_assets:>10,.2f}M")
+    print(f"    Prior Total Assets (t-1):       ${receipt.prior_total_assets:>10,.2f}M")
+    print(f"    YoY Total Asset Growth (AG):    {receipt.asset_growth_pct:>+10.2f}% (Cooper-Gulen-Schill)")
+    print(f"    Current CapEx / Sales:          {receipt.current_capex_to_sales_pct:>10.2f}%")
+    print(f"    3-Yr Benchmark CapEx / Sales:   {receipt.historical_3yr_capex_to_sales_pct:>10.2f}%")
+    print(f"    Abnormal Capital Invest (ACI):  {receipt.abnormal_capital_investment:>+10.4f} (Titman-Wei-Xie)")
+    print("-" * 80)
+    print("  Jensen (1986) Agency Discretion & Empire-Building Inferences:")
+    print(f"    Jensen Agency Discretion Index: {receipt.jensen_agency_discretion_index:>10.2f} / 1.00")
+    print(f"    Empire-Building Overinv Score:  {receipt.empire_building_score:>+10.2f}")
+    print("-" * 80)
+    print("  Capital Allocation Regime & Alpha Projections:")
+    print(f"    Capital Allocation Regime:      {receipt.regime}")
+    print(f"    Disciplined Capital Allocator:  {disc_str}")
+    print(f"    Empire-Builder Overinv Trap:    {trap_str}")
+    print(f"    Expected Allocation Alpha:      {receipt.expected_allocation_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -6840,6 +6916,60 @@ def main() -> None:
         help="Output PEAD & SUE receipt as JSON",
     )
 
+    # Cooper, Gulen & Schill (2008) / Titman, Wei & Xie (2004) Asset Growth & Empire-Building Parser
+    empire_parser = subparsers.add_parser(
+        "empire",
+        aliases=["asset-growth", "cooper-gulen", "titman-capex"],
+        help="Evaluate Cooper et al. (2008) & Titman et al. (2004) Asset Growth & Empire-Building",
+    )
+    empire_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA, TSLA)",
+    )
+    empire_parser.add_argument(
+        "--current-assets",
+        type=float,
+        default=None,
+        help="Current total assets in $M (optional)",
+    )
+    empire_parser.add_argument(
+        "--prior-assets",
+        type=float,
+        default=None,
+        help="Prior total assets in $M (optional)",
+    )
+    empire_parser.add_argument(
+        "--current-capex",
+        type=float,
+        default=None,
+        help="Current CapEx-to-Sales ratio % (optional)",
+    )
+    empire_parser.add_argument(
+        "--historical-capex",
+        type=float,
+        default=None,
+        help="Trailing 3-year average CapEx-to-Sales ratio % (optional)",
+    )
+    empire_parser.add_argument(
+        "--fcf-to-assets",
+        type=float,
+        default=None,
+        help="Free cash flow to total assets ratio % (optional)",
+    )
+    empire_parser.add_argument(
+        "--debt-to-assets",
+        type=float,
+        default=None,
+        help="Total debt to total assets ratio % (optional)",
+    )
+    empire_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Asset Growth & Empire-Building receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -7006,6 +7136,8 @@ def main() -> None:
         vme_command(args)
     elif args.command in ("pead", "sue", "bernard-thomas", "earnings-drift"):
         pead_command(args)
+    elif args.command in ("empire", "asset-growth", "cooper-gulen", "titman-capex"):
+        empire_command(args)
 
 
 if __name__ == "__main__":
