@@ -4901,6 +4901,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Systemic Expected Shortfall profile.")
 
+                st.divider()
+                st.markdown("#### 🌪️ Adrian & Brunnermeier (2016) CoVaR, Delta-CoVaR & Systemic Spillover Engine")
+                st.caption(
+                    "Evaluates conditional systemic Value-at-Risk ($\\text{CoVaR}_{m \\mid i}$), "
+                    "marginal contagion spillover ($\\Delta\\text{CoVaR}_i$), and systemic exposure ($\\Delta\\text{CoVaR}_{i \\mid m}$)."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.covar_systemic_spillover import (
+                            evaluate_covar_profile,
+                        )
+
+                        with st.expander("⚙️ Customize CoVaR Tail Quantile & Regression Beta Parameters (Optional)", expanded=False):
+                            cov_c1, cov_c2, cov_c3, cov_c4 = st.columns(4)
+                            cov_q_in = cov_c1.number_input("Tail Quantile q [0.01..0.15]", value=0.0, min_value=0.0, max_value=0.15, step=0.01, key="cov_q_in")
+                            cov_var_in = cov_c2.number_input("Stock VaR_i [1.0..30.0%]", value=0.0, min_value=0.0, max_value=30.0, step=0.5, key="cov_var_in")
+                            cov_varm_in = cov_c3.number_input("System VaR_m [1.0..20.0%]", value=0.0, min_value=0.0, max_value=20.0, step=0.5, key="cov_varm_in")
+                            cov_beta_in = cov_c4.number_input("Tail Beta [0.0..3.5]", value=0.0, min_value=0.0, max_value=3.5, step=0.1, key="cov_beta_in")
+
+                        cov_rec = evaluate_covar_profile(
+                            ticker=selected_ticker,
+                            tail_quantile=cov_q_in if cov_q_in > 0.0 else None,
+                            standalone_var_pct=cov_var_in if cov_var_in > 0.0 else None,
+                            system_unconditional_var_pct=cov_varm_in if cov_varm_in > 0.0 else None,
+                            tail_beta=cov_beta_in if cov_beta_in > 0.0 else None,
+                        )
+
+                        cov1, cov2, cov3, cov4 = st.columns(4)
+                        cov_badge = (
+                            "🔴 HIGH SPILLOVER THREAT"
+                            if cov_rec.is_critical_spillover_threat
+                            else (
+                                "🟢 DISTRESS ABSORBER"
+                                if cov_rec.is_systemic_distress_absorber
+                                else (
+                                    "⚡ ELEVATED SPILLOVER"
+                                    if cov_rec.is_elevated_spillover
+                                    else f"Regime: {cov_rec.regime}"
+                                )
+                            )
+                        )
+                        cov1.metric(
+                            "System CoVaR (CoVaR_{m|i})",
+                            f"{cov_rec.conditional_system_covar_pct:.2f}%",
+                            delta=f"Uncond VaR_m: {cov_rec.system_unconditional_var_pct:.2f}%",
+                            delta_color="inverse" if cov_rec.conditional_system_covar_pct > cov_rec.system_unconditional_var_pct * 1.5 else "normal",
+                            help="Financial system Value-at-Risk conditional on target asset distress",
+                        )
+                        cov2.metric(
+                            "Marginal Contagion (ΔCoVaR)",
+                            f"{cov_rec.delta_covar_pct:.2f}%",
+                            delta=cov_badge,
+                            delta_color="inverse" if cov_rec.is_critical_spillover_threat else ("normal" if cov_rec.is_systemic_distress_absorber else "off"),
+                            help="Difference in financial system VaR between asset distress vs median state",
+                        )
+                        cov3.metric(
+                            "Systemic Exposure (ΔCoVaR_{i|m})",
+                            f"{cov_rec.systemic_exposure_covar_pct:.2f}%",
+                            delta=f"Spillover: {cov_rec.systemic_spillover_multiplier:.2f}x",
+                            delta_color="inverse" if cov_rec.systemic_spillover_multiplier > 1.3 else "normal",
+                            help="Asset VaR shift when overall financial system is in distress",
+                        )
+                        cov4.metric(
+                            "Expected CoVaR Alpha",
+                            f"{cov_rec.expected_covar_alpha_pct:+.2f}% Ann",
+                            delta=f"Fragility Impulse: {cov_rec.covar_fragility_impulse:+.2f}",
+                            help="Projected annualized abnormal return reflecting contagion spillover drag or absorber resilience",
+                        )
+
+                        st.caption(f"🧾 **CoVaR Summary:** {cov_rec.summary}")
+                        st.caption(f"🛡️ **CoVaR Audit Digest:** `{cov_rec.signature[:16]}...` (Verified: `{cov_rec.verify_integrity()}`)")
+                    except Exception as cov_ex:
+                        st.info(f"CoVaR Spillover evaluation deferred: {cov_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate CoVaR Spillover profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

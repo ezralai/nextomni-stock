@@ -6129,6 +6129,83 @@ def ses_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def covar_command(args: argparse.Namespace) -> None:
+    """CLI handler for Adrian & Brunnermeier (2016) CoVaR Tail Spillover Engine."""
+    import json
+    from src.analytics.covar_systemic_spillover import (
+        evaluate_covar_profile,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    q = getattr(args, "quantile", None)
+    if q is not None:
+        q = float(q)
+    var_i = getattr(args, "standalone_var", None)
+    if var_i is not None:
+        var_i = float(var_i)
+    var_m = getattr(args, "system_var", None)
+    if var_m is not None:
+        var_m = float(var_m)
+    beta = getattr(args, "tail_beta", None)
+    if beta is not None:
+        beta = float(beta)
+
+    try:
+        receipt = evaluate_covar_profile(
+            ticker=ticker,
+            tail_quantile=q,
+            standalone_var_pct=var_i,
+            system_unconditional_var_pct=var_m,
+            tail_beta=beta,
+        )
+    except Exception as ex:
+        print(f"\nError: CoVaR Tail Spillover evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    crit_str = "YES (HIGH SYSTEMIC SPILLOVER CONTAGION)" if receipt.is_critical_spillover_threat else "NO"
+    abs_str = "YES (SYSTEMIC DISTRESS ABSORBER)" if receipt.is_systemic_distress_absorber else "NO"
+    elev_str = "YES (ELEVATED TAIL SPILLOVER)" if receipt.is_elevated_spillover else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Adrian & Brunnermeier (2016) CoVaR Spillover Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Tail & Quantile Conditioning Inputs:")
+    print(f"    Tail Confidence Quantile (q):   {receipt.tail_quantile:>10.2%}")
+    print(f"    Standalone Stock VaR (VaR_i):   {receipt.standalone_var_pct:>10.2f}%")
+    print(f"    Unconditional Market VaR (VaR_m):{receipt.system_unconditional_var_pct:>10.2f}%")
+    print(f"    Tail Quantile Regression Beta:  {receipt.tail_beta:>10.2f}")
+    print("-" * 80)
+    print("  Adrian-Brunnermeier CoVaR & Spillover Inferences:")
+    print(f"    Conditional System CoVaR:       {receipt.conditional_system_covar_pct:>10.2f}% (CoVaR_{{m|i}})")
+    print(f"    Marginal Contribution (ΔCoVaR): {receipt.delta_covar_pct:>10.2f}%")
+    print(f"    Systemic Exposure (ΔCoVaR_{{i|m}}):{receipt.systemic_exposure_covar_pct:>10.2f}%")
+    print(f"    Spillover Multiplier:           {receipt.systemic_spillover_multiplier:>10.2f}x (ΔCoVaR / VaR_m)")
+    print(f"    Fragility Impulse:              {receipt.covar_fragility_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  CoVaR Regime & Alpha Projections:")
+    print(f"    CoVaR Spillover Regime:         {receipt.regime}")
+    print(f"    High Spillover Threat:          {crit_str}")
+    print(f"    Systemic Distress Absorber:     {abs_str}")
+    print(f"    Elevated Tail Spillover:        {elev_str}")
+    print(f"    Expected CoVaR Alpha:           {receipt.expected_covar_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -9533,6 +9610,47 @@ def main() -> None:
         help="Output Systemic Expected Shortfall receipt as JSON",
     )
 
+    covar_parser = subparsers.add_parser(
+        "covar",
+        aliases=["adrian-brunnermeier", "delta-covar", "systemic-spillover", "tail-contagion"],
+        help="Run Adrian & Brunnermeier (2016) CoVaR & Systemic Tail Spillover Engine",
+    )
+    covar_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    covar_parser.add_argument(
+        "--quantile",
+        type=float,
+        default=None,
+        help="Tail conditioning quantile q in [0.01, 0.15] (optional)",
+    )
+    covar_parser.add_argument(
+        "--standalone-var",
+        type=float,
+        default=None,
+        help="Standalone stock Value-at-Risk VaR_i (%) in [1.0, 30.0] (optional)",
+    )
+    covar_parser.add_argument(
+        "--system-var",
+        type=float,
+        default=None,
+        help="Unconditional system market Value-at-Risk VaR_m (%) in [1.0, 20.0] (optional)",
+    )
+    covar_parser.add_argument(
+        "--tail-beta",
+        type=float,
+        default=None,
+        help="Quantile regression slope beta_{m|i}^q in [0.0, 3.5] (optional)",
+    )
+    covar_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output CoVaR spillover receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -9743,6 +9861,8 @@ def main() -> None:
         margin_pricing_command(args)
     elif args.command in ("ses", "acharya-pedersen", "systemic-risk", "mes", "capital-surcharge"):
         ses_command(args)
+    elif args.command in ("covar", "adrian-brunnermeier", "delta-covar", "systemic-spillover", "tail-contagion"):
+        covar_command(args)
 
 
 if __name__ == "__main__":
