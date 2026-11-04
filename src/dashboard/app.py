@@ -3771,6 +3771,74 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Liquidity Commonality profile.")
 
+                st.divider()
+                st.markdown("#### 🔗 Cohen & Frazzini (2008) & Ahern (2013) Economic Links & Supply-Chain Customer Momentum")
+                if len(prices) >= 20:
+                    try:
+                        from src.analytics.supply_chain_momentum import evaluate_supply_chain_momentum_profile
+
+                        with st.expander("⚙️ Optional Supply-Chain Customer Link & Network Centrality Inputs (Cohen-Frazzini 2008)", expanded=False):
+                            sc_c1, sc_c2, sc_c3 = st.columns(3)
+                            sc_cust_ret = sc_c1.number_input("Principal Customer Return (decimal)", value=0.0, min_value=-0.95, max_value=5.0, step=0.02, key="sc_cust_ret")
+                            sc_supp_ret = sc_c2.number_input("Supplier Own Return (decimal)", value=0.0, min_value=-0.95, max_value=5.0, step=0.02, key="sc_supp_ret")
+                            sc_rev_share = sc_c3.number_input("Customer Revenue Share [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="sc_rev_share")
+                            sc_c4, sc_c5 = st.columns(2)
+                            sc_cov = sc_c4.number_input("Shared Analyst Coverage Ratio [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="sc_cov")
+                            sc_cent = sc_c5.number_input("Ahern Network Centrality Score [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="sc_cent")
+
+                        sc_rec = evaluate_supply_chain_momentum_profile(
+                            ticker=selected_ticker,
+                            customer_portfolio_return=sc_cust_ret if sc_cust_ret != 0.0 else None,
+                            supplier_own_return=sc_supp_ret if sc_supp_ret != 0.0 else None,
+                            customer_revenue_share=sc_rev_share if sc_rev_share > 0.0 else None,
+                            shared_coverage_ratio=sc_cov if sc_cov > 0.0 else None,
+                            network_centrality_score=sc_cent if sc_cent > 0.0 else None,
+                        )
+
+                        sc1, sc2, sc3, sc4 = st.columns(4)
+                        sc_badge = (
+                            "🟢 CUSTOMER SPILLOVER LEADER"
+                            if sc_rec.is_positive_spillover_leader
+                            else (
+                                "🔴 UPSTREAM DEMAND TRAP"
+                                if sc_rec.is_upstream_demand_collapse_trap
+                                else f"Regime: {sc_rec.regime}"
+                            )
+                        )
+                        sc1.metric(
+                            "Customer Return Wedge",
+                            f"{sc_rec.customer_supplier_return_wedge:+.2%}",
+                            delta=sc_badge,
+                            delta_color="normal" if sc_rec.is_positive_spillover_leader else ("inverse" if sc_rec.is_upstream_demand_collapse_trap else "off"),
+                            help="Cohen & Frazzini (2008) unpriced return gap between principal customer portfolio and supplier",
+                        )
+                        sc2.metric(
+                            "Spillover Impulse (LASI)",
+                            f"{sc_rec.limited_attention_spillover_impulse:+.3f}",
+                            delta=f"Rev Share: {sc_rec.customer_revenue_share:.0%}",
+                            delta_color="normal" if sc_rec.limited_attention_spillover_impulse >= 0.035 else ("inverse" if sc_rec.limited_attention_spillover_impulse <= -0.035 else "off"),
+                            help="Limited-Attention Spillover Impulse scaled by customer revenue share and inattention friction",
+                        )
+                        sc3.metric(
+                            "Network Centrality",
+                            f"{sc_rec.network_centrality_score:.2f} / 1.00",
+                            delta=f"Inattention: {sc_rec.inattention_diffusion_multiplier:.2f}x",
+                            help="Ahern (2013) intersectoral production network eigenvector centrality score",
+                        )
+                        sc4.metric(
+                            "Expected Supply-Chain Alpha",
+                            f"{sc_rec.expected_supply_chain_alpha_pct:+.2f}% Ann",
+                            delta="Customer Momentum" if sc_rec.expected_supply_chain_alpha_pct > 0 else "Demand Shock Drag",
+                            help="Projected annualized abnormal return from supply-chain customer momentum and network centrality",
+                        )
+
+                        st.caption(f"🧾 **Supply-Chain Summary:** {sc_rec.summary}")
+                        st.caption(f"🛡️ **Supply-Chain Audit Digest:** `{sc_rec.signature[:16]}...` (Verified: `{sc_rec.verify_integrity()}`)")
+                    except Exception as sc_ex:
+                        st.info(f"Supply-Chain Momentum evaluation deferred: {sc_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Supply-Chain Customer Momentum profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

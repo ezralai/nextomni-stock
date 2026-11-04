@@ -4939,6 +4939,79 @@ def commonality_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def supply_chain_command(args: argparse.Namespace) -> None:
+    """Evaluate Cohen & Frazzini (2008) & Ahern (2013) Economic Links & Supply-Chain Customer Momentum."""
+    import json
+    from src.analytics.supply_chain_momentum import evaluate_supply_chain_momentum_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    cust_ret = getattr(args, "customer_return", None)
+    if cust_ret is not None:
+        cust_ret = float(cust_ret)
+    supp_ret = getattr(args, "supplier_return", None)
+    if supp_ret is not None:
+        supp_ret = float(supp_ret)
+    rev_share = getattr(args, "revenue_share", None)
+    if rev_share is not None:
+        rev_share = float(rev_share)
+    shared_cov = getattr(args, "shared_coverage", None)
+    if shared_cov is not None:
+        shared_cov = float(shared_cov)
+    centrality = getattr(args, "network_centrality", None)
+    if centrality is not None:
+        centrality = float(centrality)
+
+    try:
+        receipt = evaluate_supply_chain_momentum_profile(
+            ticker=ticker,
+            customer_portfolio_return=cust_ret,
+            supplier_own_return=supp_ret,
+            customer_revenue_share=rev_share,
+            shared_coverage_ratio=shared_cov,
+            network_centrality_score=centrality,
+        )
+    except Exception as ex:
+        print(f"\nError: Supply-Chain Momentum evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    lead_str = "YES (POSITIVE CUSTOMER SPILLOVER LEADER)" if receipt.is_positive_spillover_leader else "NO"
+    trap_str = "YES (UPSTREAM DEMAND COLLAPSE TRAP)" if receipt.is_upstream_demand_collapse_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Cohen & Frazzini (2008) & Ahern (2013) Supply-Chain Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Economic Links & Production Network Inputs:")
+    print(f"    Principal Customer Return:      {receipt.customer_portfolio_return:>+10.2%}")
+    print(f"    Supplier Own Return:            {receipt.supplier_own_return:>+10.2%}")
+    print(f"    Customer Revenue Share (w_C):   {receipt.customer_revenue_share:>10.1%}")
+    print(f"    Shared Analyst Coverage Ratio:  {receipt.shared_coverage_ratio:>10.1%}")
+    print(f"    Ahern Network Centrality Score: {receipt.network_centrality_score:>10.2f} / 1.00")
+    print("-" * 80)
+    print("  Cohen-Frazzini Limited-Attention Spillover Inferences:")
+    print(f"    Economic Link Passthrough Beta: {receipt.economic_link_beta:>10.4f}")
+    print(f"    Unpriced Return Wedge (CSRW):   {receipt.customer_supplier_return_wedge:>+10.4f}")
+    print(f"    Inattention Diffusion Mult.:    {receipt.inattention_diffusion_multiplier:>10.2f}x")
+    print(f"    Limited-Attention Impulse (LASI):{receipt.limited_attention_spillover_impulse:>+9.4f}")
+    print("-" * 80)
+    print("  Supply-Chain Regime & Alpha Projections:")
+    print(f"    Supply-Chain Momentum Regime:   {receipt.regime}")
+    print(f"    Positive Spillover Leader:      {lead_str}")
+    print(f"    Upstream Demand Collapse Trap:  {trap_str}")
+    print(f"    Expected Supply-Chain Alpha:    {receipt.expected_supply_chain_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -7627,6 +7700,53 @@ def main() -> None:
         help="Output Liquidity Commonality receipt as JSON",
     )
 
+    supply_chain_parser = subparsers.add_parser(
+        "supply-chain",
+        aliases=["cohen-frazzini", "customer-momentum", "economic-links"],
+        help="Run Cohen & Frazzini (2008) & Ahern (2013) Economic Links & Supply-Chain Customer Momentum Engine",
+    )
+    supply_chain_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    supply_chain_parser.add_argument(
+        "--customer-return",
+        type=float,
+        default=None,
+        help="Principal customer return over lookback window in decimal (e.g., 0.08 for +8%) (optional)",
+    )
+    supply_chain_parser.add_argument(
+        "--supplier-return",
+        type=float,
+        default=None,
+        help="Supplier own return over lookback window in decimal (optional)",
+    )
+    supply_chain_parser.add_argument(
+        "--revenue-share",
+        type=float,
+        default=None,
+        help="Customer revenue dependency share in [0, 1] (optional)",
+    )
+    supply_chain_parser.add_argument(
+        "--shared-coverage",
+        type=float,
+        default=None,
+        help="Shared analyst / fund co-coverage ratio in [0, 1] (optional)",
+    )
+    supply_chain_parser.add_argument(
+        "--network-centrality",
+        type=float,
+        default=None,
+        help="Ahern (2013) production network eigenvector centrality in [0, 1] (optional)",
+    )
+    supply_chain_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Supply-Chain Momentum receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -7805,6 +7925,8 @@ def main() -> None:
         catering_command(args)
     elif args.command in ("commonality", "chordia-roll", "liquidity-commonality", "order-imbalance"):
         commonality_command(args)
+    elif args.command in ("supply-chain", "cohen-frazzini", "customer-momentum", "economic-links"):
+        supply_chain_command(args)
 
 
 if __name__ == "__main__":
