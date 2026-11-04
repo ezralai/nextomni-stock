@@ -4783,6 +4783,85 @@ def dispersion_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def catering_command(args: argparse.Namespace) -> None:
+    """Evaluate Polk & Sapienza (2009) Catering Theory of Investment & Valuation Mispricing."""
+    import json
+    from src.analytics.catering_investment import evaluate_catering_investment_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    capex = getattr(args, "capex", None)
+    if capex is not None:
+        capex = float(capex)
+    ppent_lag = getattr(args, "ppent_lag", None)
+    if ppent_lag is not None:
+        ppent_lag = float(ppent_lag)
+    tobins_q = getattr(args, "tobins_q", None)
+    if tobins_q is not None:
+        tobins_q = float(tobins_q)
+    cf_ratio = getattr(args, "cash_flow_ratio", None)
+    if cf_ratio is not None:
+        cf_ratio = float(cf_ratio)
+    mispricing = getattr(args, "mispricing_score", None)
+    if mispricing is not None:
+        mispricing = float(mispricing)
+    turnover = getattr(args, "turnover_pct", None)
+    if turnover is not None:
+        turnover = float(turnover)
+
+    try:
+        receipt = evaluate_catering_investment_profile(
+            ticker=ticker,
+            capex_amount=capex,
+            lagged_net_ppe=ppent_lag,
+            tobins_q=tobins_q,
+            cash_flow_to_capital=cf_ratio,
+            discretionary_mispricing_score=mispricing,
+            annual_turnover_pct=turnover,
+        )
+    except Exception as ex:
+        print(f"\nError: Catering Investment evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    disc_str = "YES (DISCIPLINED FUNDAMENTAL ALLOCATOR)" if receipt.is_disciplined_allocator else "NO"
+    trap_str = "YES (OVERVALUED CATERING CAPEX TRAP)" if receipt.is_catering_capex_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Polk & Sapienza (2009) Catering Theory of Investment Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Corporate Investment & Valuation Mispricing Inputs:")
+    print(f"    Annual Capital Expenditure:     ${receipt.capex_amount:>10,.2f}M")
+    print(f"    Lagged Net PPE (K_t-1):         ${receipt.lagged_net_ppe:>10,.2f}M")
+    print(f"    Tobin's Q Valuation Ratio:      {receipt.tobins_q:>10.2f}x")
+    print(f"    Cash Flow / Lagged PPE Ratio:   {receipt.cash_flow_to_capital:>10.2f}")
+    print(f"    Discretionary Mispricing (DMP): {receipt.discretionary_mispricing_score:>+10.2f}")
+    print(f"    Annual Share Turnover:          {receipt.annual_turnover_pct:>10.1f}%")
+    print("-" * 80)
+    print("  Polk-Sapienza (2009) Catering Decomposition:")
+    print(f"    Investment-to-Capital (IK_t):   {receipt.investment_to_capital_ratio:>10.4f}")
+    print(f"    Fundamental Q Benchmark Rate:   {receipt.fundamental_q_investment_rate:>10.4f}")
+    print(f"    Residual Abnormal Investment:   {receipt.residual_abnormal_investment:>+10.4f}")
+    print(f"    Short-Horizon Turnover Mult.:   {receipt.short_horizon_turnover_multiplier:>10.2f}x")
+    print(f"    Catering Distortion Index:      {receipt.catering_distortion_index:>+10.4f}")
+    print("-" * 80)
+    print("  Catering Regime & Alpha Projections:")
+    print(f"    Catering Investment Regime:     {receipt.regime}")
+    print(f"    Disciplined Allocator:          {disc_str}")
+    print(f"    Overvalued Catering CapEx Trap: {trap_str}")
+    print(f"    Expected Catering Alpha:        {receipt.expected_catering_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -7365,6 +7444,59 @@ def main() -> None:
         help="Output Belief Dispersion receipt as JSON",
     )
 
+    catering_parser = subparsers.add_parser(
+        "catering",
+        aliases=["polk-sapienza", "catering-capex", "investment-catering"],
+        help="Run Polk & Sapienza (2009) Catering Theory of Investment & Valuation Mispricing Engine",
+    )
+    catering_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    catering_parser.add_argument(
+        "--capex",
+        type=float,
+        default=None,
+        help="Annual capital expenditures in $M (optional)",
+    )
+    catering_parser.add_argument(
+        "--ppent-lag",
+        type=float,
+        default=None,
+        help="Lagged net Property, Plant & Equipment K_{t-1} in $M (optional)",
+    )
+    catering_parser.add_argument(
+        "--tobins-q",
+        type=float,
+        default=None,
+        help="Tobin's Q ratio (optional)",
+    )
+    catering_parser.add_argument(
+        "--cash-flow-ratio",
+        type=float,
+        default=None,
+        help="Operating cash flow scaled by lagged net PPE (optional)",
+    )
+    catering_parser.add_argument(
+        "--mispricing-score",
+        type=float,
+        default=None,
+        help="Discretionary accrual / valuation mispricing score in [-1, 1] (optional)",
+    )
+    catering_parser.add_argument(
+        "--turnover-pct",
+        type=float,
+        default=None,
+        help="Annualized share turnover in % (optional)",
+    )
+    catering_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Catering Investment receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -7539,6 +7671,8 @@ def main() -> None:
         noa_command(args)
     elif args.command in ("dispersion", "diether-malloy", "miller-opinion", "forecast-dispersion"):
         dispersion_command(args)
+    elif args.command in ("catering", "polk-sapienza", "catering-capex", "investment-catering"):
+        catering_command(args)
 
 
 if __name__ == "__main__":

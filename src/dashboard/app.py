@@ -3628,6 +3628,78 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Analyst Forecast Dispersion profile.")
 
+                st.divider()
+                st.markdown("#### 🏗️ Polk & Sapienza (2009) Catering Theory of Corporate Investment & Valuation Mispricing")
+                if len(prices) >= 20:
+                    try:
+                        from src.analytics.catering_investment import evaluate_catering_investment_profile
+
+                        with st.expander("⚙️ Optional Capital Allocation & Valuation Mispricing Inputs (Polk-Sapienza 2009)", expanded=False):
+                            ci_c1, ci_c2, ci_c3 = st.columns(3)
+                            ci_capex = ci_c1.number_input("Annual CapEx ($M)", value=0.0, min_value=0.0, step=25.0, key="ci_capex")
+                            ci_ppe = ci_c2.number_input("Lagged Net PPE K_{t-1} ($M)", value=0.0, min_value=0.0, step=100.0, key="ci_ppe")
+                            ci_q = ci_c3.number_input("Tobin's Q Ratio", value=0.0, min_value=0.0, step=0.10, key="ci_q")
+                            ci_c4, ci_c5, ci_c6 = st.columns(3)
+                            ci_cf = ci_c4.number_input("Cash Flow / Lagged PPE Ratio", value=0.0, step=0.05, key="ci_cf")
+                            ci_dmp = ci_c5.number_input("Discretionary Mispricing Score [-1..1]", value=0.0, min_value=-1.0, max_value=1.0, step=0.05, key="ci_dmp")
+                            ci_turn = ci_c6.number_input("Annual Share Turnover (%)", value=0.0, min_value=0.0, step=10.0, key="ci_turn")
+
+                        use_custom_ci = (ci_capex > 0.0 and ci_ppe > 0.0)
+                        ci_rec = evaluate_catering_investment_profile(
+                            ticker=selected_ticker,
+                            capex_amount=ci_capex if use_custom_ci else None,
+                            lagged_net_ppe=ci_ppe if use_custom_ci else None,
+                            tobins_q=ci_q if ci_q > 0 else None,
+                            cash_flow_to_capital=ci_cf if ci_cf != 0.0 else None,
+                            discretionary_mispricing_score=ci_dmp if ci_dmp != 0.0 else None,
+                            annual_turnover_pct=ci_turn if ci_turn > 0 else None,
+                        )
+
+                        ci1, ci2, ci3, ci4 = st.columns(4)
+                        ci_badge = (
+                            "🟢 DISCIPLINED ALLOCATOR"
+                            if ci_rec.is_disciplined_allocator
+                            else (
+                                "🔴 CATERING CAPEX TRAP"
+                                if ci_rec.is_catering_capex_trap
+                                else f"Regime: {ci_rec.regime}"
+                            )
+                        )
+                        ci1.metric(
+                            "Investment / Capital (IK_t)",
+                            f"{ci_rec.investment_to_capital_ratio:.3f}",
+                            delta=ci_badge,
+                            delta_color="normal" if ci_rec.is_disciplined_allocator else ("inverse" if ci_rec.is_catering_capex_trap else "off"),
+                            help="Polk & Sapienza (2009) Physical Capital Investment Rate CapEx_t / K_{t-1}",
+                        )
+                        ci2.metric(
+                            "Residual Abnormal Inv.",
+                            f"{ci_rec.residual_abnormal_investment:+.3f}",
+                            delta=f"Q Benchmark: {ci_rec.fundamental_q_investment_rate:.3f}",
+                            delta_color="inverse" if ci_rec.residual_abnormal_investment >= 0.15 else "normal",
+                            help="Excess investment above neoclassical Tobin's Q and internal cash flow benchmark",
+                        )
+                        ci3.metric(
+                            "Catering Distortion (CDI)",
+                            f"{ci_rec.catering_distortion_index:+.2f}",
+                            delta=f"Turnover Mult: {ci_rec.short_horizon_turnover_multiplier:.2f}x",
+                            delta_color="inverse" if ci_rec.catering_distortion_index >= 1.10 else "normal",
+                            help="Interaction of abnormal CapEx, discretionary equity mispricing, and short-horizon share turnover",
+                        )
+                        ci4.metric(
+                            "Expected Catering Alpha",
+                            f"{ci_rec.expected_catering_alpha_pct:+.2f}% Ann",
+                            delta="Capital Discipline" if ci_rec.expected_catering_alpha_pct > 0 else "Catering Over-CapEx Drag",
+                            help="Projected annualized abnormal return from Polk & Sapienza (2009) investment catering dynamics",
+                        )
+
+                        st.caption(f"🧾 **Catering Summary:** {ci_rec.summary}")
+                        st.caption(f"🛡️ **Catering Audit Digest:** `{ci_rec.signature[:16]}...` (Verified: `{ci_rec.verify_integrity()}`)")
+                    except Exception as ci_ex:
+                        st.info(f"Catering Investment evaluation deferred: {ci_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Catering Theory of Investment profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
