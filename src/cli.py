@@ -4862,6 +4862,83 @@ def catering_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def commonality_command(args: argparse.Namespace) -> None:
+    """Evaluate Chordia, Roll & Subrahmanyam (2000, 2001, 2002) Commonality in Liquidity & Order Imbalance."""
+    import json
+    from src.analytics.liquidity_commonality import evaluate_liquidity_commonality_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    spread_beta = getattr(args, "spread_beta", None)
+    if spread_beta is not None:
+        spread_beta = float(spread_beta)
+    depth_beta = getattr(args, "depth_beta", None)
+    if depth_beta is not None:
+        depth_beta = float(depth_beta)
+    liq_r2 = getattr(args, "liquidity_r2", None)
+    if liq_r2 is not None:
+        liq_r2 = float(liq_r2)
+    oib = getattr(args, "order_imbalance", None)
+    if oib is not None:
+        oib = float(oib)
+    oib_ac = getattr(args, "oib_autocorr", None)
+    if oib_ac is not None:
+        oib_ac = float(oib_ac)
+    down_surge = getattr(args, "down_market_surge", None)
+    if down_surge is not None:
+        down_surge = float(down_surge)
+
+    try:
+        receipt = evaluate_liquidity_commonality_profile(
+            ticker=ticker,
+            spread_commonality_beta=spread_beta,
+            depth_commonality_beta=depth_beta,
+            liquidity_market_r2=liq_r2,
+            signed_order_imbalance=oib,
+            oib_autocorrelation=oib_ac,
+            down_market_illiquidity_surge=down_surge,
+        )
+    except Exception as ex:
+        print(f"\nError: Liquidity Commonality evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    haven_str = "YES (IDIOSYNCRATIC LIQUIDITY HAVEN)" if receipt.is_idiosyncratic_liquidity_haven else "NO"
+    trap_str = "YES (SYSTEMIC LIQUIDITY CONTAGION TRAP)" if receipt.is_systemic_contagion_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Chordia et al. (2000, 2001) Liquidity Commonality Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Microstructure Co-Movement & Order Imbalance Inputs:")
+    print(f"    Spread Commonality Beta:        {receipt.spread_commonality_beta:>+10.4f}")
+    print(f"    Depth Commonality Beta:         {receipt.depth_commonality_beta:>+10.4f}")
+    print(f"    Market Liquidity Model R^2:     {receipt.liquidity_market_r2:>10.4f}")
+    print(f"    Signed Order Imbalance (OIB):   {receipt.signed_order_imbalance:>+10.4f}")
+    print(f"    OIB First-Order Autocorrelation:{receipt.oib_autocorrelation:>+10.4f}")
+    print(f"    Down-Market Illiquidity Surge:  {receipt.down_market_illiquidity_surge:>10.2f}x")
+    print("-" * 80)
+    print("  Chordia-Roll-Subrahmanyam Microstructure Inferences:")
+    print(f"    Effective Commonality Beta:     {receipt.effective_commonality_beta:>+10.4f}")
+    print(f"    Order-Splitting Pressure Score: {receipt.order_splitting_pressure_score:>10.4f} / 2.00")
+    print(f"    Systemic Inventory Contagion:   {receipt.systemic_inventory_contagion_index:>10.4f} / 3.50")
+    print("-" * 80)
+    print("  Commonality Regime & Execution Alpha Projections:")
+    print(f"    Liquidity Commonality Regime:   {receipt.regime}")
+    print(f"    Idiosyncratic Liquidity Haven:  {haven_str}")
+    print(f"    Systemic Contagion Trap:        {trap_str}")
+    print(f"    Expected Commonality Alpha:     {receipt.expected_commonality_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -7497,6 +7574,59 @@ def main() -> None:
         help="Output Catering Investment receipt as JSON",
     )
 
+    commonality_parser = subparsers.add_parser(
+        "commonality",
+        aliases=["chordia-roll", "liquidity-commonality", "order-imbalance"],
+        help="Run Chordia, Roll & Subrahmanyam (2000, 2001) Commonality in Liquidity & Order Imbalance Engine",
+    )
+    commonality_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    commonality_parser.add_argument(
+        "--spread-beta",
+        type=float,
+        default=None,
+        help="Spread commonality beta (optional)",
+    )
+    commonality_parser.add_argument(
+        "--depth-beta",
+        type=float,
+        default=None,
+        help="Depth commonality beta (optional)",
+    )
+    commonality_parser.add_argument(
+        "--liquidity-r2",
+        type=float,
+        default=None,
+        help="Market liquidity model R^2 in [0, 1] (optional)",
+    )
+    commonality_parser.add_argument(
+        "--order-imbalance",
+        type=float,
+        default=None,
+        help="Signed volume order imbalance OIB_t in [-1, 1] (optional)",
+    )
+    commonality_parser.add_argument(
+        "--oib-autocorr",
+        type=float,
+        default=None,
+        help="First-order OIB autocorrelation in [-1, 1] (optional)",
+    )
+    commonality_parser.add_argument(
+        "--down-market-surge",
+        type=float,
+        default=None,
+        help="Asymmetric down-market illiquidity surge multiplier >= 0.5 (optional)",
+    )
+    commonality_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Liquidity Commonality receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -7673,6 +7803,8 @@ def main() -> None:
         dispersion_command(args)
     elif args.command in ("catering", "polk-sapienza", "catering-capex", "investment-catering"):
         catering_command(args)
+    elif args.command in ("commonality", "chordia-roll", "liquidity-commonality", "order-imbalance"):
+        commonality_command(args)
 
 
 if __name__ == "__main__":

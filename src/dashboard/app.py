@@ -3700,6 +3700,77 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Catering Theory of Investment profile.")
 
+                st.divider()
+                st.markdown("#### 🌊 Chordia, Roll & Subrahmanyam (2000, 2001) Commonality in Liquidity & Order Imbalance")
+                if len(prices) >= 20:
+                    try:
+                        from src.analytics.liquidity_commonality import evaluate_liquidity_commonality_profile
+
+                        with st.expander("⚙️ Optional Microstructure Co-Movement & Order Imbalance Inputs (Chordia-Roll-Subrahmanyam)", expanded=False):
+                            lc_c1, lc_c2, lc_c3 = st.columns(3)
+                            lc_sb = lc_c1.number_input("Spread Commonality Beta", value=0.0, step=0.10, key="lc_sb")
+                            lc_db = lc_c2.number_input("Depth Commonality Beta", value=0.0, step=0.10, key="lc_db")
+                            lc_r2 = lc_c3.number_input("Market Liquidity R^2 [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="lc_r2")
+                            lc_c4, lc_c5, lc_c6 = st.columns(3)
+                            lc_oib = lc_c4.number_input("Signed Order Imbalance [-1..1]", value=0.0, min_value=-1.0, max_value=1.0, step=0.05, key="lc_oib")
+                            lc_ac = lc_c5.number_input("OIB Autocorrelation [-1..1]", value=0.0, min_value=-1.0, max_value=1.0, step=0.05, key="lc_ac")
+                            lc_surge = lc_c6.number_input("Down-Market Illiquidity Surge (>=0.5)", value=0.0, min_value=0.0, step=0.10, key="lc_surge")
+
+                        lc_rec = evaluate_liquidity_commonality_profile(
+                            ticker=selected_ticker,
+                            spread_commonality_beta=lc_sb if lc_sb != 0.0 else None,
+                            depth_commonality_beta=lc_db if lc_db != 0.0 else None,
+                            liquidity_market_r2=lc_r2 if lc_r2 > 0.0 else None,
+                            signed_order_imbalance=lc_oib if lc_oib != 0.0 else None,
+                            oib_autocorrelation=lc_ac if lc_ac != 0.0 else None,
+                            down_market_illiquidity_surge=lc_surge if lc_surge >= 0.5 else None,
+                        )
+
+                        lc1, lc2, lc3, lc4 = st.columns(4)
+                        lc_badge = (
+                            "🟢 IDIOSYNCRATIC HAVEN"
+                            if lc_rec.is_idiosyncratic_liquidity_haven
+                            else (
+                                "🔴 CONTAGION TRAP"
+                                if lc_rec.is_systemic_contagion_trap
+                                else f"Regime: {lc_rec.regime}"
+                            )
+                        )
+                        lc1.metric(
+                            "Effective Liquidity Beta",
+                            f"{lc_rec.effective_commonality_beta:+.3f}",
+                            delta=lc_badge,
+                            delta_color="normal" if lc_rec.is_idiosyncratic_liquidity_haven else ("inverse" if lc_rec.is_systemic_contagion_trap else "off"),
+                            help="Chordia, Roll & Subrahmanyam (2000) composite spread and depth co-movement beta",
+                        )
+                        lc2.metric(
+                            "Signed Order Imbalance",
+                            f"{lc_rec.signed_order_imbalance:+.3f}",
+                            delta=f"Autocorr: {lc_rec.oib_autocorrelation:+.2f}",
+                            delta_color="inverse" if lc_rec.order_splitting_pressure_score >= 0.38 else "normal",
+                            help="Chordia, Roll & Subrahmanyam (2002) net signed order imbalance and first-order autocorrelation",
+                        )
+                        lc3.metric(
+                            "Inventory Contagion (SICI)",
+                            f"{lc_rec.systemic_inventory_contagion_index:.2f} / 3.50",
+                            delta=f"Down Surge: {lc_rec.down_market_illiquidity_surge:.2f}x",
+                            delta_color="inverse" if lc_rec.systemic_inventory_contagion_index >= 1.75 else "normal",
+                            help="Systemic Inventory Contagion Index combining spread commonality, market R^2, and down-market illiquidity surge",
+                        )
+                        lc4.metric(
+                            "Expected Commonality Alpha",
+                            f"{lc_rec.expected_commonality_alpha_pct:+.2f}% Ann",
+                            delta="Liquidity Haven" if lc_rec.expected_commonality_alpha_pct > 0 else "Contagion Drag",
+                            help="Projected annualized execution-adjusted alpha from market-wide liquidity commonality",
+                        )
+
+                        st.caption(f"🧾 **Commonality Summary:** {lc_rec.summary}")
+                        st.caption(f"🛡️ **Commonality Audit Digest:** `{lc_rec.signature[:16]}...` (Verified: `{lc_rec.verify_integrity()}`)")
+                    except Exception as lc_ex:
+                        st.info(f"Liquidity Commonality evaluation deferred: {lc_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Liquidity Commonality profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
