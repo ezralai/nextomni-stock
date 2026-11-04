@@ -5738,6 +5738,77 @@ def cochrane_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def stub_command(args: argparse.Namespace) -> None:
+    """CLI handler for Lamont & Thaler (2003) Stub Value Arbitrage Engine."""
+    import json
+    from src.analytics.stub_value_arbitrage import evaluate_stub_value_arbitrage_profile
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    sub_ticker = getattr(args, "subsidiary_ticker", None)
+    sub_price = getattr(args, "subsidiary_price", None)
+    if sub_price is not None:
+        sub_price = float(sub_price)
+    ratio = getattr(args, "shares_per_parent", None)
+    if ratio is not None:
+        ratio = float(ratio)
+    fee = getattr(args, "borrow_fee", None)
+    if fee is not None:
+        fee = float(fee)
+
+    try:
+        receipt = evaluate_stub_value_arbitrage_profile(
+            ticker=ticker,
+            subsidiary_ticker=sub_ticker,
+            subsidiary_price=sub_price,
+            shares_per_parent_ratio=ratio,
+            annual_borrow_fee_pct=fee,
+        )
+    except Exception as ex:
+        print(f"\nError: Stub Value Arbitrage evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    neg_str = "YES (FLAGRANT LOOP VIOLATION / SHORT SQUEEZE TRAP)" if receipt.is_negative_stub_violation else "NO"
+    comp_str = "YES (COMPRESSED STUB CONVERGENCE OPPORTUNITY)" if receipt.is_compressed_stub_opportunity else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Lamont & Thaler (2003) Stub Value Arbitrage Engine")
+    print("=" * 80)
+    print(f"  Parent Security:              {receipt.parent_ticker}")
+    print(f"  Latest Parent Price (P_p):    ${receipt.latest_parent_price:.2f}")
+    print(f"  Carved Subsidiary:            {receipt.subsidiary_ticker}")
+    print(f"  Subsidiary Price (P_sub):     ${receipt.subsidiary_price:.2f}")
+    print("-" * 80)
+    print("  Carve-Out Structure & Borrow Friction Inputs:")
+    print(f"    Shares per Parent (alpha):      {receipt.shares_per_parent_ratio:>10.2f}x")
+    print(f"    Implied Sub Value / Parent:    ${receipt.implied_subsidiary_value_per_share:>10.2f}")
+    print(f"    Subsidiary Short Borrow Fee:    {receipt.annual_borrow_fee_pct:>10.2f}% / yr")
+    print("-" * 80)
+    print("  Lamont-Thaler & Mitchell-Pulvino-Stafford Inferences:")
+    print(f"    Implied Stub Value (S_stub):   ${receipt.implied_stub_value:>10.2f}")
+    print(f"    Stub Fraction of Parent:        {receipt.stub_fraction_of_parent:>+10.2%}")
+    print(f"    Short-Sale Friction Multiplier: {receipt.short_sale_friction_multiplier:>10.2f}x")
+    print(f"    Arbitrage Impulse (LTAI_t):     {receipt.lamont_thaler_arbitrage_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Arbitrage Regime & Convergence Projections:")
+    print(f"    Stub Arbitrage Regime:          {receipt.regime}")
+    print(f"    Negative Stub Violation:        {neg_str}")
+    print(f"    Compressed Stub Opportunity:    {comp_str}")
+    print(f"    Expected Convergence Alpha:     {receipt.expected_convergence_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -8913,6 +8984,47 @@ def main() -> None:
         help="Output Campbell-Shiller Cochrane receipt as JSON",
     )
 
+    stub_parser = subparsers.add_parser(
+        "stub",
+        aliases=["lamont-thaler", "stub-arbitrage", "equity-carveout", "negative-stub"],
+        help="Run Lamont & Thaler (2003) & Mitchell-Pulvino-Stafford (2002) Stub Value Arbitrage Engine",
+    )
+    stub_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target parent stock ticker symbol (e.g., COMS)",
+    )
+    stub_parser.add_argument(
+        "--subsidiary-ticker",
+        type=str,
+        default=None,
+        help="Carved-out subsidiary stock ticker symbol (e.g., PALM) (optional)",
+    )
+    stub_parser.add_argument(
+        "--subsidiary-price",
+        type=float,
+        default=None,
+        help="Carved subsidiary market price P_{sub,t} in $ (> 0) (optional)",
+    )
+    stub_parser.add_argument(
+        "--shares-per-parent",
+        type=float,
+        default=None,
+        help="Subsidiary shares owned per parent share alpha in [0.01, 10.0] (optional)",
+    )
+    stub_parser.add_argument(
+        "--borrow-fee",
+        type=float,
+        default=None,
+        help="Annualized subsidiary short borrowing fee c_{borrow} in [0.0, 100.0]% (optional)",
+    )
+    stub_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Stub Value Arbitrage receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -9113,6 +9225,8 @@ def main() -> None:
         reversibility_command(args)
     elif args.command in ("cochrane", "campbell-shiller", "discount-rate-decomposition", "present-value-identity"):
         cochrane_command(args)
+    elif args.command in ("stub", "lamont-thaler", "stub-arbitrage", "equity-carveout", "negative-stub"):
+        stub_command(args)
 
 
 if __name__ == "__main__":

@@ -4532,6 +4532,77 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Campbell-Shiller Cochrane profile.")
 
+                st.divider()
+                st.markdown("#### 🧩 Lamont & Thaler (2003) & Mitchell-Pulvino-Stafford (2002) Stub Value Arbitrage Engine")
+                st.caption(
+                    "Evaluates equity carve-out stub value ($S_{\\text{stub}} = P_{\\text{parent}} - \\alpha \\cdot P_{\\text{sub}}$), "
+                    "Law of One Price (LOOP) violations, and short-sale borrow fee arbitrage limits."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.stub_value_arbitrage import (
+                            evaluate_stub_value_arbitrage_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Equity Carve-Out & Borrow Friction Parameters (Optional)", expanded=False):
+                            st_c1, st_c2, st_c3, st_c4 = st.columns(4)
+                            st_sub = st_c1.text_input("Carved Subsidiary Ticker", value="SUB", key="st_sub")
+                            st_prc = st_c2.number_input("Subsidiary Price ($)", value=0.0, min_value=0.0, max_value=100000.0, step=1.0, key="st_prc")
+                            st_rat = st_c3.number_input("Shares Per Parent (alpha)", value=0.0, min_value=0.0, max_value=10.0, step=0.05, key="st_rat")
+                            st_fee = st_c4.number_input("Short Borrow Fee (% Ann)", value=0.0, min_value=0.0, max_value=100.0, step=1.0, key="st_fee")
+
+                        st_rec = evaluate_stub_value_arbitrage_profile(
+                            ticker=selected_ticker,
+                            subsidiary_ticker=st_sub if st_sub and st_sub != "SUB" else None,
+                            subsidiary_price=st_prc if st_prc > 0.0 else None,
+                            shares_per_parent_ratio=st_rat if st_rat > 0.0 else None,
+                            annual_borrow_fee_pct=st_fee if st_fee > 0.0 else None,
+                        )
+
+                        st1, st2, st3, st4 = st.columns(4)
+                        st_badge = (
+                            "🔴 NEGATIVE STUB VIOLATION"
+                            if st_rec.is_negative_stub_violation
+                            else (
+                                "🟢 COMPRESSED STUB OPPORTUNITY"
+                                if st_rec.is_compressed_stub_opportunity
+                                else f"Regime: {st_rec.regime}"
+                            )
+                        )
+                        st1.metric(
+                            "Implied Stub Value",
+                            f"${st_rec.implied_stub_value:,.2f}",
+                            delta=f"Fraction: {st_rec.stub_fraction_of_parent:+.1%}",
+                            delta_color="inverse" if st_rec.is_negative_stub_violation else ("normal" if st_rec.is_compressed_stub_opportunity else "off"),
+                            help="Lamont & Thaler (2003) implied market value of parent core business S_stub = P_parent - alpha * P_sub",
+                        )
+                        st2.metric(
+                            "Carved Sub Value / Parent",
+                            f"${st_rec.implied_subsidiary_value_per_share:,.2f}",
+                            delta=f"Sub P_sub: ${st_rec.subsidiary_price:.2f} ({st_rec.shares_per_parent_ratio:.2f}x)",
+                            help="Embedded market value of subsidiary holding per parent share",
+                        )
+                        st3.metric(
+                            "Arbitrage Impulse (LTAI)",
+                            f"{st_rec.lamont_thaler_arbitrage_impulse:+.3f}",
+                            delta=st_badge,
+                            delta_color="normal" if st_rec.is_compressed_stub_opportunity else ("inverse" if st_rec.is_negative_stub_violation else "off"),
+                            help="Lamont-Thaler & Mitchell-Pulvino-Stafford stub arbitrage and short friction impulse",
+                        )
+                        st4.metric(
+                            "Expected Convergence Alpha",
+                            f"{st_rec.expected_convergence_alpha_pct:+.2f}% Ann",
+                            delta=f"Borrow Fee: {st_rec.annual_borrow_fee_pct:.1f}% | Friction: {st_rec.short_sale_friction_multiplier:.2f}x",
+                            help="Projected annualized abnormal return from stub parity convergence net of short borrowing frictions",
+                        )
+
+                        st.caption(f"🧾 **Stub Value Summary:** {st_rec.summary}")
+                        st.caption(f"🛡️ **Stub Audit Digest:** `{st_rec.signature[:16]}...` (Verified: `{st_rec.verify_integrity()}`)")
+                    except Exception as st_ex:
+                        st.info(f"Stub Value Arbitrage evaluation deferred: {st_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Stub Value Arbitrage profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
