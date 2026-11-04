@@ -4603,6 +4603,77 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Stub Value Arbitrage profile.")
 
+                st.divider()
+                st.markdown("#### 🌪️ Brunnermeier & Pedersen (2009) Market & Funding Liquidity Spirals Engine")
+                st.caption(
+                    "Evaluates the interaction between prime brokerage margin haircuts ($m_t / m_0$), trader equity margin buffers ($B_{\\text{fund}}$), "
+                    "the liquidity spiral multiplier ($\\mathcal{M}_{\\text{spiral}}$), and fire-sale liquidation risk."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.liquidity_spiral import (
+                            evaluate_liquidity_spiral_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Margin Haircut & Funding Liquidity Parameters (Optional)", expanded=False):
+                            ls_c1, ls_c2, ls_c3, ls_c4 = st.columns(4)
+                            ls_mt = ls_c1.number_input("Margin Haircut m_t [0.02..0.85]", value=0.0, min_value=0.0, max_value=0.85, step=0.02, key="ls_mt")
+                            ls_m0 = ls_c2.number_input("Base Margin m_0 [0.02..0.50]", value=0.0, min_value=0.0, max_value=0.50, step=0.02, key="ls_m0")
+                            ls_buf = ls_c3.number_input("Funding Buffer [-1.0..1.0]", value=0.0, min_value=-1.0, max_value=1.0, step=0.05, key="ls_buf")
+                            ls_vol = ls_c4.number_input("Annualized Vol [0.05..1.50]", value=0.0, min_value=0.0, max_value=1.50, step=0.02, key="ls_vol")
+
+                        ls_rec = evaluate_liquidity_spiral_profile(
+                            ticker=selected_ticker,
+                            current_margin_haircut=ls_mt if ls_mt > 0.0 else None,
+                            baseline_margin_haircut=ls_m0 if ls_m0 > 0.0 else None,
+                            funding_margin_buffer=ls_buf if ls_buf != 0.0 else None,
+                            annualized_volatility=ls_vol if ls_vol > 0.0 else None,
+                        )
+
+                        ls1, ls2, ls3, ls4 = st.columns(4)
+                        ls_badge = (
+                            "🔴 FIRE-SALE SPIRAL TRAP"
+                            if ls_rec.is_fire_sale_spiral_trap
+                            else (
+                                "🟢 FUNDING SAFE HAVEN"
+                                if ls_rec.is_funding_liquidity_safe_haven
+                                else f"Regime: {ls_rec.regime}"
+                            )
+                        )
+                        ls1.metric(
+                            "Spiral Multiplier",
+                            f"{ls_rec.liquidity_spiral_multiplier:.2f}x",
+                            delta=f"Margin: {ls_rec.margin_tightness_ratio:.2f}x",
+                            delta_color="inverse" if ls_rec.is_fire_sale_spiral_trap else ("normal" if ls_rec.is_funding_liquidity_safe_haven else "off"),
+                            help="Brunnermeier & Pedersen (2009) liquidity spiral amplification multiplier M_spiral",
+                        )
+                        ls2.metric(
+                            "Margin Haircut (m_t)",
+                            f"{ls_rec.current_margin_haircut:.1%}",
+                            delta=f"Base m_0: {ls_rec.baseline_margin_haircut:.1%}",
+                            help="Current prime brokerage margin requirement vs normal-times baseline",
+                        )
+                        ls3.metric(
+                            "Funding Buffer (B_fund)",
+                            f"{ls_rec.funding_margin_buffer:+.1%}",
+                            delta=ls_badge,
+                            delta_color="normal" if ls_rec.is_funding_liquidity_safe_haven else ("inverse" if ls_rec.is_fire_sale_spiral_trap else "off"),
+                            help="Trader equity margin buffer; negative values denote margin calls and forced liquidation",
+                        )
+                        ls4.metric(
+                            "Expected Liquidity Alpha",
+                            f"{ls_rec.expected_liquidity_alpha_pct:+.2f}% Ann",
+                            delta=f"Fragility: {ls_rec.funding_fragility_score:.2f} | Impulse: {ls_rec.brunnermeier_pedersen_impulse:+.2f}",
+                            help="Projected annualized abnormal return net of fire-sale discount and liquidity dry-up risk",
+                        )
+
+                        st.caption(f"🧾 **Liquidity Spiral Summary:** {ls_rec.summary}")
+                        st.caption(f"🛡️ **Spiral Audit Digest:** `{ls_rec.signature[:16]}...` (Verified: `{ls_rec.verify_integrity()}`)")
+                    except Exception as ls_ex:
+                        st.info(f"Liquidity Spiral evaluation deferred: {ls_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Liquidity Spiral profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

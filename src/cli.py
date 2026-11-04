@@ -5809,6 +5809,83 @@ def stub_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def liquidity_spiral_command(args: argparse.Namespace) -> None:
+    """CLI handler for Brunnermeier & Pedersen (2009) Liquidity Spiral Engine."""
+    import json
+    from src.analytics.liquidity_spiral import evaluate_liquidity_spiral_profile
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    mt = getattr(args, "margin_haircut", None)
+    if mt is not None:
+        mt = float(mt)
+    m0 = getattr(args, "baseline_margin", None)
+    if m0 is not None:
+        m0 = float(m0)
+    buf = getattr(args, "funding_buffer", None)
+    if buf is not None:
+        buf = float(buf)
+    vol = getattr(args, "volatility", None)
+    if vol is not None:
+        vol = float(vol)
+    vol0 = getattr(args, "baseline_volatility", None)
+    if vol0 is not None:
+        vol0 = float(vol0)
+
+    try:
+        receipt = evaluate_liquidity_spiral_profile(
+            ticker=ticker,
+            current_margin_haircut=mt,
+            baseline_margin_haircut=m0,
+            funding_margin_buffer=buf,
+            annualized_volatility=vol,
+            baseline_volatility=vol0,
+        )
+    except Exception as ex:
+        print(f"\nError: Liquidity Spiral evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    spiral_str = "YES (DESTABILIZING LIQUIDITY SPIRAL FIRE-SALE TRAP)" if receipt.is_fire_sale_spiral_trap else "NO"
+    haven_str = "YES (ROBUST FUNDING LIQUIDITY SAFE HAVEN)" if receipt.is_funding_liquidity_safe_haven else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Brunnermeier & Pedersen (2009) Liquidity Spiral Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Market Liquidity & Margin Funding Inputs:")
+    print(f"    Current Margin Haircut (m_t):   {receipt.current_margin_haircut:>10.2%}")
+    print(f"    Baseline Margin (m_0):          {receipt.baseline_margin_haircut:>10.2%}")
+    print(f"    Funding Margin Buffer (B_fund): {receipt.funding_margin_buffer:>+10.2%}")
+    print(f"    Current Volatility (sigma_t):   {receipt.annualized_volatility:>10.2%}")
+    print(f"    Baseline Volatility (sigma_0):  {receipt.baseline_volatility:>10.2%}")
+    print("-" * 80)
+    print("  Brunnermeier-Pedersen Fragility & Spiral Inferences:")
+    print(f"    Margin Tightness (kappa):       {receipt.margin_tightness_ratio:>10.2f}x")
+    print(f"    Funding Fragility Score:        {receipt.funding_fragility_score:>10.2f}")
+    print(f"    Liquidity Spiral Multiplier:    {receipt.liquidity_spiral_multiplier:>10.2f}x")
+    print(f"    Spiral Impulse (BPFI_t):        {receipt.brunnermeier_pedersen_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Liquidity Spiral Regime & Alpha Projections:")
+    print(f"    Liquidity Spiral Regime:        {receipt.regime}")
+    print(f"    Fire-Sale Spiral Trap:          {spiral_str}")
+    print(f"    Funding Safe Haven:             {haven_str}")
+    print(f"    Expected Liquidity Alpha:       {receipt.expected_liquidity_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -9025,6 +9102,53 @@ def main() -> None:
         help="Output Stub Value Arbitrage receipt as JSON",
     )
 
+    spiral_parser = subparsers.add_parser(
+        "liquidity-spiral",
+        aliases=["brunnermeier-pedersen", "margin-spiral", "funding-liquidity", "fire-sale"],
+        help="Run Brunnermeier & Pedersen (2009) Market Liquidity & Funding Liquidity Spirals Engine",
+    )
+    spiral_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    spiral_parser.add_argument(
+        "--margin-haircut",
+        type=float,
+        default=None,
+        help="Current margin haircut requirement m_t in [0.02, 0.85] (optional)",
+    )
+    spiral_parser.add_argument(
+        "--baseline-margin",
+        type=float,
+        default=None,
+        help="Baseline normal-times margin haircut m_0 in [0.02, 0.50] (optional)",
+    )
+    spiral_parser.add_argument(
+        "--funding-buffer",
+        type=float,
+        default=None,
+        help="Trader equity margin buffer B_fund in [-1.0, 1.0] (< 0 margin call) (optional)",
+    )
+    spiral_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=None,
+        help="Current annualized return volatility sigma_t in [0.05, 1.50] (optional)",
+    )
+    spiral_parser.add_argument(
+        "--baseline-volatility",
+        type=float,
+        default=None,
+        help="Baseline annualized return volatility sigma_0 in [0.05, 1.00] (optional)",
+    )
+    spiral_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Liquidity Spiral receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -9227,6 +9351,8 @@ def main() -> None:
         cochrane_command(args)
     elif args.command in ("stub", "lamont-thaler", "stub-arbitrage", "equity-carveout", "negative-stub"):
         stub_command(args)
+    elif args.command in ("liquidity-spiral", "brunnermeier-pedersen", "margin-spiral", "funding-liquidity", "fire-sale"):
+        liquidity_spiral_command(args)
 
 
 if __name__ == "__main__":
