@@ -5084,6 +5084,73 @@ def governance_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def fip_command(args: argparse.Namespace) -> None:
+    """Evaluate Da, Gurun & Warachka (2014) 'Frog in the Pan' Information Discreteness & Momentum Quality."""
+    import json
+    from src.analytics.frog_in_the_pan import evaluate_frog_in_the_pan_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    pret = getattr(args, "pret", None)
+    if pret is not None:
+        pret = float(pret)
+    pct_pos = getattr(args, "pct_positive", None)
+    if pct_pos is not None:
+        pct_pos = float(pct_pos)
+    pct_neg = getattr(args, "pct_negative", None)
+    if pct_neg is not None:
+        pct_neg = float(pct_neg)
+    jump_share = getattr(args, "max_jump_share", None)
+    if jump_share is not None:
+        jump_share = float(jump_share)
+
+    try:
+        receipt = evaluate_frog_in_the_pan_profile(
+            ticker=ticker,
+            past_cumulative_return=pret,
+            pct_positive_days=pct_pos,
+            pct_negative_days=pct_neg,
+            max_three_day_jump_share=jump_share,
+        )
+    except Exception as ex:
+        print(f"\nError: Frog in the Pan evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    win_str = "YES (CONTINUOUS BOILING FROG WINNER)" if receipt.is_continuous_frog_winner else "NO"
+    trap_str = "YES (CONTINUOUS BOILING FROG LOSER TRAP)" if receipt.is_continuous_frog_loser_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Da, Gurun & Warachka (2014) 'Frog in the Pan' (FIP) Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Formation Return & Daily Sign Frequency Inputs:")
+    print(f"    Past Cumulative Return (PRET):  {receipt.past_cumulative_return:>+10.2%}")
+    print(f"    Positive Sessions (%Pos):       {receipt.pct_positive_days:>10.1%}")
+    print(f"    Negative Sessions (%Neg):       {receipt.pct_negative_days:>10.1%}")
+    print(f"    Flat/Zero Sessions (%Zero):     {receipt.pct_zero_days:>10.1%}")
+    print(f"    Top 3-Day Jump Concentration:   {receipt.max_three_day_jump_share:>10.1%}")
+    print("-" * 80)
+    print("  Da-Gurun-Warachka (2014) Information Discreteness Inferences:")
+    print(f"    Information Discreteness (ID):  {receipt.information_discreteness_id:>+10.4f} [-1=Cont, +1=Disc]")
+    print(f"    FIP Momentum Quality (FMQS):    {receipt.fip_momentum_quality_score:>10.4f} / 1.00")
+    print("-" * 80)
+    print("  FIP Regime & Momentum Continuation Projections:")
+    print(f"    Frog in the Pan Regime:         {receipt.regime}")
+    print(f"    Continuous Frog Winner:         {win_str}")
+    print(f"    Continuous Frog Loser Trap:     {trap_str}")
+    print(f"    Expected FIP Continuation Alpha:{receipt.expected_fip_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -7866,6 +7933,47 @@ def main() -> None:
         help="Output Corporate Governance receipt as JSON",
     )
 
+    fip_parser = subparsers.add_parser(
+        "fip",
+        aliases=["frog-in-the-pan", "da-gurun", "information-discreteness"],
+        help="Run Da, Gurun & Warachka (2014) 'Frog in the Pan' Information Discreteness Engine",
+    )
+    fip_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    fip_parser.add_argument(
+        "--pret",
+        type=float,
+        default=None,
+        help="Past cumulative return in decimal (e.g., 0.18 for +18%) (optional)",
+    )
+    fip_parser.add_argument(
+        "--pct-positive",
+        type=float,
+        default=None,
+        help="Fraction of positive return days in [0, 1] (optional)",
+    )
+    fip_parser.add_argument(
+        "--pct-negative",
+        type=float,
+        default=None,
+        help="Fraction of negative return days in [0, 1] (optional)",
+    )
+    fip_parser.add_argument(
+        "--max-jump-share",
+        type=float,
+        default=None,
+        help="Fraction of total absolute daily movement in top 3 days in [0, 1] (optional)",
+    )
+    fip_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Frog in the Pan receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -8048,6 +8156,8 @@ def main() -> None:
         supply_chain_command(args)
     elif args.command in ("governance", "gompers-ishii", "bebchuk-entrenchment", "g-index", "e-index"):
         governance_command(args)
+    elif args.command in ("fip", "frog-in-the-pan", "da-gurun", "information-discreteness"):
+        fip_command(args)
 
 
 if __name__ == "__main__":

@@ -3908,6 +3908,71 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Corporate Governance profile.")
 
+                st.divider()
+                st.markdown("#### 🐸 Da, Gurun & Warachka (2014) 'Frog in the Pan' (FIP) Information Discreteness & Momentum Quality")
+                if len(prices) >= 20:
+                    try:
+                        from src.analytics.frog_in_the_pan import evaluate_frog_in_the_pan_profile
+
+                        with st.expander("⚙️ Optional Formation Return & Daily Sign Frequency Inputs (Da-Gurun-Warachka 2014)", expanded=False):
+                            fp_c1, fp_c2, fp_c3, fp_c4 = st.columns(4)
+                            fp_pret = fp_c1.number_input("Past Return PRET (decimal)", value=0.0, min_value=-0.95, max_value=10.0, step=0.02, key="fp_pret")
+                            fp_pos = fp_c2.number_input("% Positive Days [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="fp_pos")
+                            fp_neg = fp_c3.number_input("% Negative Days [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="fp_neg")
+                            fp_jump = fp_c4.number_input("Top 3-Day Jump Share [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="fp_jump")
+
+                        fp_rec = evaluate_frog_in_the_pan_profile(
+                            ticker=selected_ticker,
+                            past_cumulative_return=fp_pret if fp_pret != 0.0 else None,
+                            pct_positive_days=fp_pos if fp_pos > 0.0 else None,
+                            pct_negative_days=fp_neg if fp_neg > 0.0 else None,
+                            max_three_day_jump_share=fp_jump if fp_jump > 0.0 else None,
+                        )
+
+                        fp1, fp2, fp3, fp4 = st.columns(4)
+                        fp_badge = (
+                            "🟢 CONTINUOUS FROG WINNER"
+                            if fp_rec.is_continuous_frog_winner
+                            else (
+                                "🔴 CONTINUOUS LOSER TRAP"
+                                if fp_rec.is_continuous_frog_loser_trap
+                                else f"Regime: {fp_rec.regime}"
+                            )
+                        )
+                        fp1.metric(
+                            "Info Discreteness (ID_t)",
+                            f"{fp_rec.information_discreteness_id:+.3f}",
+                            delta=fp_badge,
+                            delta_color="normal" if fp_rec.is_continuous_frog_winner else ("inverse" if fp_rec.is_continuous_frog_loser_trap else "off"),
+                            help="Da, Gurun & Warachka (2014) ID = sign(PRET) * (%Neg - %Pos) (Continuous <= -0.15, Discrete > 0)",
+                        )
+                        fp2.metric(
+                            "FIP Momentum Quality",
+                            f"{fp_rec.fip_momentum_quality_score:.2f} / 1.00",
+                            delta=f"PRET: {fp_rec.past_cumulative_return:+.1%}",
+                            delta_color="normal" if fp_rec.fip_momentum_quality_score >= 0.62 else "off",
+                            help="Composite continuous-arrival quality score penalizing lumpy 3-day jumps",
+                        )
+                        fp3.metric(
+                            "Daily Sign Split",
+                            f"{fp_rec.pct_positive_days:.0%} Up / {fp_rec.pct_negative_days:.0%} Dn",
+                            delta=f"3-Day Jump: {fp_rec.max_three_day_jump_share:.0%}",
+                            help="Proportion of positive vs. negative return sessions and top-3 day jump concentration",
+                        )
+                        fp4.metric(
+                            "Expected FIP Alpha",
+                            f"{fp_rec.expected_fip_alpha_pct:+.2f}% Ann",
+                            delta="Boiling Frog Drift" if fp_rec.expected_fip_alpha_pct > 0 else "Downward Drift / Stall",
+                            help="Projected annualized momentum continuation return from continuous information arrival",
+                        )
+
+                        st.caption(f"🧾 **FIP Summary:** {fp_rec.summary}")
+                        st.caption(f"🛡️ **FIP Audit Digest:** `{fp_rec.signature[:16]}...` (Verified: `{fp_rec.verify_integrity()}`)")
+                    except Exception as fp_ex:
+                        st.info(f"Frog in the Pan evaluation deferred: {fp_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Frog in the Pan profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
