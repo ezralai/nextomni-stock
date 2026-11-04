@@ -3001,6 +3001,102 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Momentum Life Cycle profile.")
 
+                st.markdown("---")
+                st.subheader("🛡️ Edward I. Altman (1968, 2000) Z-Score & James A. Ohlson (1980) O-Score Solvency Engine")
+                st.caption(
+                    "Structural solvency and probabilistic bankruptcy risk engine: unifies Altman's multi-discriminant "
+                    "Z-Score (manufacturing) and Z''-Score (services/emerging markets) with Ohlson's 9-factor conditional logit "
+                    "O-Score. Isolates solvent fortress compounders while eliminating acute credit distress and default traps (Campbell et al. 2008)."
+                )
+                from src.analytics.altman_zscore import evaluate_solvency_profile
+                if len(df_obs) >= 20:
+                    try:
+                        az_cols = st.columns(3)
+                        with az_cols[0]:
+                            az_assets = (
+                                st.number_input(
+                                    "Total Assets ($M)",
+                                    min_value=1.0,
+                                    max_value=1_000_000.0,
+                                    value=10_000.0,
+                                    step=500.0,
+                                    key="az_assets_input",
+                                )
+                            )
+                        with az_cols[1]:
+                            az_liab = (
+                                st.number_input(
+                                    "Total Liabilities ($M)",
+                                    min_value=0.1,
+                                    max_value=1_000_000.0,
+                                    value=4_500.0,
+                                    step=250.0,
+                                    key="az_liab_input",
+                                )
+                            )
+                        with az_cols[2]:
+                            az_ebit = (
+                                st.number_input(
+                                    "EBIT Operating Profit ($M)",
+                                    min_value=-50_000.0,
+                                    max_value=100_000.0,
+                                    value=1_200.0,
+                                    step=100.0,
+                                    key="az_ebit_input",
+                                )
+                            )
+
+                        az_rec = evaluate_solvency_profile(
+                            ticker=selected_ticker,
+                            total_assets=float(az_assets),
+                            total_liabilities=float(az_liab),
+                            ebit=float(az_ebit),
+                        )
+
+                        zy1, zy2, zy3, zy4 = st.columns(4)
+                        z_badge = (
+                            "💎 SAFE ZONE"
+                            if az_rec.is_safe_zone
+                            else (
+                                "⚠️ GREY ZONE"
+                                if az_rec.is_grey_zone
+                                else "🚨 DISTRESS ZONE"
+                            )
+                        )
+                        zy1.metric(
+                            "Altman Z-Score",
+                            f"{az_rec.altman_z_score:.2f}",
+                            delta=z_badge,
+                            delta_color="normal" if az_rec.is_safe_zone else ("inverse" if az_rec.is_distress_zone else "off"),
+                            help="Original 5-factor manufacturing discriminant score (Safe > 2.99, Distress < 1.81)",
+                        )
+                        zy2.metric(
+                            "Altman Non-Mfg Z''",
+                            f"{az_rec.altman_z_double_prime:.2f}",
+                            delta="Safe > 2.60" if az_rec.altman_z_double_prime > 2.60 else ("Distress < 1.10" if az_rec.altman_z_double_prime < 1.10 else "Grey Zone"),
+                            help="4-factor emerging markets and services score (Safe > 2.60, Distress < 1.10)",
+                        )
+                        zy3.metric(
+                            "Ohlson Default Prob P(Def)",
+                            f"{az_rec.default_probability_pct:.1f}%",
+                            delta=f"O-Score: {az_rec.ohlson_o_score:+.2f}",
+                            delta_color="inverse" if az_rec.default_probability_pct >= 20.0 else "normal",
+                            help="Ohlson (1980) 9-factor logistic probability of 2-year structural default",
+                        )
+                        zy4.metric(
+                            "Expected Solvency Alpha",
+                            f"{az_rec.expected_solvency_alpha_pct:+.2f}% Ann",
+                            delta="Solvency Premium" if az_rec.expected_solvency_alpha_pct > 0 else "Distress Drag",
+                            help="Projected annualized alpha: quality fortress premium vs. Campbell et al. (2008) distress discount",
+                        )
+
+                        st.caption(f"🛡️ **Solvency Summary:** {az_rec.summary}")
+                        st.caption(f"🔒 **Solvency Audit Digest:** `{az_rec.signature[:16]}...` (Verified: `{az_rec.verify_integrity()}`)")
+                    except Exception as az_ex:
+                        st.info(f"Altman Solvency evaluation deferred: {az_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Altman & Ohlson Solvency profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

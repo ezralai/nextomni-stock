@@ -4238,6 +4238,105 @@ def lifecycle_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def altman_command(args: argparse.Namespace) -> None:
+    """Evaluate Edward I. Altman (1968, 2000) Z-Score and James A. Ohlson (1980) O-Score Solvency."""
+    import json
+    from src.analytics.altman_zscore import evaluate_solvency_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    assets = getattr(args, "total_assets", None)
+    if assets is not None:
+        assets = float(assets)
+    liab = getattr(args, "total_liabilities", None)
+    if liab is not None:
+        liab = float(liab)
+    wc = getattr(args, "working_capital", None)
+    if wc is not None:
+        wc = float(wc)
+    re = getattr(args, "retained_earnings", None)
+    if re is not None:
+        re = float(re)
+    ebit = getattr(args, "ebit", None)
+    if ebit is not None:
+        ebit = float(ebit)
+    sales = getattr(args, "sales", None)
+    if sales is not None:
+        sales = float(sales)
+    mcap = getattr(args, "market_cap", None)
+    if mcap is not None:
+        mcap = float(mcap)
+    ca = getattr(args, "current_assets", None)
+    if ca is not None:
+        ca = float(ca)
+    cl = getattr(args, "current_liabilities", None)
+    if cl is not None:
+        cl = float(cl)
+    ni = getattr(args, "net_income", None)
+    if ni is not None:
+        ni = float(ni)
+    ffo = getattr(args, "funds_from_operations", None)
+    if ffo is not None:
+        ffo = float(ffo)
+
+    try:
+        receipt = evaluate_solvency_profile(
+            ticker=ticker,
+            total_assets=assets,
+            total_liabilities=liab,
+            working_capital=wc,
+            retained_earnings=re,
+            ebit=ebit,
+            sales=sales,
+            market_cap=mcap,
+            current_assets=ca,
+            current_liabilities=cl,
+            net_income=ni,
+            funds_from_operations=ffo,
+        )
+    except Exception as ex:
+        print(f"\nError: Altman Z-Score & Ohlson O-Score evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    safe_str = "YES (Z > 2.99 - MINIMAL DEFAULT HAZARD)" if receipt.is_safe_zone else "NO"
+    grey_str = "YES (1.81 <= Z <= 2.99 - MONITOR BALANCE SHEET)" if receipt.is_grey_zone else "NO"
+    distress_str = "YES (Z < 1.81 - ACUTE INSOLVENCY TRAP HAZARD)" if receipt.is_distress_zone else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Altman (1968, 2000) Z-Score & Ohlson (1980) O-Score Solvency Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Altman Multi-Discriminant Factors:")
+    print(f"    X1 (Working Capital / Assets):  {receipt.x1_working_capital_to_assets:>+8.4f}")
+    print(f"    X2 (Retained Earnings / Assets):{receipt.x2_retained_earnings_to_assets:>+8.4f}")
+    print(f"    X3 (EBIT / Total Assets):       {receipt.x3_ebit_to_assets:>+8.4f}")
+    print(f"    X4 (Market Equity / Liab):      {receipt.x4_market_equity_to_liabilities:>8.4f}")
+    print(f"    X5 (Sales / Total Assets):      {receipt.x5_sales_to_assets:>8.4f}")
+    print("-" * 80)
+    print("  Solvency & Bankruptcy Hazard Inferences:")
+    print(f"    Altman Manufacturing Z-Score:   {receipt.altman_z_score:>8.2f} (Safe > 2.99, Distress < 1.81)")
+    print(f"    Altman Non-Mfg Z''-Score:       {receipt.altman_z_double_prime:>8.2f} (Safe > 2.60, Distress < 1.10)")
+    print(f"    Ohlson O-Score Index:           {receipt.ohlson_o_score:>+8.2f}")
+    print(f"    Implied 2-Yr Default Prob:      {receipt.default_probability_pct:>8.1f}% (P(Default))")
+    print(f"    Safe Zone Classification:       {safe_str}")
+    print(f"    Grey Zone Classification:       {grey_str}")
+    print(f"    Distress Zone Classification:   {distress_str}")
+    print("-" * 80)
+    print("  Structural Solvency Regime & Alpha Dynamics:")
+    print(f"    Solvency Regime:                {receipt.regime}")
+    print(f"    Expected Solvency Alpha Spread: {receipt.expected_solvency_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -6443,6 +6542,90 @@ def main() -> None:
         help="Output Momentum Life Cycle receipt as JSON",
     )
 
+    # Edward I. Altman (1968, 2000) Z-Score & James A. Ohlson (1980) O-Score Parser
+    altman_parser = subparsers.add_parser(
+        "altman",
+        aliases=["zscore", "ohlson", "distress-risk"],
+        help="Evaluate Altman (1968, 2000) Z-Score and Ohlson (1980) O-Score structural solvency",
+    )
+    altman_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA, TSLA)",
+    )
+    altman_parser.add_argument(
+        "--total-assets",
+        type=float,
+        default=None,
+        help="Total assets in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--total-liabilities",
+        type=float,
+        default=None,
+        help="Total liabilities in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--working-capital",
+        type=float,
+        default=None,
+        help="Working capital in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--retained-earnings",
+        type=float,
+        default=None,
+        help="Retained earnings in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--ebit",
+        type=float,
+        default=None,
+        help="EBIT operating profit in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--sales",
+        type=float,
+        default=None,
+        help="Total sales / revenues in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--market-cap",
+        type=float,
+        default=None,
+        help="Market capitalization in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--current-assets",
+        type=float,
+        default=None,
+        help="Current assets in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--current-liabilities",
+        type=float,
+        default=None,
+        help="Current liabilities in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--net-income",
+        type=float,
+        default=None,
+        help="Net income in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--funds-from-operations",
+        type=float,
+        default=None,
+        help="Funds from operations / CFO in $M (optional)",
+    )
+    altman_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Altman Z-Score & Ohlson O-Score receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -6603,6 +6786,8 @@ def main() -> None:
         innovation_command(args)
     elif args.command in ("lifecycle", "lee-swaminathan", "momentum-volume", "mlc-stage"):
         lifecycle_command(args)
+    elif args.command in ("altman", "zscore", "ohlson", "distress-risk"):
+        altman_command(args)
 
 
 if __name__ == "__main__":
