@@ -2923,6 +2923,84 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Innovation Capital profile.")
 
+                st.markdown("---")
+                st.subheader("🔄 Charles M. C. Lee & Bhaskaran Swaminathan (2000) Momentum Life-Cycle Engine")
+                st.caption(
+                    "Volume-momentum interaction engine (Lee & Swaminathan 2000): trading volume reveals the persistence "
+                    "and reversal hazard of price momentum. Low-volume winners (Stage 1) have prolonged momentum persistence "
+                    "(+10% to +14%/yr alpha); high-volume winners (Stage 2) face imminent exhaustion. High-volume losers "
+                    "(Stage 3) experience capitulation rebounds; low-volume losers (Stage 4) suffer zombie decay."
+                )
+                from src.analytics.momentum_lifecycle import evaluate_momentum_lifecycle_profile
+                if len(df_obs) >= 20:
+                    try:
+                        m_cols = st.columns(2)
+                        with m_cols[0]:
+                            m_to = st.number_input(
+                                "Daily Turnover Ratio (% override)",
+                                min_value=0.05,
+                                max_value=25.0,
+                                value=1.20,
+                                step=0.1,
+                                key="mlc_turnover_input",
+                            )
+                        with m_cols[1]:
+                            st.write("")
+                            st.write("")
+                            st.caption("ℹ️ Benchmark turnover: Low <= 1.4% (neglected), High >= 2.2% (crowded/capitulation).")
+
+                        m_rec = evaluate_momentum_lifecycle_profile(
+                            ticker=selected_ticker,
+                            turnover_ratio_override=float(m_to),
+                        )
+
+                        my1, my2, my3, my4 = st.columns(4)
+                        m_badge = (
+                            "💎 STAGE 1 NEGLECTED WINNER"
+                            if m_rec.is_neglected_winner
+                            else (
+                                "⚠️ STAGE 2 CROWDED"
+                                if m_rec.is_crowded_winner
+                                else (
+                                    "🚀 STAGE 3 CAPITULATION"
+                                    if m_rec.is_capitulation_loser
+                                    else f"Regime: {m_rec.regime}"
+                                )
+                            )
+                        )
+                        my1.metric(
+                            "12-M Momentum",
+                            f"{m_rec.trailing_momentum_pct:+.2f}%",
+                            delta=f"Vol: {m_rec.annualized_volatility_pct:.1f}%",
+                            help="Trailing cumulative intermediate price return",
+                        )
+                        my2.metric(
+                            "Daily Turnover Ratio",
+                            f"{m_rec.daily_turnover_ratio_pct:.2f}%",
+                            delta="Low (Neglected)" if m_rec.daily_turnover_ratio_pct <= 1.4 else ("High (Crowded)" if m_rec.daily_turnover_ratio_pct >= 2.2 else "Moderate"),
+                            help="Shares traded daily scaled by diluted shares outstanding",
+                        )
+                        my3.metric(
+                            "Volume-Momentum Score",
+                            f"{m_rec.volume_momentum_interaction_score:>+.2f}",
+                            delta=m_badge,
+                            delta_color="normal" if (m_rec.is_neglected_winner or m_rec.is_capitulation_loser) else ("inverse" if m_rec.is_crowded_winner else "off"),
+                            help="Interaction score: underreaction continuation vs. crowded exhaustion",
+                        )
+                        my4.metric(
+                            "Expected MLC Alpha",
+                            f"{m_rec.expected_mlc_alpha_pct:+.2f}% Ann",
+                            delta="Continuation Spread" if m_rec.expected_mlc_alpha_pct > 0 else "Reversal Drag",
+                            help="Projected annualized abnormal return based on momentum life-cycle quadrant",
+                        )
+
+                        st.caption(f"🔄 **MLC Summary:** {m_rec.summary}")
+                        st.caption(f"🛡️ **MLC Audit Digest:** `{m_rec.signature[:16]}...` (Verified: `{m_rec.verify_integrity()}`)")
+                    except Exception as m_ex:
+                        st.info(f"Momentum Life Cycle evaluation deferred: {m_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Momentum Life Cycle profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

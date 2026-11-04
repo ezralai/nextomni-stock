@@ -4186,6 +4186,58 @@ def innovation_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def lifecycle_command(args: argparse.Namespace) -> None:
+    """Evaluate Charles M. C. Lee & Bhaskaran Swaminathan (2000) Momentum Life Cycle."""
+    import json
+    from src.analytics.momentum_lifecycle import evaluate_momentum_lifecycle_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    turnover = getattr(args, "turnover", None)
+    if turnover is not None:
+        turnover = float(turnover)
+
+    try:
+        receipt = evaluate_momentum_lifecycle_profile(
+            ticker=ticker,
+            turnover_ratio_override=turnover,
+        )
+    except Exception as ex:
+        print(f"\nError: Momentum Life Cycle evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    s1_str = "YES (STAGE 1 NEGLECTED WINNER - HIGH PERSISTENCE)" if receipt.is_neglected_winner else "NO"
+    s2_str = "YES (STAGE 2 CROWDED WINNER - EXHAUSTION REVERSAL)" if receipt.is_crowded_winner else "NO"
+    s3_str = "YES (STAGE 3 CAPITULATION LOSER - REBOUND BOUNCE)" if receipt.is_capitulation_loser else "NO"
+    s4_str = "YES (STAGE 4 NEGLECTED ZOMBIE - PERSISTENT DECAY)" if receipt.is_neglected_loser else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Lee & Swaminathan (2000) Momentum Life-Cycle Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print(f"  Trailing 12-M Momentum:       {receipt.trailing_momentum_pct:>+8.2f}% (Annual Volatility: {receipt.annualized_volatility_pct:.1f}%)")
+    print(f"  Daily Turnover Ratio:         {receipt.daily_turnover_ratio_pct:.2f}% (Shares Transacted Daily)")
+    print(f"  Volume-Momentum Score (VMIS): {receipt.volume_momentum_interaction_score:>+8.2f} (Underreaction > 0, Crowding < 0)")
+    print("-" * 80)
+    print("  Momentum Life-Cycle Stage & Alpha Dynamics:")
+    print(f"    Life-Cycle Stage:           {receipt.regime}")
+    print(f"    Stage 1 Neglected Winner:   {s1_str}")
+    print(f"    Stage 2 Crowded Winner:     {s2_str}")
+    print(f"    Stage 3 Capitulation Loser: {s3_str}")
+    print(f"    Stage 4 Neglected Zombie:   {s4_str}")
+    print(f"    Expected MLC Alpha Spread:  {receipt.expected_mlc_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -6367,6 +6419,30 @@ def main() -> None:
         help="Output Innovation Capital receipt as JSON",
     )
 
+    # Charles M. C. Lee & Bhaskaran Swaminathan (2000) Momentum Life Cycle Parser
+    lifecycle_parser = subparsers.add_parser(
+        "lifecycle",
+        aliases=["lee-swaminathan", "momentum-volume", "mlc-stage"],
+        help="Evaluate Lee & Swaminathan (2000) price momentum and trading volume life-cycle",
+    )
+    lifecycle_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA, TSLA)",
+    )
+    lifecycle_parser.add_argument(
+        "--turnover",
+        type=float,
+        default=None,
+        help="Daily turnover ratio % override (optional)",
+    )
+    lifecycle_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Momentum Life Cycle receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -6525,6 +6601,8 @@ def main() -> None:
         bsv_command(args)
     elif args.command in ("innovation", "rd-anomaly", "knowledge-capital", "rnd-intensity"):
         innovation_command(args)
+    elif args.command in ("lifecycle", "lee-swaminathan", "momentum-volume", "mlc-stage"):
+        lifecycle_command(args)
 
 
 if __name__ == "__main__":
