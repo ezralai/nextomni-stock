@@ -5290,6 +5290,73 @@ def benchmark_mandate_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def cgo_command(args: argparse.Namespace) -> None:
+    """Evaluate Grinblatt & Han (2005) & Frazzini (2006) Capital Gains Overhang & Disposition Effect."""
+    import json
+    from src.analytics.capital_gains_overhang import evaluate_capital_gains_overhang_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    ref_price = getattr(args, "reference_price", None)
+    if ref_price is not None:
+        ref_price = float(ref_price)
+    turnover = getattr(args, "daily_turnover", None)
+    if turnover is not None:
+        turnover = float(turnover)
+    news = getattr(args, "news_surprise", None)
+    if news is not None:
+        news = float(news)
+    shield = getattr(args, "institutional_disposition_shield", None)
+    if shield is not None:
+        shield = float(shield)
+
+    try:
+        receipt = evaluate_capital_gains_overhang_profile(
+            ticker=ticker,
+            aggregate_reference_price=ref_price,
+            avg_daily_turnover=turnover,
+            news_surprise_score=news,
+            institutional_rationality_shield=shield,
+        )
+    except Exception as ex:
+        print(f"\nError: Capital Gains Overhang evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    lead_str = "YES (GAIN OVERHANG CONTINUATION LEADER)" if receipt.is_gain_overhang_leader else "NO"
+    trap_str = "YES (LOSS-AVERSION LOCK-IN TRAP)" if receipt.is_loss_lock_in_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Grinblatt & Han (2005) & Frazzini (2006) CGO Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Mental-Accounting Cost Basis & Fundamental News Inputs:")
+    print(f"    Aggregate Reference Price (R_t):${receipt.aggregate_reference_price:>10.2f}")
+    print(f"    Average Daily Share Turnover:   {receipt.avg_daily_turnover:>10.2%}")
+    print(f"    Fundamental News Surprise:      {receipt.news_surprise_score:>+10.2f} SD")
+    print(f"    Institutional Rationality Shield:{receipt.institutional_rationality_shield:>9.1%}")
+    print("-" * 80)
+    print("  Grinblatt-Han & Frazzini Disposition Inferences:")
+    print(f"    Capital Gains Overhang (CGO_t): {receipt.capital_gains_overhang:>+10.2%}")
+    print(f"    News x CGO Alignment Mult.:     {receipt.news_overhang_alignment_mult:>10.2f}x")
+    print(f"    Disposition Impulse (FDUI_t):   {receipt.frazzini_disposition_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Disposition Regime & Drift Alpha Projections:")
+    print(f"    Capital Gains Overhang Regime:  {receipt.regime}")
+    print(f"    Gain Overhang Leader:           {lead_str}")
+    print(f"    Loss-Aversion Lock-In Trap:     {trap_str}")
+    print(f"    Expected Disposition Alpha:     {receipt.expected_cgo_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -8201,6 +8268,47 @@ def main() -> None:
         help="Output Benchmark Mandate receipt as JSON",
     )
 
+    cgo_parser = subparsers.add_parser(
+        "cgo",
+        aliases=["grinblatt-han", "frazzini-disposition", "disposition-effect", "capital-gains-overhang"],
+        help="Run Grinblatt & Han (2005) & Frazzini (2006) Capital Gains Overhang & Disposition Effect Engine",
+    )
+    cgo_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    cgo_parser.add_argument(
+        "--reference-price",
+        type=float,
+        default=None,
+        help="Turnover-weighted aggregate reference cost basis R_t in $ (> 0) (optional)",
+    )
+    cgo_parser.add_argument(
+        "--daily-turnover",
+        type=float,
+        default=None,
+        help="Average daily share turnover fraction in (0, 0.50] (optional)",
+    )
+    cgo_parser.add_argument(
+        "--news-surprise",
+        type=float,
+        default=None,
+        help="Standardized fundamental news surprise score in [-5, 5] (optional)",
+    )
+    cgo_parser.add_argument(
+        "--institutional-disposition-shield",
+        type=float,
+        default=None,
+        help="Institutional rationality shield against disposition effect in [0, 1] (optional)",
+    )
+    cgo_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Capital Gains Overhang receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -8389,6 +8497,8 @@ def main() -> None:
         attention_command(args)
     elif args.command in ("benchmark-mandate", "baker-bradley", "tracking-error-limit", "low-vol-mandate"):
         benchmark_mandate_command(args)
+    elif args.command in ("cgo", "grinblatt-han", "frazzini-disposition", "disposition-effect", "capital-gains-overhang"):
+        cgo_command(args)
 
 
 if __name__ == "__main__":

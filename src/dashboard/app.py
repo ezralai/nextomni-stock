@@ -4108,6 +4108,71 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Institutional Benchmark Mandate profile.")
 
+                st.divider()
+                st.markdown("#### ⚓ Grinblatt & Han (2005) & Frazzini (2006) Capital Gains Overhang (CGO) & Disposition Effect")
+                if len(prices) >= 20:
+                    try:
+                        from src.analytics.capital_gains_overhang import evaluate_capital_gains_overhang_profile
+
+                        with st.expander("⚙️ Optional Reference Cost Basis & News Surprise Inputs (Grinblatt-Han / Frazzini)", expanded=False):
+                            cg_c1, cg_c2, cg_c3, cg_c4 = st.columns(4)
+                            cg_ref = cg_c1.number_input("Reference Cost Basis R_t ($)", value=0.0, min_value=0.0, step=5.0, key="cg_ref")
+                            cg_turn = cg_c2.number_input("Avg Daily Turnover (0..0.5]", value=0.0, min_value=0.0, max_value=0.50, step=0.005, key="cg_turn")
+                            cg_news = cg_c3.number_input("News Surprise Score [-5..5]", value=0.0, min_value=-5.0, max_value=5.0, step=0.25, key="cg_news")
+                            cg_shld = cg_c4.number_input("Institutional Rationality Shield [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="cg_shld")
+
+                        cg_rec = evaluate_capital_gains_overhang_profile(
+                            ticker=selected_ticker,
+                            aggregate_reference_price=cg_ref if cg_ref > 0.0 else None,
+                            avg_daily_turnover=cg_turn if cg_turn > 0.0 else None,
+                            news_surprise_score=cg_news if cg_news != 0.0 else None,
+                            institutional_rationality_shield=cg_shld if cg_shld > 0.0 else None,
+                        )
+
+                        cg1, cg2, cg3, cg4 = st.columns(4)
+                        cg_badge = (
+                            "🟢 GAIN OVERHANG LEADER"
+                            if cg_rec.is_gain_overhang_leader
+                            else (
+                                "🔴 LOSS LOCK-IN TRAP"
+                                if cg_rec.is_loss_lock_in_trap
+                                else f"Regime: {cg_rec.regime}"
+                            )
+                        )
+                        cg1.metric(
+                            "Capital Gains Overhang",
+                            f"{cg_rec.capital_gains_overhang:+.2%}",
+                            delta=cg_badge,
+                            delta_color="normal" if cg_rec.is_gain_overhang_leader else ("inverse" if cg_rec.is_loss_lock_in_trap else "off"),
+                            help="Grinblatt & Han (2005) CGO_t = (P_t - R_t) / P_t relative to turnover-weighted reference cost basis",
+                        )
+                        cg2.metric(
+                            "Reference Cost Basis (R_t)",
+                            f"${cg_rec.aggregate_reference_price:,.2f}",
+                            delta=f"Spot P_t: ${cg_rec.latest_price:,.2f}",
+                            help="Aggregate mental-accounting reference cost basis across current shareholders",
+                        )
+                        cg3.metric(
+                            "Frazzini Impulse (FDUI)",
+                            f"{cg_rec.frazzini_disposition_impulse:+.3f}",
+                            delta=f"News Align: {cg_rec.news_overhang_alignment_mult:.2f}x",
+                            delta_color="normal" if cg_rec.frazzini_disposition_impulse >= 0.18 else ("inverse" if cg_rec.frazzini_disposition_impulse <= -0.22 else "off"),
+                            help="Frazzini (2006) disposition underreaction impulse interacting CGO with news surprise",
+                        )
+                        cg4.metric(
+                            "Expected Disposition Alpha",
+                            f"{cg_rec.expected_cgo_alpha_pct:+.2f}% Ann",
+                            delta="Disposition Drift" if cg_rec.expected_cgo_alpha_pct > 0 else "Loss Lock-In Drag",
+                            help="Projected annualized abnormal return from Grinblatt-Han & Frazzini disposition underreaction",
+                        )
+
+                        st.caption(f"🧾 **CGO Summary:** {cg_rec.summary}")
+                        st.caption(f"🛡️ **CGO Audit Digest:** `{cg_rec.signature[:16]}...` (Verified: `{cg_rec.verify_integrity()}`)")
+                    except Exception as cg_ex:
+                        st.info(f"Capital Gains Overhang evaluation deferred: {cg_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Capital Gains Overhang profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
