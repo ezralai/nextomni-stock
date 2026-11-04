@@ -4674,6 +4674,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Liquidity Spiral profile.")
 
+                st.divider()
+                st.markdown("#### 🏛️ He-Kelly-Manela (2017) Intermediary Asset Pricing & Dealer Capital Capacity Engine")
+                st.caption(
+                    "Evaluates primary dealer aggregate equity capital ratio ($\\eta_t$), balance sheet capacity ($\\mathcal{C}_{\\text{dealer}}$), "
+                    "intermediary capital beta ($\\beta_{\\eta, i}$), and leverage constraints under Adrian-Shin (2010) and He-Kelly-Manela (2017)."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.intermediary_asset_pricing import (
+                            evaluate_intermediary_pricing_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Primary Dealer Capital & Intermediary Beta Parameters (Optional)", expanded=False):
+                            iap_c1, iap_c2, iap_c3, iap_c4 = st.columns(4)
+                            iap_eta = iap_c1.number_input("Dealer Capital Ratio eta_t [0.01..0.40]", value=0.0, min_value=0.0, max_value=0.40, step=0.01, key="iap_eta")
+                            iap_eta0 = iap_c2.number_input("Base Capital Ratio eta_0 [0.02..0.30]", value=0.0, min_value=0.0, max_value=0.30, step=0.01, key="iap_eta0")
+                            iap_lev = iap_c3.number_input("Dealer Leverage Lev_t [5.0..50.0]", value=0.0, min_value=0.0, max_value=50.0, step=1.0, key="iap_lev")
+                            iap_beta = iap_c4.number_input("Intermediary Beta beta_eta [-2.0..4.0]", value=0.0, min_value=-2.0, max_value=4.0, step=0.1, key="iap_beta")
+
+                        iap_rec = evaluate_intermediary_pricing_profile(
+                            ticker=selected_ticker,
+                            dealer_capital_ratio=iap_eta if iap_eta > 0.0 else None,
+                            baseline_capital_ratio=iap_eta0 if iap_eta0 > 0.0 else None,
+                            dealer_leverage_ratio=iap_lev if iap_lev > 0.0 else None,
+                            intermediary_capital_beta=iap_beta if iap_beta != 0.0 else None,
+                        )
+
+                        iap1, iap2, iap3, iap4 = st.columns(4)
+                        iap_badge = (
+                            "🔴 LEVERAGE CONSTRAINED"
+                            if iap_rec.regime == "LEVERAGE_CONSTRAINED_DEALER_OVERHANG"
+                            else (
+                                "🟢 INTERMEDIARY SAFE HAVEN"
+                                if iap_rec.is_intermediary_distress_safe_haven
+                                else (
+                                    "⚡ RISK CAPITAL LEADER"
+                                    if iap_rec.is_high_intermediary_risk_leader
+                                    else f"Regime: {iap_rec.regime}"
+                                )
+                            )
+                        )
+                        iap1.metric(
+                            "Dealer Capital Ratio (η_t)",
+                            f"{iap_rec.dealer_capital_ratio:.1%}",
+                            delta=f"Base η_0: {iap_rec.baseline_capital_ratio:.1%}",
+                            delta_color="normal" if iap_rec.dealer_capital_ratio >= iap_rec.baseline_capital_ratio else "inverse",
+                            help="He-Kelly-Manela (2017) market equity of primary dealers divided by total dealer assets",
+                        )
+                        iap2.metric(
+                            "Dealer Capacity (C_dealer)",
+                            f"{iap_rec.balance_sheet_capacity_index:.2f}x",
+                            delta=f"Lev: {iap_rec.dealer_leverage_ratio:.1f}x",
+                            delta_color="inverse" if iap_rec.regime == "LEVERAGE_CONSTRAINED_DEALER_OVERHANG" else "normal",
+                            help="Dealer balance sheet capacity scaling factor C_dealer = (eta_t / eta_0) * (1 - 0.75 * max(0, (Lev_t - Lev_0)/Lev_0))",
+                        )
+                        iap3.metric(
+                            "Intermediary Beta (β_η)",
+                            f"{iap_rec.intermediary_capital_beta:+.2f}",
+                            delta=iap_badge,
+                            delta_color="normal" if iap_rec.is_intermediary_distress_safe_haven else ("inverse" if iap_rec.regime == "LEVERAGE_CONSTRAINED_DEALER_OVERHANG" else "off"),
+                            help="Stock return sensitivity to dealer equity capital ratio growth rate",
+                        )
+                        iap4.metric(
+                            "Expected Intermediary Alpha",
+                            f"{iap_rec.expected_intermediary_alpha_pct:+.2f}% Ann",
+                            delta=f"Impulse: {iap_rec.intermediary_pricing_impulse:+.2f} | Premium: {iap_rec.intermediary_risk_premium_pct:+.2f}%",
+                            help="Projected annualized abnormal return reflecting intermediary capital risk compensation",
+                        )
+
+                        st.caption(f"🧾 **Intermediary Pricing Summary:** {iap_rec.summary}")
+                        st.caption(f"🛡️ **Intermediary Audit Digest:** `{iap_rec.signature[:16]}...` (Verified: `{iap_rec.verify_integrity()}`)")
+                    except Exception as iap_ex:
+                        st.info(f"Intermediary Asset Pricing evaluation deferred: {iap_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Intermediary Asset Pricing profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

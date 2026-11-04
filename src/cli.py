@@ -5886,6 +5886,85 @@ def liquidity_spiral_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def intermediary_command(args: argparse.Namespace) -> None:
+    """CLI handler for He-Kelly-Manela (2017) Intermediary Asset Pricing Engine."""
+    import json
+    from src.analytics.intermediary_asset_pricing import (
+        evaluate_intermediary_pricing_profile,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    eta = getattr(args, "dealer_capital_ratio", None)
+    if eta is not None:
+        eta = float(eta)
+    eta0 = getattr(args, "baseline_capital_ratio", None)
+    if eta0 is not None:
+        eta0 = float(eta0)
+    lev = getattr(args, "dealer_leverage", None)
+    if lev is not None:
+        lev = float(lev)
+    lev0 = getattr(args, "baseline_leverage", None)
+    if lev0 is not None:
+        lev0 = float(lev0)
+    beta = getattr(args, "capital_beta", None)
+    if beta is not None:
+        beta = float(beta)
+
+    try:
+        receipt = evaluate_intermediary_pricing_profile(
+            ticker=ticker,
+            dealer_capital_ratio=eta,
+            baseline_capital_ratio=eta0,
+            dealer_leverage_ratio=lev,
+            baseline_leverage_ratio=lev0,
+            intermediary_capital_beta=beta,
+        )
+    except Exception as ex:
+        print(f"\nError: Intermediary Asset Pricing evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    lead_str = "YES (HIGH INTERMEDIARY RISK CAPITAL LEADER)" if receipt.is_high_intermediary_risk_leader else "NO"
+    haven_str = "YES (INTERMEDIARY DISTRESS SAFE HAVEN)" if receipt.is_intermediary_distress_safe_haven else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: He-Kelly-Manela (2017) Intermediary Pricing Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Primary Dealer Balance Sheet & Capital Inputs:")
+    print(f"    Dealer Capital Ratio (eta_t):   {receipt.dealer_capital_ratio:>10.2%}")
+    print(f"    Baseline Capital (eta_0):       {receipt.baseline_capital_ratio:>10.2%}")
+    print(f"    Capital Shock ((eta-eta0)/eta0):{receipt.capital_ratio_shock_pct:>+10.2%}")
+    print(f"    Dealer Leverage (Assets/Equity):{receipt.dealer_leverage_ratio:>10.2f}x")
+    print(f"    Baseline Leverage (Lev_0):      {receipt.baseline_leverage_ratio:>10.2f}x")
+    print(f"    Intermediary Capital Beta:      {receipt.intermediary_capital_beta:>+10.2f}")
+    print("-" * 80)
+    print("  He-Kelly-Manela Intermediary Risk Inferences:")
+    print(f"    Balance Sheet Capacity (C_dlr): {receipt.balance_sheet_capacity_index:>10.2f}")
+    print(f"    Intermediary Risk Premium:      {receipt.intermediary_risk_premium_pct:>+10.2f}% / yr")
+    print(f"    Pricing Impulse (IAPI_t):       {receipt.intermediary_pricing_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Intermediary Regime & Alpha Projections:")
+    print(f"    Intermediary Pricing Regime:    {receipt.regime}")
+    print(f"    High Intermediary Risk Leader:  {lead_str}")
+    print(f"    Intermediary Safe Haven:        {haven_str}")
+    print(f"    Expected Intermediary Alpha:    {receipt.expected_intermediary_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -9149,6 +9228,53 @@ def main() -> None:
         help="Output Liquidity Spiral receipt as JSON",
     )
 
+    intermediary_parser = subparsers.add_parser(
+        "intermediary",
+        aliases=["he-kelly-manela", "dealer-capital", "intermediary-capital", "adrian-shin"],
+        help="Run He, Kelly & Manela (2017) & Adrian-Etula-Muir (2014) Intermediary Asset Pricing Engine",
+    )
+    intermediary_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    intermediary_parser.add_argument(
+        "--dealer-capital-ratio",
+        type=float,
+        default=None,
+        help="Current primary dealer equity capital ratio eta_t in [0.01, 0.40] (optional)",
+    )
+    intermediary_parser.add_argument(
+        "--baseline-capital-ratio",
+        type=float,
+        default=None,
+        help="Baseline normal-times dealer capital ratio eta_0 in [0.03, 0.35] (optional)",
+    )
+    intermediary_parser.add_argument(
+        "--dealer-leverage",
+        type=float,
+        default=None,
+        help="Current intermediary assets-to-equity leverage in [2.5, 40.0] (optional)",
+    )
+    intermediary_parser.add_argument(
+        "--baseline-leverage",
+        type=float,
+        default=None,
+        help="Baseline normal-times dealer leverage in [5.0, 30.0] (optional)",
+    )
+    intermediary_parser.add_argument(
+        "--capital-beta",
+        type=float,
+        default=None,
+        help="Sensitivity to dealer capital ratio shocks beta_{eta,i} in [-2.0, 4.0] (optional)",
+    )
+    intermediary_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Intermediary Asset Pricing receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -9353,6 +9479,8 @@ def main() -> None:
         stub_command(args)
     elif args.command in ("liquidity-spiral", "brunnermeier-pedersen", "margin-spiral", "funding-liquidity", "fire-sale"):
         liquidity_spiral_command(args)
+    elif args.command in ("intermediary", "he-kelly-manela", "dealer-capital", "intermediary-capital", "adrian-shin"):
+        intermediary_command(args)
 
 
 if __name__ == "__main__":
