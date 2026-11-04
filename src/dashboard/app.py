@@ -3097,6 +3097,95 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Altman & Ohlson Solvency profile.")
 
+                st.markdown("---")
+                st.subheader("🌐 Clifford S. Asness, Tobias J. Moskowitz & Lasse Heje Pedersen (2013) 'Value and Momentum Everywhere' (VME) Engine")
+                st.caption(
+                    "Unified multi-style asset pricing engine (Asness et al. 2013): combines standardized Value (B/M, E/P) "
+                    "and 12-2 Skip-Month Momentum to exploit their strong negative correlation (rho in [-0.40, -0.65]). "
+                    "The 50/50 volatility-matched VME combination neutralizes cyclical style crashes and nearly doubles the Sharpe ratio."
+                )
+                from src.analytics.vme_unified import evaluate_vme_profile
+                if len(df_obs) >= 25:
+                    try:
+                        vme_cols = st.columns(3)
+                        with vme_cols[0]:
+                            vme_bm = st.number_input(
+                                "Book-to-Market (B/M)",
+                                min_value=0.05,
+                                max_value=3.00,
+                                value=0.62,
+                                step=0.05,
+                                key="vme_bm_input",
+                            )
+                        with vme_cols[1]:
+                            vme_ep = st.number_input(
+                                "Earnings Yield (E/P %)",
+                                min_value=-20.0,
+                                max_value=30.0,
+                                value=6.20,
+                                step=0.50,
+                                key="vme_ep_input",
+                            )
+                        with vme_cols[2]:
+                            vme_corr = st.slider(
+                                "Value-Momentum Correlation (rho)",
+                                min_value=-0.85,
+                                max_value=0.50,
+                                value=-0.52,
+                                step=0.05,
+                                key="vme_corr_input",
+                            )
+
+                        vme_rec = evaluate_vme_profile(
+                            ticker=selected_ticker,
+                            book_to_market=float(vme_bm),
+                            earnings_yield_pct=float(vme_ep),
+                            value_momentum_correlation=float(vme_corr),
+                        )
+
+                        vy1, vy2, vy3, vy4 = st.columns(4)
+                        vme_badge = (
+                            "💎 TWIN-ENGINE COMPOUNDER"
+                            if vme_rec.is_twin_engine_compounder
+                            else (
+                                "🚨 HEADWIND TRAP"
+                                if vme_rec.is_dual_headwind_trap
+                                else f"Regime: {vme_rec.regime}"
+                            )
+                        )
+                        vy1.metric(
+                            "Unified 50/50 VME Score",
+                            f"{vme_rec.vme_combo_z_score:+.2f}",
+                            delta=vme_badge,
+                            delta_color="normal" if vme_rec.vme_combo_z_score >= 0.25 else ("inverse" if vme_rec.is_dual_headwind_trap else "off"),
+                            help="Covariance-adjusted 50/50 combination of Value and Momentum z-scores",
+                        )
+                        vy2.metric(
+                            "Style Z-Scores (Val / Mom)",
+                            f"V:{vme_rec.value_z_score:+.2f} | M:{vme_rec.momentum_z_score:+.2f}",
+                            delta=f"12-2 Mom: {vme_rec.momentum_12_2_pct:+.1f}%",
+                            help="Standardized Value z-score and 12-2 skip-month intermediate Momentum z-score",
+                        )
+                        vy3.metric(
+                            "Diversification Benefit",
+                            f"{vme_rec.diversification_benefit_ratio:.2f}x",
+                            delta=f"Implied SR: {vme_rec.implied_vme_sharpe:.2f}",
+                            help="Portfolio volatility reduction factor sqrt(2 / (1 + rho)) from negative style correlation",
+                        )
+                        vy4.metric(
+                            "Expected VME Alpha",
+                            f"{vme_rec.expected_vme_alpha_pct:+.2f}% Ann",
+                            delta="Anti-Fragile Premium" if vme_rec.expected_vme_alpha_pct > 0 else "Dual Style Drag",
+                            help="Projected annualized abnormal return from unified Value + Momentum exposure",
+                        )
+
+                        st.caption(f"🌐 **VME Summary:** {vme_rec.summary}")
+                        st.caption(f"🛡️ **VME Audit Digest:** `{vme_rec.signature[:16]}...` (Verified: `{vme_rec.verify_integrity()}`)")
+                    except Exception as vme_ex:
+                        st.info(f"VME evaluation deferred: {vme_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 25 price sessions to evaluate VME profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

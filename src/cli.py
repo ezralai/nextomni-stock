@@ -4337,6 +4337,72 @@ def altman_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def vme_command(args: argparse.Namespace) -> None:
+    """Evaluate Asness, Moskowitz & Pedersen (2013) 'Value and Momentum Everywhere' (VME)."""
+    import json
+    from src.analytics.vme_unified import evaluate_vme_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    bm = getattr(args, "book_to_market", None)
+    if bm is not None:
+        bm = float(bm)
+    ep = getattr(args, "earnings_yield", None)
+    if ep is not None:
+        ep = float(ep)
+    corr = getattr(args, "correlation", None)
+    if corr is not None:
+        corr = float(corr)
+
+    try:
+        receipt = evaluate_vme_profile(
+            ticker=ticker,
+            book_to_market=bm,
+            earnings_yield_pct=ep,
+            value_momentum_correlation=corr,
+        )
+    except Exception as ex:
+        print(f"\nError: Value and Momentum Everywhere (VME) evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    comp_str = "YES (TWIN-ENGINE VALUE + MOMENTUM COMPOUNDER)" if receipt.is_twin_engine_compounder else "NO"
+    trap_str = "YES (EXPENSIVE + CRASHING HEADWIND TRAP)" if receipt.is_dual_headwind_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Asness, Moskowitz & Pedersen (2013) VME Unified Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Value & Momentum Raw Covariates:")
+    print(f"    Book-to-Market Ratio (B/M):     {receipt.book_to_market:>8.4f}")
+    print(f"    Earnings Yield (E/P):           {receipt.earnings_yield_pct:>8.2f}%")
+    print(f"    12-2 Skip-Month Momentum:       {receipt.momentum_12_2_pct:>+8.2f}% (1-M Skipped: {receipt.short_term_1m_pct:+.2f}%)")
+    print(f"    Annualized Volatility:          {receipt.annualized_volatility_pct:>8.2f}%")
+    print("-" * 80)
+    print("  Standardized Style Z-Scores & Negative Covariance Engine:")
+    print(f"    Standardized Value Z-Score:     {receipt.value_z_score:>+8.2f}")
+    print(f"    Standardized Momentum Z-Score:  {receipt.momentum_z_score:>+8.2f}")
+    print(f"    Value-Momentum Correlation:     {receipt.value_momentum_correlation:>+8.2f} (Asness Benchmark ~ -0.52)")
+    print(f"    Unified 50/50 VME Combo Score:  {receipt.vme_combo_z_score:>+8.2f}")
+    print(f"    Diversification Benefit Ratio:  {receipt.diversification_benefit_ratio:>8.2f}x (sqrt(2 / (1 + rho)))")
+    print(f"    Implied VME Portfolio Sharpe:   {receipt.implied_vme_sharpe:>8.2f}")
+    print("-" * 80)
+    print("  VME Regime & Alpha Dynamics:")
+    print(f"    VME Portfolio Regime:           {receipt.regime}")
+    print(f"    Twin-Engine Compounder:         {comp_str}")
+    print(f"    Dual-Factor Headwind Trap:      {trap_str}")
+    print(f"    Expected VME Alpha Spread:      {receipt.expected_vme_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -6626,6 +6692,42 @@ def main() -> None:
         help="Output Altman Z-Score & Ohlson O-Score receipt as JSON",
     )
 
+    # Clifford S. Asness, Tobias J. Moskowitz & Lasse Heje Pedersen (2013) VME Parser
+    vme_parser = subparsers.add_parser(
+        "vme",
+        aliases=["value-momentum", "asness-moskowitz", "vme-everywhere"],
+        help="Evaluate Asness, Moskowitz & Pedersen (2013) 'Value and Momentum Everywhere' (VME)",
+    )
+    vme_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA, TSLA)",
+    )
+    vme_parser.add_argument(
+        "--book-to-market",
+        type=float,
+        default=None,
+        help="Book-to-Market equity ratio B/M (optional)",
+    )
+    vme_parser.add_argument(
+        "--earnings-yield",
+        type=float,
+        default=None,
+        help="Earnings-to-Price yield E/P % (optional)",
+    )
+    vme_parser.add_argument(
+        "--correlation",
+        type=float,
+        default=None,
+        help="Value-Momentum correlation rho override in [-0.95, 0.95] (optional)",
+    )
+    vme_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output VME receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -6788,6 +6890,8 @@ def main() -> None:
         lifecycle_command(args)
     elif args.command in ("altman", "zscore", "ohlson", "distress-risk"):
         altman_command(args)
+    elif args.command in ("vme", "value-momentum", "asness-moskowitz", "vme-everywhere"):
+        vme_command(args)
 
 
 if __name__ == "__main__":
