@@ -4825,6 +4825,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Margin Asset Pricing profile.")
 
+                st.divider()
+                st.markdown("#### 🏛️ Acharya et al. (2017) Systemic Expected Shortfall (SES) & Capital Surcharge Engine")
+                st.caption(
+                    "Evaluates Marginal Expected Shortfall ($\\text{MES}_i = -\\mathbb{E}[R_i \\mid R_m \\le -C]$), "
+                    "Systemic Expected Shortfall ($\\text{SES}_i$), and Pigouvian systemic externality capital surcharge ($\\tau_i$)."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.systemic_expected_shortfall import (
+                            evaluate_ses_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Systemic Tail Drop & Institution Leverage Parameters (Optional)", expanded=False):
+                            ses_c1, ses_c2, ses_c3, ses_c4 = st.columns(4)
+                            ses_c_in = ses_c1.number_input("Market Drop C [1.0..15.0%]", value=0.0, min_value=0.0, max_value=15.0, step=0.5, key="ses_c_in")
+                            ses_mes_in = ses_c2.number_input("Marginal Shortfall MES [-5.0..30.0%]", value=0.0, min_value=-5.0, max_value=30.0, step=0.5, key="ses_mes_in")
+                            ses_lev_in = ses_c3.number_input("Leverage Ratio [1.0..45.0x]", value=0.0, min_value=0.0, max_value=45.0, step=1.0, key="ses_lev_in")
+                            ses_lev0_in = ses_c4.number_input("Base Leverage [1.0..25.0x]", value=0.0, min_value=0.0, max_value=25.0, step=1.0, key="ses_lev0_in")
+
+                        ses_rec = evaluate_ses_profile(
+                            ticker=selected_ticker,
+                            market_tail_threshold_pct=ses_c_in if ses_c_in > 0.0 else None,
+                            marginal_expected_shortfall_pct=ses_mes_in if ses_mes_in != 0.0 else None,
+                            institution_leverage=ses_lev_in if ses_lev_in > 0.0 else None,
+                            baseline_leverage=ses_lev0_in if ses_lev0_in > 0.0 else None,
+                        )
+
+                        ses1, ses2, ses3, ses4 = st.columns(4)
+                        ses_badge = (
+                            "🔴 CRITICAL SYSTEMIC THREAT"
+                            if ses_rec.is_critical_systemic_threat
+                            else (
+                                "🟢 DEFENSIVE RESILIENCE"
+                                if ses_rec.is_defensive_systemic_resilience
+                                else (
+                                    "⚡ ELEVATED TAIL SENSITIVITY"
+                                    if ses_rec.is_elevated_tail_sensitivity
+                                    else f"Regime: {ses_rec.regime}"
+                                )
+                            )
+                        )
+                        ses1.metric(
+                            "Marginal Shortfall (MES_i)",
+                            f"{ses_rec.marginal_expected_shortfall_pct:.2f}%",
+                            delta=f"Tail Ratio: {ses_rec.tail_dependence_ratio:.2f}x (vs C={ses_rec.market_tail_threshold_pct:.1f}%)",
+                            delta_color="inverse" if ses_rec.marginal_expected_shortfall_pct >= 4.0 else "normal",
+                            help="Expected loss conditional on market tail crash R_m <= -C",
+                        )
+                        ses2.metric(
+                            "Systemic Shortfall (SES_i)",
+                            f"{ses_rec.systemic_expected_shortfall_pct:.2f}%",
+                            delta=ses_badge,
+                            delta_color="inverse" if ses_rec.is_critical_systemic_threat else ("normal" if ses_rec.is_defensive_systemic_resilience else "off"),
+                            help="Expected contribution to aggregate financial system undercapitalization crisis",
+                        )
+                        ses3.metric(
+                            "Capital Surcharge (τ_i)",
+                            f"{ses_rec.systemic_capital_surcharge_pct:.2f}%",
+                            delta=f"Lev: {ses_rec.institution_leverage:.1f}x (Base: {ses_rec.baseline_leverage:.1f}x)",
+                            delta_color="inverse" if ses_rec.systemic_capital_surcharge_pct > 2.0 else "normal",
+                            help="Pigouvian systemic externality capital buffer requirement tau_i",
+                        )
+                        ses4.metric(
+                            "Expected Systemic Alpha",
+                            f"{ses_rec.expected_systemic_alpha_pct:+.2f}% Ann",
+                            delta=f"Fragility Impulse: {ses_rec.systemic_fragility_impulse:+.2f}",
+                            help="Projected annualized abnormal return reflecting systemic tail risk drag or defensive resilience",
+                        )
+
+                        st.caption(f"🧾 **Systemic Risk Summary:** {ses_rec.summary}")
+                        st.caption(f"🛡️ **Systemic Audit Digest:** `{ses_rec.signature[:16]}...` (Verified: `{ses_rec.verify_integrity()}`)")
+                    except Exception as ses_ex:
+                        st.info(f"Systemic Expected Shortfall evaluation deferred: {ses_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Systemic Expected Shortfall profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

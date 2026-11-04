@@ -6053,6 +6053,82 @@ def margin_pricing_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def ses_command(args: argparse.Namespace) -> None:
+    """CLI handler for Acharya et al. (2017) Systemic Expected Shortfall Engine."""
+    import json
+    from src.analytics.systemic_expected_shortfall import (
+        evaluate_ses_profile,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    c_tail = getattr(args, "market_tail_threshold", None)
+    if c_tail is not None:
+        c_tail = float(c_tail)
+    mes = getattr(args, "marginal_shortfall", None)
+    if mes is not None:
+        mes = float(mes)
+    lev = getattr(args, "leverage", None)
+    if lev is not None:
+        lev = float(lev)
+    lev0 = getattr(args, "baseline_leverage", None)
+    if lev0 is not None:
+        lev0 = float(lev0)
+
+    try:
+        receipt = evaluate_ses_profile(
+            ticker=ticker,
+            market_tail_threshold_pct=c_tail,
+            marginal_expected_shortfall_pct=mes,
+            institution_leverage=lev,
+            baseline_leverage=lev0,
+        )
+    except Exception as ex:
+        print(f"\nError: Systemic Expected Shortfall evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    crit_str = "YES (CRITICAL SYSTEMIC EXTERNALITY THREAT)" if receipt.is_critical_systemic_threat else "NO"
+    def_str = "YES (DEFENSIVE SYSTEMIC RESILIENCE)" if receipt.is_defensive_systemic_resilience else "NO"
+    elev_str = "YES (ELEVATED MARGINAL TAIL SENSITIVITY)" if receipt.is_elevated_tail_sensitivity else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Acharya et al. (2017) Systemic Expected Shortfall (SES) Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Systemic Tail Conditioning & Leverage Inputs:")
+    print(f"    Crisis Conditioning Drop (C):   {receipt.market_tail_threshold_pct:>10.2f}%")
+    print(f"    Marginal Expected Shortfall:    {receipt.marginal_expected_shortfall_pct:>10.2f}% (MES_i)")
+    print(f"    Institution Leverage:           {receipt.institution_leverage:>10.2f}x (Assets/Equity)")
+    print(f"    Baseline Leverage:              {receipt.baseline_leverage:>10.2f}x")
+    print(f"    Tail Dependence Ratio (MES/C):  {receipt.tail_dependence_ratio:>10.2f}x")
+    print("-" * 80)
+    print("  Acharya et al. Systemic Risk Inferences:")
+    print(f"    Systemic Expected Shortfall:    {receipt.systemic_expected_shortfall_pct:>10.2f}% (SES_i)")
+    print(f"    Pigouvian Capital Surcharge:    {receipt.systemic_capital_surcharge_pct:>10.2f}% (tau_i)")
+    print(f"    Systemic Fragility Impulse:     {receipt.systemic_fragility_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Systemic Regime & Alpha Projections:")
+    print(f"    Systemic Risk Regime:           {receipt.regime}")
+    print(f"    Critical Systemic Threat:       {crit_str}")
+    print(f"    Defensive Systemic Resilience:  {def_str}")
+    print(f"    Elevated Tail Sensitivity:      {elev_str}")
+    print(f"    Expected Systemic Alpha:        {receipt.expected_systemic_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -9416,6 +9492,47 @@ def main() -> None:
         help="Output Margin Asset Pricing receipt as JSON",
     )
 
+    ses_parser = subparsers.add_parser(
+        "ses",
+        aliases=["acharya-pedersen", "systemic-risk", "mes", "capital-surcharge"],
+        help="Run Acharya, Pedersen, Philippon & Richardson (2017) Systemic Expected Shortfall Engine",
+    )
+    ses_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    ses_parser.add_argument(
+        "--market-tail-threshold",
+        type=float,
+        default=None,
+        help="Conditioning market crisis drop C (%) in [1.0, 15.0] (optional)",
+    )
+    ses_parser.add_argument(
+        "--marginal-shortfall",
+        type=float,
+        default=None,
+        help="Marginal Expected Shortfall MES_i (%) in [-5.0, 30.0] (optional)",
+    )
+    ses_parser.add_argument(
+        "--leverage",
+        type=float,
+        default=None,
+        help="Institution leverage Assets / Equity in [1.0, 45.0] (optional)",
+    )
+    ses_parser.add_argument(
+        "--baseline-leverage",
+        type=float,
+        default=None,
+        help="Normal-times baseline leverage in [1.0, 25.0] (optional)",
+    )
+    ses_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Systemic Expected Shortfall receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -9624,6 +9741,8 @@ def main() -> None:
         intermediary_command(args)
     elif args.command in ("margin-pricing", "garleanu-pedersen", "margin-capm", "basis-spread", "margin-constraints"):
         margin_pricing_command(args)
+    elif args.command in ("ses", "acharya-pedersen", "systemic-risk", "mes", "capital-surcharge"):
+        ses_command(args)
 
 
 if __name__ == "__main__":
