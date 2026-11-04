@@ -3186,6 +3186,96 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 25 price sessions to evaluate VME profile.")
 
+                st.markdown("---")
+                st.subheader("📊 Victor L. Bernard & Jacob K. Thomas (1989, 1990) PEAD & SUE Autocorrelation Engine")
+                st.caption(
+                    "Post-Earnings-Announcement Drift (PEAD) & Standardized Unexpected Earnings (SUE) engine: models "
+                    "seasonal quarterly earnings autocorrelation (phi_1 = +0.34 persistence vs. phi_4 = -0.24 seasonal reversal). "
+                    "Captures 60-trading-day underreaction drift as market participants anchor on naive seasonal random walks."
+                )
+                from src.analytics.pead_sue import evaluate_pead_sue_profile
+                if len(df_obs) >= 20:
+                    try:
+                        p_cols = st.columns(3)
+                        with p_cols[0]:
+                            p_cur_eps = st.number_input(
+                                "Current Quarter EPS ($)",
+                                min_value=-50.0,
+                                max_value=100.0,
+                                value=1.80,
+                                step=0.05,
+                                key="pead_cur_eps_input",
+                            )
+                        with p_cols[1]:
+                            p_yr_eps = st.number_input(
+                                "Year-Ago Quarter EPS ($)",
+                                min_value=-50.0,
+                                max_value=100.0,
+                                value=1.50,
+                                step=0.05,
+                                key="pead_yr_eps_input",
+                            )
+                        with p_cols[2]:
+                            p_days = st.slider(
+                                "Sessions Since Announcement (d)",
+                                min_value=0,
+                                max_value=90,
+                                value=10,
+                                step=5,
+                                key="pead_days_input",
+                            )
+
+                        p_rec = evaluate_pead_sue_profile(
+                            ticker=selected_ticker,
+                            current_eps=float(p_cur_eps),
+                            year_ago_eps=float(p_yr_eps),
+                            days_since_announcement=int(p_days),
+                        )
+
+                        py1, py2, py3, py4 = st.columns(4)
+                        p_badge = (
+                            "🚀 ACTIVE UPWARD PEAD"
+                            if p_rec.is_active_positive_drift
+                            else (
+                                "📉 ACTIVE DOWNWARD SLUMP"
+                                if p_rec.is_active_negative_slump
+                                else f"Regime: {p_rec.regime}"
+                            )
+                        )
+                        py1.metric(
+                            "Standardized Surprise (SUE)",
+                            f"{p_rec.sue_score:+.2f}",
+                            delta=f"Decile {p_rec.sue_decile} / 10",
+                            delta_color="normal" if p_rec.sue_score >= 0 else "inverse",
+                            help="Standardized Unexpected Earnings relative to seasonal random walk with drift",
+                        )
+                        py2.metric(
+                            "Next-Quarter AR(1) SUE",
+                            f"{p_rec.predicted_next_quarter_sue:+.2f}",
+                            delta=f"Lag-4 Reversal: {p_rec.predicted_lag4_reversal_sue:+.2f}",
+                            help="Bernard-Thomas seasonal earnings autocorrelation forecast (phi_1 = +0.34, phi_4 = -0.24)",
+                        )
+                        py3.metric(
+                            "Remaining 60-Day Drift",
+                            f"{p_rec.remaining_drift_pct:+.2f}%",
+                            delta=p_badge,
+                            delta_color="normal" if p_rec.is_active_positive_drift else ("inverse" if p_rec.is_active_negative_slump else "off"),
+                            help="Decay-adjusted remaining cumulative abnormal return over the 60-session window",
+                        )
+                        py4.metric(
+                            "Expected PEAD Alpha",
+                            f"{p_rec.expected_pead_alpha_pct:+.2f}% Ann",
+                            delta="Underreaction Drift" if p_rec.expected_pead_alpha_pct > 0 else "Negative Drift Drag",
+                            help="Projected annualized abnormal return from post-earnings announcement drift",
+                        )
+
+                        st.caption(f"📊 **PEAD Summary:** {p_rec.summary}")
+                        st.caption(f"🛡️ **PEAD Audit Digest:** `{p_rec.signature[:16]}...` (Verified: `{p_rec.verify_integrity()}`)")
+                    except Exception as p_ex:
+                        st.info(f"PEAD & SUE evaluation deferred: {p_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate PEAD & SUE profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

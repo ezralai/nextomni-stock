@@ -4403,6 +4403,76 @@ def vme_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def pead_command(args: argparse.Namespace) -> None:
+    """Evaluate Victor L. Bernard & Jacob K. Thomas (1989, 1990) PEAD & SUE Autocorrelation."""
+    import json
+    from src.analytics.pead_sue import evaluate_pead_sue_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    cur_eps = getattr(args, "current_eps", None)
+    if cur_eps is not None:
+        cur_eps = float(cur_eps)
+    yr_eps = getattr(args, "year_ago_eps", None)
+    if yr_eps is not None:
+        yr_eps = float(yr_eps)
+    std_eps = getattr(args, "surprise_std", None)
+    if std_eps is not None:
+        std_eps = float(std_eps)
+    days = getattr(args, "days_since", None)
+    if days is not None:
+        days = int(days)
+
+    try:
+        receipt = evaluate_pead_sue_profile(
+            ticker=ticker,
+            current_eps=cur_eps,
+            year_ago_eps=yr_eps,
+            surprise_std_eps=std_eps,
+            days_since_announcement=days,
+        )
+    except Exception as ex:
+        print(f"\nError: PEAD & SUE evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    pos_str = "YES (ACTIVE 60-SESSION UPWARD PEAD)" if receipt.is_active_positive_drift else "NO"
+    neg_str = "YES (ACTIVE 60-SESSION DOWNWARD SLUMP)" if receipt.is_active_negative_slump else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Bernard & Thomas (1989, 1990) PEAD & SUE Autocorrelation Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Quarterly Earnings & Surprise Standardization:")
+    print(f"    Current Quarter EPS (t):        ${receipt.current_eps:>8.4f}")
+    print(f"    Year-Ago Quarter EPS (t-4):     ${receipt.year_ago_eps:>8.4f}")
+    print(f"    Seasonal Drift Mean (mu):       ${receipt.drift_mean_eps:>+8.4f}")
+    print(f"    Surprise Volatility (sigma):    ${receipt.surprise_std_eps:>8.4f}")
+    print(f"    Standardized Unexpected (SUE):  {receipt.sue_score:>+8.2f} (Decile Rank: {receipt.sue_decile} / 10)")
+    print(f"    Sessions Since Announcement:    {receipt.days_since_announcement:>8d} trading days")
+    print("-" * 80)
+    print("  Bernard-Thomas AR(4) Seasonal Autocorrelation & Drift Dynamics:")
+    print(f"    Predicted Next-Quarter SUE:     {receipt.predicted_next_quarter_sue:>+8.2f} (phi_1 = +0.34 persistence)")
+    print(f"    Predicted Lag-4 Seasonal SUE:   {receipt.predicted_lag4_reversal_sue:>+8.2f} (phi_4 = -0.24 reversal)")
+    print(f"    Initial 60-Day Drift Potential: {receipt.initial_60d_drift_pct:>+8.2f}%")
+    print(f"    Remaining 60-Day Drift (CAR):   {receipt.remaining_drift_pct:>+8.2f}%")
+    print("-" * 80)
+    print("  PEAD Regime & Alpha Projections:")
+    print(f"    PEAD Lifecycle Regime:          {receipt.regime}")
+    print(f"    Active Positive Drift:          {pos_str}")
+    print(f"    Active Negative Slump:          {neg_str}")
+    print(f"    Expected PEAD Alpha Spread:     {receipt.expected_pead_alpha_pct:>+8.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -6728,6 +6798,48 @@ def main() -> None:
         help="Output VME receipt as JSON",
     )
 
+    # Victor L. Bernard & Jacob K. Thomas (1989, 1990) PEAD & SUE Parser
+    pead_parser = subparsers.add_parser(
+        "pead",
+        aliases=["sue", "bernard-thomas", "earnings-drift"],
+        help="Evaluate Bernard & Thomas (1989, 1990) Post-Earnings-Announcement Drift (PEAD) & SUE",
+    )
+    pead_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA, TSLA)",
+    )
+    pead_parser.add_argument(
+        "--current-eps",
+        type=float,
+        default=None,
+        help="Current quarterly diluted EPS (optional)",
+    )
+    pead_parser.add_argument(
+        "--year-ago-eps",
+        type=float,
+        default=None,
+        help="Same quarter prior-year diluted EPS (optional)",
+    )
+    pead_parser.add_argument(
+        "--surprise-std",
+        type=float,
+        default=None,
+        help="Standard deviation of seasonal EPS changes (optional)",
+    )
+    pead_parser.add_argument(
+        "--days-since",
+        type=int,
+        default=None,
+        help="Trading sessions elapsed since earnings release (optional)",
+    )
+    pead_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output PEAD & SUE receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -6892,6 +7004,8 @@ def main() -> None:
         altman_command(args)
     elif args.command in ("vme", "value-momentum", "asness-moskowitz", "vme-everywhere"):
         vme_command(args)
+    elif args.command in ("pead", "sue", "bernard-thomas", "earnings-drift"):
+        pead_command(args)
 
 
 if __name__ == "__main__":
