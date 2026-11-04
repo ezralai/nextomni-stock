@@ -5658,6 +5658,86 @@ def reversibility_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def cochrane_command(args: argparse.Namespace) -> None:
+    """CLI handler for Campbell-Shiller & Cochrane (2008, 2011) Discount-Rate Decomposition Engine."""
+    import json
+    from src.analytics.campbell_shiller_cochrane import (
+        evaluate_campbell_shiller_cochrane_profile,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    dp = getattr(args, "log_dividend_price", None)
+    if dp is not None:
+        dp = float(dp)
+    dp_bar = getattr(args, "mean_log_dividend_price", None)
+    if dp_bar is not None:
+        dp_bar = float(dp_bar)
+    phi = getattr(args, "valuation_persistence", None)
+    if phi is not None:
+        phi = float(phi)
+    br1 = getattr(args, "return_slope", None)
+    if br1 is not None:
+        br1 = float(br1)
+    bd1 = getattr(args, "cashflow_slope", None)
+    if bd1 is not None:
+        bd1 = float(bd1)
+
+    try:
+        receipt = evaluate_campbell_shiller_cochrane_profile(
+            ticker=ticker,
+            log_dividend_price_ratio=dp,
+            mean_log_dividend_price=dp_bar,
+            valuation_persistence_phi=phi,
+            one_period_return_slope=br1,
+            cashflow_growth_forecast_slope=bd1,
+        )
+    except Exception as ex:
+        print(f"\nError: Campbell-Shiller Cochrane evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    opp_str = "YES (DISCOUNT-RATE MEAN-REVERSION OPPORTUNITY)" if receipt.is_discount_rate_opportunity else "NO"
+    trap_str = "YES (COMPRESSED DISCOUNT-RATE TRAP)" if receipt.is_compressed_discount_rate_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Campbell-Shiller & Cochrane (2008, 2011) Decomposition")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Valuation & Present-Value Identity Inputs:")
+    print(f"    Log Dividend-Price (dp_t):      {receipt.log_dividend_price_ratio:>10.2f}")
+    print(f"    Mean Log Yield (bar{{dp}}):       {receipt.mean_log_dividend_price:>10.2f}")
+    print(f"    Yield Deviation (dp - bar{{dp}}): {receipt.yield_deviation:>+10.2f}")
+    print(f"    Valuation Persistence (phi):    {receipt.valuation_persistence_phi:>10.3f}")
+    print(f"    Campbell-Shiller rho:           {receipt.campbell_shiller_rho:>10.3f}")
+    print(f"    Return Forecast Slope (b_r1):   {receipt.one_period_return_slope:>+10.4f}")
+    print(f"    Cash-Flow Slope (b_d1):         {receipt.cashflow_growth_forecast_slope:>+10.4f}")
+    print("-" * 80)
+    print("  Cochrane Present-Value Variance Decomposition:")
+    print(f"    Discount-Rate Share (S_DR):     {receipt.discount_rate_variance_share:>10.1%}")
+    print(f"    Cash-Flow Share (S_CF):         {receipt.cashflow_variance_share:>10.1%}")
+    print(f"    Cochrane Impulse (CSCI_t):      {receipt.cochrane_discount_rate_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Decomposition Regime & Return Projections:")
+    print(f"    Present-Value Regime:           {receipt.regime}")
+    print(f"    Discount-Rate Opportunity:      {opp_str}")
+    print(f"    Compressed Discount-Rate Trap:  {trap_str}")
+    print(f"    Expected Mean-Reversion Alpha:  {receipt.expected_discount_rate_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -8786,6 +8866,53 @@ def main() -> None:
         help="Output Costly Reversibility receipt as JSON",
     )
 
+    cochrane_parser = subparsers.add_parser(
+        "cochrane",
+        aliases=["campbell-shiller", "discount-rate-decomposition", "present-value-identity"],
+        help="Run Campbell-Shiller (1988) & Cochrane (2008, 2011) Present-Value & Discount-Rate Decomposition Engine",
+    )
+    cochrane_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    cochrane_parser.add_argument(
+        "--log-dividend-price",
+        type=float,
+        default=None,
+        help="Current log dividend/payout-to-price ratio dp_t in [-6.0, 0.0] (optional)",
+    )
+    cochrane_parser.add_argument(
+        "--mean-log-dividend-price",
+        type=float,
+        default=None,
+        help="Long-run mean log yield bar{dp} in [-6.0, 0.0] (optional)",
+    )
+    cochrane_parser.add_argument(
+        "--valuation-persistence",
+        type=float,
+        default=None,
+        help="AR(1) persistence of valuation ratio phi_{dp} in [0.50, 0.995] (optional)",
+    )
+    cochrane_parser.add_argument(
+        "--return-slope",
+        type=float,
+        default=None,
+        help="1-period return forecasting slope b_r^{(1)} in [-0.50, 1.0] (optional)",
+    )
+    cochrane_parser.add_argument(
+        "--cashflow-slope",
+        type=float,
+        default=None,
+        help="1-period cashflow growth forecasting slope b_d^{(1)} (optional)",
+    )
+    cochrane_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Campbell-Shiller Cochrane receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -8984,6 +9111,8 @@ def main() -> None:
         lrr_command(args)
     elif args.command in ("reversibility", "lu-zhang", "costly-reversibility", "asymmetric-capital"):
         reversibility_command(args)
+    elif args.command in ("cochrane", "campbell-shiller", "discount-rate-decomposition", "present-value-identity"):
+        cochrane_command(args)
 
 
 if __name__ == "__main__":

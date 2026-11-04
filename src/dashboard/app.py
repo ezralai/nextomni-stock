@@ -4461,6 +4461,77 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Costly Reversibility profile.")
 
+                st.divider()
+                st.markdown("#### ⚖️ Campbell & Shiller (1988) / Cochrane (2008, 2011) Present-Value & Discount-Rate Decomposition Engine")
+                st.caption(
+                    "Evaluates the exact present-value log-linearization identity ($1 = S_{DR} + S_{CF}$), decomposing valuation ratio "
+                    "movements into time-varying discount rates ($S_{DR} = b_r^{LR}$) versus cash-flow growth ($S_{CF} = -b_d^{LR}$)."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.campbell_shiller_cochrane import (
+                            evaluate_campbell_shiller_cochrane_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Present-Value Decomposition Parameters (Optional)", expanded=False):
+                            cs_c1, cs_c2, cs_c3, cs_c4 = st.columns(4)
+                            cs_dp = cs_c1.number_input("Log Yield dp_t [-6..0]", value=0.0, min_value=-6.0, max_value=0.0, step=0.1, key="cs_dp")
+                            cs_bar = cs_c2.number_input("Mean Yield bar{dp} [-6..0]", value=0.0, min_value=-6.0, max_value=0.0, step=0.1, key="cs_bar")
+                            cs_phi = cs_c3.number_input("Persistence phi [0.5..0.995]", value=0.0, min_value=0.0, max_value=0.995, step=0.01, key="cs_phi")
+                            cs_br = cs_c4.number_input("Return Slope b_r1 [-0.5..1.0]", value=0.0, min_value=-0.50, max_value=1.0, step=0.01, key="cs_br")
+
+                        cs_rec = evaluate_campbell_shiller_cochrane_profile(
+                            ticker=selected_ticker,
+                            log_dividend_price_ratio=cs_dp if cs_dp != 0.0 else None,
+                            mean_log_dividend_price=cs_bar if cs_bar != 0.0 else None,
+                            valuation_persistence_phi=cs_phi if cs_phi >= 0.50 else None,
+                            one_period_return_slope=cs_br if cs_br != 0.0 else None,
+                        )
+
+                        cs1, cs2, cs3, cs4 = st.columns(4)
+                        cs_badge = (
+                            "🟢 DISCOUNT-RATE OPPORTUNITY"
+                            if cs_rec.is_discount_rate_opportunity
+                            else (
+                                "🔴 COMPRESSED DR TRAP"
+                                if cs_rec.is_compressed_discount_rate_trap
+                                else f"Regime: {cs_rec.regime}"
+                            )
+                        )
+                        cs1.metric(
+                            "Discount-Rate Share (S_DR)",
+                            f"{cs_rec.discount_rate_variance_share:.1%}",
+                            delta=f"Cash-Flow: {cs_rec.cashflow_variance_share:.1%}",
+                            delta_color="normal" if cs_rec.is_discount_rate_opportunity else ("inverse" if cs_rec.is_compressed_discount_rate_trap else "off"),
+                            help="Cochrane (2008, 2011) long-run discount-rate elasticity S_DR = b_r^LR = b_r1 / (1 - rho * phi)",
+                        )
+                        cs2.metric(
+                            "Log Yield (dp_t)",
+                            f"{cs_rec.log_dividend_price_ratio:.2f}",
+                            delta=f"Dev: {cs_rec.yield_deviation:+.2f} (bar: {cs_rec.mean_log_dividend_price:.2f})",
+                            help="Current log dividend/payout-to-price ratio and deviation from long-run historical mean",
+                        )
+                        cs3.metric(
+                            "Cochrane Impulse (CSCI)",
+                            f"{cs_rec.cochrane_discount_rate_impulse:+.3f}",
+                            delta=cs_badge,
+                            delta_color="normal" if cs_rec.cochrane_discount_rate_impulse >= 0.40 else ("inverse" if cs_rec.cochrane_discount_rate_impulse <= -0.40 else "off"),
+                            help="Campbell-Shiller & Cochrane present-value return forecasting impulse",
+                        )
+                        cs4.metric(
+                            "Expected Mean-Reversion Alpha",
+                            f"{cs_rec.expected_discount_rate_alpha_pct:+.2f}% Ann",
+                            delta="Discount-Rate Drift" if cs_rec.expected_discount_rate_alpha_pct > 0 else "Multiple Compression Drag",
+                            help="Projected annualized abnormal return from discount-rate present-value mean-reversion",
+                        )
+
+                        st.caption(f"🧾 **Decomposition Summary:** {cs_rec.summary}")
+                        st.caption(f"🛡️ **Decomposition Audit Digest:** `{cs_rec.signature[:16]}...` (Verified: `{cs_rec.verify_integrity()}`)")
+                    except Exception as cs_ex:
+                        st.info(f"Campbell-Shiller Cochrane evaluation deferred: {cs_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Campbell-Shiller Cochrane profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
