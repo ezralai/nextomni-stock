@@ -5965,6 +5965,94 @@ def intermediary_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def margin_pricing_command(args: argparse.Namespace) -> None:
+    """CLI handler for Gârleanu & Pedersen (2011) Margin-Based Asset Pricing Engine."""
+    import json
+    from src.analytics.margin_asset_pricing import (
+        evaluate_margin_pricing_profile,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    m_i = getattr(args, "margin_requirement", None)
+    if m_i is not None:
+        m_i = float(m_i)
+    m_0 = getattr(args, "baseline_margin", None)
+    if m_0 is not None:
+        m_0 = float(m_0)
+    psi = getattr(args, "shadow_cost", None)
+    if psi is not None:
+        psi = float(psi)
+    beta = getattr(args, "market_beta", None)
+    if beta is not None:
+        beta = float(beta)
+    mrp = getattr(args, "market_risk_premium", None)
+    if mrp is not None:
+        mrp = float(mrp)
+    rf = getattr(args, "risk_free_rate", None)
+    if rf is not None:
+        rf = float(rf)
+
+    try:
+        receipt = evaluate_margin_pricing_profile(
+            ticker=ticker,
+            margin_requirement=m_i,
+            baseline_margin_requirement=m_0,
+            margin_shadow_cost_psi=psi,
+            market_beta=beta,
+            market_risk_premium_pct=mrp,
+            risk_free_rate_pct=rf,
+        )
+    except Exception as ex:
+        print(f"\nError: Margin Asset Pricing evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    disc_str = "YES (MARGIN CONSTRAINED BASIS DISCOUNT)" if receipt.is_margin_constrained_discount else "NO"
+    trap_str = "YES (HIGH-BETA MARGIN OVERPRICING TRAP)" if receipt.is_margin_overpricing_trap else "NO"
+    bab_str = "YES (BETTING AGAINST BETA ALPHA)" if receipt.is_bab_alpha_opportunity else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Gârleanu & Pedersen (2011) Margin-Based Asset Pricing Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Margin Requirements & Leverage Constraints:")
+    print(f"    Margin Haircut (m_i):           {receipt.margin_requirement:>10.2%}")
+    print(f"    Baseline Haircut (m_0):         {receipt.baseline_margin_requirement:>10.2%}")
+    print(f"    Margin Shadow Cost (psi):       {receipt.margin_shadow_cost_psi:>10.2%}")
+    print(f"    Systematic Market Beta (beta):  {receipt.market_beta:>10.2f}")
+    print(f"    Market Risk Premium (lambda_m): {receipt.market_risk_premium_pct:>10.2f}%")
+    print(f"    Risk-Free Rate (R_f):           {receipt.risk_free_rate_pct:>10.2f}%")
+    print("-" * 80)
+    print("  Margin-CAPM Expected Return & Basis Spread:")
+    print(f"    Standard CAPM Return:           {receipt.standard_capm_expected_return_pct:>10.2f}% / yr")
+    print(f"    Margin Premium (m_i * psi):     {receipt.margin_premium_contribution_pct:>+10.2f}% / yr")
+    print(f"    Margin-CAPM Expected Return:    {receipt.margin_capm_expected_return_pct:>10.2f}% / yr")
+    print(f"    Basis Spread Discount (D_i):    {receipt.basis_spread_discount_pct:>+10.2f}%")
+    print(f"    BAB Compression Score:          {receipt.bab_leverage_compression_score:>+10.2f}")
+    print(f"    Pricing Impulse:                {receipt.margin_pricing_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Margin Pricing Regime & Alpha Projections:")
+    print(f"    Margin Pricing Regime:          {receipt.regime}")
+    print(f"    Margin Constrained Discount:    {disc_str}")
+    print(f"    High-Beta Overpricing Trap:     {trap_str}")
+    print(f"    BAB Alpha Opportunity:          {bab_str}")
+    print(f"    Expected Margin Alpha:          {receipt.expected_margin_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -9275,6 +9363,59 @@ def main() -> None:
         help="Output Intermediary Asset Pricing receipt as JSON",
     )
 
+    margin_parser = subparsers.add_parser(
+        "margin-pricing",
+        aliases=["garleanu-pedersen", "margin-capm", "basis-spread", "margin-constraints"],
+        help="Run Gârleanu & Pedersen (2011) Margin-Based Asset Pricing & Leverage Constraint Engine",
+    )
+    margin_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    margin_parser.add_argument(
+        "--margin-requirement",
+        type=float,
+        default=None,
+        help="Asset haircut / margin requirement m_i in [0.05, 0.90] (optional)",
+    )
+    margin_parser.add_argument(
+        "--baseline-margin",
+        type=float,
+        default=None,
+        help="Normal-times baseline margin requirement in [0.05, 0.50] (optional)",
+    )
+    margin_parser.add_argument(
+        "--shadow-cost",
+        type=float,
+        default=None,
+        help="Margin constraint Lagrange multiplier shadow cost psi in [0.0, 0.25] (optional)",
+    )
+    margin_parser.add_argument(
+        "--market-beta",
+        type=float,
+        default=None,
+        help="Systematic market beta beta_i in [-1.0, 3.5] (optional)",
+    )
+    margin_parser.add_argument(
+        "--market-risk-premium",
+        type=float,
+        default=None,
+        help="Market risk premium lambda_m (%) in [2.0, 12.0] (optional)",
+    )
+    margin_parser.add_argument(
+        "--risk-free-rate",
+        type=float,
+        default=None,
+        help="Risk-free rate R_f (%) in [0.0, 10.0] (optional)",
+    )
+    margin_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Margin Asset Pricing receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -9481,6 +9622,8 @@ def main() -> None:
         liquidity_spiral_command(args)
     elif args.command in ("intermediary", "he-kelly-manela", "dealer-capital", "intermediary-capital", "adrian-shin"):
         intermediary_command(args)
+    elif args.command in ("margin-pricing", "garleanu-pedersen", "margin-capm", "basis-spread", "margin-constraints"):
+        margin_pricing_command(args)
 
 
 if __name__ == "__main__":

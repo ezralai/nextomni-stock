@@ -4750,6 +4750,81 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Intermediary Asset Pricing profile.")
 
+                st.divider()
+                st.markdown("#### ⚖️ Gârleanu-Pedersen (2011) Margin-Based Asset Pricing & Basis Spread Engine")
+                st.caption(
+                    "Evaluates the Margin-CAPM return identity ($E[R_i] - R_f = \\beta_i \\lambda_m + m_i \\psi$), "
+                    "cash-synthetic basis spread discount ($D_i$), and Frazzini-Pedersen (2014) Betting Against Beta (BAB) compression."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.margin_asset_pricing import (
+                            evaluate_margin_pricing_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Margin Requirement & Shadow Cost Parameters (Optional)", expanded=False):
+                            map_c1, map_c2, map_c3, map_c4 = st.columns(4)
+                            map_mi = map_c1.number_input("Margin Haircut m_i [0.05..0.90]", value=0.0, min_value=0.0, max_value=0.90, step=0.05, key="map_mi")
+                            map_psi = map_c2.number_input("Shadow Cost psi [0.0..0.25]", value=0.0, min_value=0.0, max_value=0.25, step=0.01, key="map_psi")
+                            map_beta = map_c3.number_input("Market Beta beta_i [-1.0..3.5]", value=0.0, min_value=-1.0, max_value=3.5, step=0.1, key="map_beta")
+                            map_mrp = map_c4.number_input("Market Risk Premium [2.0..12.0]", value=0.0, min_value=0.0, max_value=12.0, step=0.5, key="map_mrp")
+
+                        map_rec = evaluate_margin_pricing_profile(
+                            ticker=selected_ticker,
+                            margin_requirement=map_mi if map_mi > 0.0 else None,
+                            margin_shadow_cost_psi=map_psi if map_psi > 0.0 else None,
+                            market_beta=map_beta if map_beta != 0.0 else None,
+                            market_risk_premium_pct=map_mrp if map_mrp > 0.0 else None,
+                        )
+
+                        map1, map2, map3, map4 = st.columns(4)
+                        map_badge = (
+                            "🔴 HIGH-BETA OVERPRICING TRAP"
+                            if map_rec.is_margin_overpricing_trap
+                            else (
+                                "🟢 MARGIN BASIS DISCOUNT"
+                                if map_rec.is_margin_constrained_discount
+                                else (
+                                    "⚡ BAB ALPHA OPPORTUNITY"
+                                    if map_rec.is_bab_alpha_opportunity
+                                    else f"Regime: {map_rec.regime}"
+                                )
+                            )
+                        )
+                        map1.metric(
+                            "Margin Haircut (m_i)",
+                            f"{map_rec.margin_requirement:.1%}",
+                            delta=f"Base m_0: {map_rec.baseline_margin_requirement:.1%}",
+                            delta_color="normal" if map_rec.margin_requirement <= map_rec.baseline_margin_requirement else "inverse",
+                            help="Gârleanu & Pedersen (2011) prime brokerage margin / haircut requirement m_i",
+                        )
+                        map2.metric(
+                            "Shadow Cost (ψ)",
+                            f"{map_rec.margin_shadow_cost_psi:.1%}",
+                            delta=map_badge,
+                            delta_color="inverse" if map_rec.is_margin_overpricing_trap else ("normal" if map_rec.is_bab_alpha_opportunity else "off"),
+                            help="Lagrange multiplier shadow cost psi of capital margin constraints",
+                        )
+                        map3.metric(
+                            "Margin-CAPM Expected Return",
+                            f"{map_rec.margin_capm_expected_return_pct:.2f}% Ann",
+                            delta=f"Premium: {map_rec.margin_premium_contribution_pct:+.2f}% vs CAPM",
+                            help="Expected return under Margin-CAPM: E[R_i] = R_f + beta_i * lambda_m + m_i * psi",
+                        )
+                        map4.metric(
+                            "Expected Margin Alpha",
+                            f"{map_rec.expected_margin_alpha_pct:+.2f}% Ann",
+                            delta=f"Basis Spread: {map_rec.basis_spread_discount_pct:+.2f}% | BAB: {map_rec.bab_leverage_compression_score:+.2f}",
+                            help="Projected annualized abnormal return reflecting basis spread discount and BAB compression",
+                        )
+
+                        st.caption(f"🧾 **Margin Pricing Summary:** {map_rec.summary}")
+                        st.caption(f"🛡️ **Margin Audit Digest:** `{map_rec.signature[:16]}...` (Verified: `{map_rec.verify_integrity()}`)")
+                    except Exception as map_ex:
+                        st.info(f"Margin Asset Pricing evaluation deferred: {map_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Margin Asset Pricing profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
