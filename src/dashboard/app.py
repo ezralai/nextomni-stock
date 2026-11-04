@@ -4244,6 +4244,79 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate 52-Week High Anchoring profile.")
 
+                st.divider()
+                st.markdown("#### 🔬 Pástor & Veronesi (2003, 2006) Bayesian Learning & Uncertainty Convexity Engine")
+                st.caption(
+                    "Evaluates Bayesian posterior profitability uncertainty ($\\sigma_{\\psi,\\text{post}}$), Jensen's inequality "
+                    "convexity multiplier ($C_{PV}$), warranted Market-to-Book ($(M/B)^*_{PV}$), and uncertainty bubble risk."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.pastor_veronesi_uncertainty import (
+                            evaluate_pastor_veronesi_uncertainty_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Bayesian Learning & Convexity Parameters (Optional)", expanded=False):
+                            pv_c1, pv_c2, pv_c3, pv_c4, pv_c5 = st.columns(5)
+                            pv_psi = pv_c1.number_input("Excess ROE psi_hat [-0.5..0.8]", value=0.0, min_value=-0.50, max_value=0.80, step=0.02, key="pv_psi")
+                            pv_sig = pv_c2.number_input("Prior Uncertainty [0.005..0.5]", value=0.0, min_value=0.0, max_value=0.50, step=0.02, key="pv_sig")
+                            pv_age = pv_c3.number_input("Firm Age (Years, 0=Auto)", value=0.0, min_value=0.0, max_value=100.0, step=1.0, key="pv_age")
+                            pv_ret = pv_c4.number_input("Retention Ratio [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="pv_ret")
+                            pv_mb = pv_c5.number_input("Observed M/B [0.2..50]", value=0.0, min_value=0.0, max_value=50.0, step=0.5, key="pv_mb")
+
+                        pv_rec = evaluate_pastor_veronesi_uncertainty_profile(
+                            ticker=selected_ticker,
+                            expected_excess_profitability=pv_psi if pv_psi != 0.0 else None,
+                            prior_profitability_uncertainty=pv_sig if pv_sig > 0.0 else None,
+                            firm_learning_age_years=pv_age if pv_age > 0.0 else None,
+                            retention_ratio=pv_ret if pv_ret > 0.0 else None,
+                            observed_market_to_book=pv_mb if pv_mb > 0.0 else None,
+                        )
+
+                        pv1, pv2, pv3, pv4 = st.columns(4)
+                        pv_badge = (
+                            "🟢 CONVEX LEARNING LEADER"
+                            if pv_rec.is_convex_learning_leader
+                            else (
+                                "🔴 UNCERTAINTY BUBBLE TRAP"
+                                if pv_rec.is_uncertainty_bubble_trap
+                                else f"Regime: {pv_rec.regime}"
+                            )
+                        )
+                        pv1.metric(
+                            "Warranted vs. Obs M/B",
+                            f"{pv_rec.warranted_market_to_book:.2f}x",
+                            delta=f"Obs: {pv_rec.observed_market_to_book:.2f}x ({pv_rec.valuation_mispricing_gap_pct:+.1%})",
+                            delta_color="normal" if pv_rec.is_convex_learning_leader else ("inverse" if pv_rec.is_uncertainty_bubble_trap else "off"),
+                            help="Pástor & Veronesi (2003) warranted uncertainty-adjusted Market-to-Book ratio vs. observed M/B",
+                        )
+                        pv2.metric(
+                            "Convexity Multiplier (C_PV)",
+                            f"{pv_rec.convexity_valuation_multiplier:.2f}x",
+                            delta=f"Post Sigma: {pv_rec.posterior_profitability_uncertainty:.1%}",
+                            help="Jensen's inequality valuation multiplier from posterior profitability uncertainty",
+                        )
+                        pv3.metric(
+                            "Learning Impulse (PVLI)",
+                            f"{pv_rec.pastor_veronesi_learning_impulse:+.3f}",
+                            delta=pv_badge,
+                            delta_color="normal" if pv_rec.pastor_veronesi_learning_impulse >= 0.35 else ("inverse" if pv_rec.pastor_veronesi_learning_impulse <= -0.40 else "off"),
+                            help="Pástor-Veronesi Bayesian learning & convexity valuation impulse",
+                        )
+                        pv4.metric(
+                            "Expected Learning Alpha",
+                            f"{pv_rec.expected_learning_alpha_pct:+.2f}% Ann",
+                            delta="Convexity Undervaluation" if pv_rec.expected_learning_alpha_pct > 0 else "Bubble Compression Risk",
+                            help="Projected annualized abnormal return from Pástor-Veronesi learning & convexity convergence",
+                        )
+
+                        st.caption(f"🧾 **Pástor-Veronesi Summary:** {pv_rec.summary}")
+                        st.caption(f"🛡️ **Pástor-Veronesi Audit Digest:** `{pv_rec.signature[:16]}...` (Verified: `{pv_rec.verify_integrity()}`)")
+                    except Exception as pv_ex:
+                        st.info(f"Pástor-Veronesi Uncertainty evaluation deferred: {pv_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Pástor-Veronesi Uncertainty profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

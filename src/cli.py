@@ -5428,6 +5428,86 @@ def high52_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def pastor_veronesi_command(args: argparse.Namespace) -> None:
+    """CLI handler for Pástor & Veronesi (2003, 2006) Learning & Uncertainty Convexity Engine."""
+    import json
+    from src.analytics.pastor_veronesi_uncertainty import (
+        evaluate_pastor_veronesi_uncertainty_profile,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    psi = getattr(args, "expected_excess_profitability", None)
+    if psi is not None:
+        psi = float(psi)
+    sigma0 = getattr(args, "prior_uncertainty", None)
+    if sigma0 is not None:
+        sigma0 = float(sigma0)
+    age = getattr(args, "firm_age_years", None)
+    if age is not None:
+        age = float(age)
+    ret = getattr(args, "retention_ratio", None)
+    if ret is not None:
+        ret = float(ret)
+    mb = getattr(args, "observed_mb", None)
+    if mb is not None:
+        mb = float(mb)
+
+    try:
+        receipt = evaluate_pastor_veronesi_uncertainty_profile(
+            ticker=ticker,
+            expected_excess_profitability=psi,
+            prior_profitability_uncertainty=sigma0,
+            firm_learning_age_years=age,
+            retention_ratio=ret,
+            observed_market_to_book=mb,
+        )
+    except Exception as ex:
+        print(f"\nError: Pástor-Veronesi Uncertainty evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    lead_str = "YES (CONVEX GROWTH LEARNING LEADER)" if receipt.is_convex_learning_leader else "NO"
+    trap_str = "YES (EXTRAPOLATIVE UNCERTAINTY BUBBLE TRAP)" if receipt.is_uncertainty_bubble_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Pástor & Veronesi (2003, 2006) Learning & Convexity Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Fundamental Profitability & Bayesian Learning Inputs:")
+    print(f"    Expected Excess ROE (psi_hat):  {receipt.expected_excess_profitability:>+10.2%}")
+    print(f"    Prior Uncertainty (sigma_0):    {receipt.prior_profitability_uncertainty:>10.2%}")
+    print(f"    Firm Learning Age (T_age):      {receipt.firm_learning_age_years:>10.2f} yrs")
+    print(f"    Earnings Retention (b_ret):     {receipt.retention_ratio:>10.2%}")
+    print(f"    Observed Market-to-Book (M/B):  {receipt.observed_market_to_book:>10.2f}x")
+    print("-" * 80)
+    print("  Pástor-Veronesi Bayesian & Convexity Inferences:")
+    print(f"    Posterior Uncertainty (sigma):  {receipt.posterior_profitability_uncertainty:>10.2%}")
+    print(f"    Convexity Multiplier (C_PV):    {receipt.convexity_valuation_multiplier:>10.2f}x")
+    print(f"    Warranted M/B ((M/B)^*_PV):     {receipt.warranted_market_to_book:>10.2f}x")
+    print(f"    Valuation Mispricing Gap:       {receipt.valuation_mispricing_gap_pct:>+10.2%}")
+    print(f"    Learning Impulse (PVLI_t):      {receipt.pastor_veronesi_learning_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Learning Regime & Valuation Alpha Projections:")
+    print(f"    Pástor-Veronesi Regime:         {receipt.regime}")
+    print(f"    Convex Learning Leader:         {lead_str}")
+    print(f"    Uncertainty Bubble Trap:        {trap_str}")
+    print(f"    Expected Learning Alpha:        {receipt.expected_learning_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -8421,6 +8501,53 @@ def main() -> None:
         help="Output 52-Week High Anchoring receipt as JSON",
     )
 
+    pv_parser = subparsers.add_parser(
+        "pastor-veronesi",
+        aliases=["learning-uncertainty", "profitability-learning", "uncertainty-convexity"],
+        help="Run Pástor & Veronesi (2003, 2006) Bayesian Learning about Profitability & Uncertainty Convexity Engine",
+    )
+    pv_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    pv_parser.add_argument(
+        "--expected-excess-profitability",
+        type=float,
+        default=None,
+        help="Expected excess ROE over cost of equity psi_hat in [-0.50, 0.80] (optional)",
+    )
+    pv_parser.add_argument(
+        "--prior-uncertainty",
+        type=float,
+        default=None,
+        help="Prior profitability uncertainty sigma_{psi,0} in [0.005, 0.50] (optional)",
+    )
+    pv_parser.add_argument(
+        "--firm-age-years",
+        type=float,
+        default=None,
+        help="Effective firm learning age T_age in [0.5, 100.0] years (optional)",
+    )
+    pv_parser.add_argument(
+        "--retention-ratio",
+        type=float,
+        default=None,
+        help="Earnings retention ratio b_ret in [0.0, 1.0] (optional)",
+    )
+    pv_parser.add_argument(
+        "--observed-mb",
+        type=float,
+        default=None,
+        help="Observed Market-to-Book ratio (M/B)_obs in [0.20, 50.0] (optional)",
+    )
+    pv_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Pástor-Veronesi Uncertainty receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -8613,6 +8740,8 @@ def main() -> None:
         cgo_command(args)
     elif args.command in ("high52", "george-hwang", "52-week-high", "anchoring-momentum"):
         high52_command(args)
+    elif args.command in ("pastor-veronesi", "learning-uncertainty", "profitability-learning", "uncertainty-convexity"):
+        pastor_veronesi_command(args)
 
 
 if __name__ == "__main__":
