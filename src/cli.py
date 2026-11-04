@@ -4632,6 +4632,85 @@ def payout_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def noa_command(args: argparse.Namespace) -> None:
+    """Evaluate Hirshleifer, Hou, Teoh & Zhang (2004) Net Operating Assets (NOA) & Balance Sheet Bloat."""
+    import json
+    from src.analytics.noa_bloat import evaluate_noa_bloat_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    ta = getattr(args, "total_assets", None)
+    if ta is not None:
+        ta = float(ta)
+    prior_ta = getattr(args, "prior_assets", None)
+    if prior_ta is not None:
+        prior_ta = float(prior_ta)
+    cash = getattr(args, "cash", None)
+    if cash is not None:
+        cash = float(cash)
+    debt = getattr(args, "debt", None)
+    if debt is not None:
+        debt = float(debt)
+    equity = getattr(args, "equity", None)
+    if equity is not None:
+        equity = float(equity)
+    prev_snoa = getattr(args, "prior_snoa", None)
+    if prev_snoa is not None:
+        prev_snoa = float(prev_snoa)
+
+    try:
+        receipt = evaluate_noa_bloat_profile(
+            ticker=ticker,
+            total_assets=ta,
+            prior_total_assets=prior_ta,
+            cash_and_equivalents=cash,
+            total_debt=debt,
+            book_equity=equity,
+            prior_snoa=prev_snoa,
+        )
+    except Exception as ex:
+        print(f"\nError: NOA & Balance Sheet Bloat evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    lean_str = "YES (LEAN CASH-GENERATIVE FORTRESS)" if receipt.is_lean_cash_fortress else "NO"
+    bloat_str = "YES (ACUTE BALANCE SHEET BLOAT TRAP)" if receipt.is_bloated_balance_sheet_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Hirshleifer, Hou, Teoh & Zhang (2004) NOA Bloat Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Balance Sheet Operating Decomposition ($M):")
+    print(f"    Current Total Assets (t):       ${receipt.total_assets:>10,.2f}M")
+    print(f"    Prior Total Assets (t-1):       ${receipt.prior_total_assets:>10,.2f}M")
+    print(f"    Cash & Short-Term Investments:  ${receipt.cash_and_equivalents:>10,.2f}M")
+    print(f"    Total Short & Long-Term Debt:   ${receipt.total_debt:>10,.2f}M")
+    print(f"    Shareholders' Book Equity:      ${receipt.book_equity:>10,.2f}M")
+    print(f"    Operating Assets (OA):          ${receipt.operating_assets:>10,.2f}M")
+    print(f"    Operating Liabilities (OL):     ${receipt.operating_liabilities:>10,.2f}M")
+    print(f"    Net Operating Assets (NOA):     ${receipt.net_operating_assets:>10,.2f}M (OA - OL)")
+    print("-" * 80)
+    print("  Scaled NOA Ratios & Cash Conversion Efficiency:")
+    print(f"    Scaled NOA Ratio (SNOA):        {receipt.scaled_noa_ratio:>+10.4f} (NOA / Prior TA)")
+    print(f"    YoY Change in SNOA (dSNOA):     {receipt.delta_snoa:>+10.4f}")
+    print(f"    Cash Conversion Efficiency:     {receipt.cash_conversion_efficiency:>10.2f} / 1.00")
+    print("-" * 80)
+    print("  Balance Sheet Bloat Regime & Alpha Projections:")
+    print(f"    NOA Accounting Regime:          {receipt.regime}")
+    print(f"    Lean Cash-Generative Fortress:  {lean_str}")
+    print(f"    Acute Balance Sheet Bloat Trap: {bloat_str}")
+    print(f"    Expected NOA Alpha Spread:      {receipt.expected_noa_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -7113,6 +7192,60 @@ def main() -> None:
         help="Output Net Payout Yield receipt as JSON",
     )
 
+    # Hirshleifer, Hou, Teoh & Zhang (2004) Net Operating Assets (NOA) & Balance Sheet Bloat Parser
+    noa_parser = subparsers.add_parser(
+        "noa",
+        aliases=["bloat", "hirshleifer-teoh", "balance-sheet-bloat"],
+        help="Evaluate Hirshleifer, Hou, Teoh & Zhang (2004) Net Operating Assets (NOA) & Balance Sheet Bloat",
+    )
+    noa_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Stock ticker symbol (e.g. AAPL, NVDA, TSLA)",
+    )
+    noa_parser.add_argument(
+        "--total-assets",
+        type=float,
+        default=None,
+        help="Current total assets in $M (optional)",
+    )
+    noa_parser.add_argument(
+        "--prior-assets",
+        type=float,
+        default=None,
+        help="Prior total assets in $M (optional)",
+    )
+    noa_parser.add_argument(
+        "--cash",
+        type=float,
+        default=None,
+        help="Cash and short-term investments in $M (optional)",
+    )
+    noa_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Total debt in $M (optional)",
+    )
+    noa_parser.add_argument(
+        "--equity",
+        type=float,
+        default=None,
+        help="Shareholders' book equity in $M (optional)",
+    )
+    noa_parser.add_argument(
+        "--prior-snoa",
+        type=float,
+        default=None,
+        help="Prior-year Scaled NOA ratio (optional)",
+    )
+    noa_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output NOA Bloat receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -7283,6 +7416,8 @@ def main() -> None:
         empire_command(args)
     elif args.command in ("payout", "net-payout", "boudoukh", "share-issuance"):
         payout_command(args)
+    elif args.command in ("noa", "bloat", "hirshleifer-teoh", "balance-sheet-bloat"):
+        noa_command(args)
 
 
 if __name__ == "__main__":

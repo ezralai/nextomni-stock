@@ -3466,6 +3466,99 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Net Payout Yield profile.")
 
+                st.markdown("---")
+                st.subheader("🧾 Hirshleifer, Hou, Teoh & Zhang (2004) Net Operating Assets (NOA) & Balance Sheet Bloat Engine")
+                st.caption(
+                    "Cumulative accounting distortion and balance sheet bloat engine: measures Net Operating Assets "
+                    "(NOA = Operating Assets - Operating Liabilities) scaled by lagged Total Assets (SNOA). "
+                    "Identifies lean cash-generative fortresses while eliminating acute balance-sheet accrual bloat traps."
+                )
+                from src.analytics.noa_bloat import evaluate_noa_bloat_profile
+                if len(df_obs) >= 20:
+                    try:
+                        noa_cols = st.columns(3)
+                        with noa_cols[0]:
+                            noa_cash = st.number_input(
+                                "Cash & Equivalents ($M)",
+                                min_value=0.0,
+                                max_value=500_000.0,
+                                value=2_400.0,
+                                step=100.0,
+                                key="noa_cash_input",
+                            )
+                        with noa_cols[1]:
+                            noa_debt = st.number_input(
+                                "Total Debt ($M)",
+                                min_value=0.0,
+                                max_value=500_000.0,
+                                value=2_200.0,
+                                step=100.0,
+                                key="noa_debt_input",
+                            )
+                        with noa_cols[2]:
+                            noa_equity = st.number_input(
+                                "Book Equity ($M)",
+                                min_value=-100_000.0,
+                                max_value=500_000.0,
+                                value=4_200.0,
+                                step=100.0,
+                                key="noa_equity_input",
+                            )
+
+                        noa_rec = evaluate_noa_bloat_profile(
+                            ticker=selected_ticker,
+                            total_assets=10_500.0,
+                            prior_total_assets=10_000.0,
+                            cash_and_equivalents=float(noa_cash),
+                            total_debt=float(noa_debt),
+                            book_equity=float(noa_equity),
+                            prior_snoa=0.41,
+                        )
+
+                        hy1, hy2, hy3, hy4 = st.columns(4)
+                        noa_badge = (
+                            "💎 LEAN CASH FORTRESS"
+                            if noa_rec.is_lean_cash_fortress
+                            else (
+                                "🚨 BLOAT TRAP"
+                                if noa_rec.is_bloated_balance_sheet_trap
+                                else f"Regime: {noa_rec.regime}"
+                            )
+                        )
+                        hy1.metric(
+                            "Scaled NOA Ratio (SNOA)",
+                            f"{noa_rec.scaled_noa_ratio:.2f}",
+                            delta=noa_badge,
+                            delta_color="normal" if noa_rec.is_lean_cash_fortress else ("inverse" if noa_rec.is_bloated_balance_sheet_trap else "off"),
+                            help="Hirshleifer, Hou, Teoh & Zhang (2004) NOA / Prior Total Assets (Lean <= 0.45, Bloated >= 0.85)",
+                        )
+                        hy2.metric(
+                            "Net Operating Assets",
+                            f"${noa_rec.net_operating_assets:,.0f}M",
+                            delta=f"dSNOA: {noa_rec.delta_snoa:+.2f}",
+                            delta_color="inverse" if noa_rec.delta_snoa > 0.08 else "normal",
+                            help="Operating Assets minus Operating Liabilities (cumulative accounting profit minus cash flow)",
+                        )
+                        hy3.metric(
+                            "Cash Conversion Eff.",
+                            f"{noa_rec.cash_conversion_efficiency:.2f} / 1.00",
+                            delta=f"OA: ${noa_rec.operating_assets:,.0f}M",
+                            help="Complement of cumulative balance sheet accrual bloat",
+                        )
+                        hy4.metric(
+                            "Expected NOA Alpha",
+                            f"{noa_rec.expected_noa_alpha_pct:+.2f}% Ann",
+                            delta="Cash Quality Premium" if noa_rec.expected_noa_alpha_pct > 0 else "Sustainability Wall Drag",
+                            help="Projected annualized abnormal return from balance-sheet accrual discipline",
+                        )
+
+                        st.caption(f"🧾 **NOA Summary:** {noa_rec.summary}")
+                        st.caption(f"🛡️ **NOA Audit Digest:** `{noa_rec.signature[:16]}...` (Verified: `{noa_rec.verify_integrity()}`)")
+                    except Exception as noa_ex:
+                        st.info(f"NOA Bloat evaluation deferred: {noa_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate NOA & Balance Sheet Bloat profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
