@@ -4039,6 +4039,75 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Retail Attention Salience profile.")
 
+                st.divider()
+                st.markdown("#### 🎯 Baker, Bradley & Wurgler (2011) Institutional Benchmark Mandate & Tracking-Error Limits to Arbitrage")
+                if len(prices) >= 20:
+                    try:
+                        from src.analytics.benchmark_mandate import evaluate_benchmark_mandate_profile
+
+                        with st.expander("⚙️ Optional Beta, Volatility & Benchmark Mandate Inputs (Baker-Bradley-Wurgler 2011)", expanded=False):
+                            bm_c1, bm_c2, bm_c3 = st.columns(3)
+                            bm_beta = bm_c1.number_input("CAPM Beta [-1..4]", value=0.0, min_value=-1.0, max_value=4.0, step=0.05, key="bm_beta")
+                            bm_mvol = bm_c2.number_input("Market Volatility (decimal)", value=0.0, min_value=0.0, max_value=2.0, step=0.02, key="bm_mvol")
+                            bm_ivol = bm_c3.number_input("Idiosyncratic Vol (decimal)", value=0.0, min_value=0.0, max_value=3.0, step=0.02, key="bm_ivol")
+                            bm_c4, bm_c5 = st.columns(2)
+                            bm_erp = bm_c4.number_input("Expected Market Risk Premium (%)", value=0.0, min_value=0.0, max_value=25.0, step=0.50, key="bm_erp")
+                            bm_inst = bm_c5.number_input("Benchmarked Institutional Share [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="bm_inst")
+
+                        bm_rec = evaluate_benchmark_mandate_profile(
+                            ticker=selected_ticker,
+                            capm_beta=bm_beta if bm_beta != 0.0 else None,
+                            market_volatility_ann=bm_mvol if bm_mvol > 0.0 else None,
+                            idiosyncratic_volatility_ann=bm_ivol if bm_ivol > 0.0 else None,
+                            expected_market_risk_premium_pct=bm_erp if bm_erp > 0.0 else None,
+                            benchmarked_institutional_share=bm_inst if bm_inst > 0.0 else None,
+                        )
+
+                        bm1, bm2, bm3, bm4 = st.columns(4)
+                        bm_badge = (
+                            "🟢 NEGLECTED LOW-BETA HAVEN"
+                            if bm_rec.is_neglected_low_beta_haven
+                            else (
+                                "🔴 CROWDED HIGH-BETA TRAP"
+                                if bm_rec.is_crowded_high_beta_trap
+                                else f"Regime: {bm_rec.regime}"
+                            )
+                        )
+                        bm1.metric(
+                            "Single-Stock Tracking Error",
+                            f"{bm_rec.single_stock_tracking_error:.2%}",
+                            delta=bm_badge,
+                            delta_color="normal" if bm_rec.is_neglected_low_beta_haven else ("inverse" if bm_rec.is_crowded_high_beta_trap else "off"),
+                            help="Baker, Bradley & Wurgler (2011) TE_i = sqrt((beta-1)^2 * sigma_M^2 + sigma_e^2)",
+                        )
+                        bm2.metric(
+                            "Active Return Alpha Hurdle",
+                            f"{bm_rec.active_return_alpha_hurdle_pct:+.2f}% / yr",
+                            delta=f"CAPM Beta: {bm_rec.capm_beta:.2f}",
+                            delta_color="normal" if bm_rec.capm_beta <= 0.75 else ("inverse" if bm_rec.capm_beta >= 1.35 else "off"),
+                            help="Required CAPM alpha (1 - beta)*ERP for an unlevered manager to avoid lagging the benchmark",
+                        )
+                        bm3.metric(
+                            "Benchmark Crowding Wedge",
+                            f"{bm_rec.institutional_crowding_wedge:+.2f}",
+                            delta=f"IVOL: {bm_rec.idiosyncratic_volatility_ann:.1%}",
+                            delta_color="inverse" if bm_rec.institutional_crowding_wedge >= 0.85 else "normal",
+                            help="Institutional neglect (< 0) vs. high-beta leverage-substitute crowding (> 0)",
+                        )
+                        bm4.metric(
+                            "Unconstrained Alpha",
+                            f"{bm_rec.expected_unconstrained_alpha_pct:+.2f}% Ann",
+                            delta="Low-Risk Harvest" if bm_rec.expected_unconstrained_alpha_pct > 0 else "High-Beta Crowding Drag",
+                            help="Projected annualized abnormal return for unconstrained portfolios harvesting the benchmark mandate distortion",
+                        )
+
+                        st.caption(f"🧾 **Mandate Summary:** {bm_rec.summary}")
+                        st.caption(f"🛡️ **Mandate Audit Digest:** `{bm_rec.signature[:16]}...` (Verified: `{bm_rec.verify_integrity()}`)")
+                    except Exception as bm_ex:
+                        st.info(f"Benchmark Mandate evaluation deferred: {bm_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Institutional Benchmark Mandate profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

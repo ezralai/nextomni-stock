@@ -5218,6 +5218,78 @@ def attention_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def benchmark_mandate_command(args: argparse.Namespace) -> None:
+    """Evaluate Baker, Bradley & Wurgler (2011) Institutional Benchmark Mandate & Tracking-Error Engine."""
+    import json
+    from src.analytics.benchmark_mandate import evaluate_benchmark_mandate_profile
+    from src.security.validators import validate_ticker
+
+    ticker = validate_ticker(args.ticker)
+    beta = getattr(args, "beta", None)
+    if beta is not None:
+        beta = float(beta)
+    mkt_vol = getattr(args, "market_vol", None)
+    if mkt_vol is not None:
+        mkt_vol = float(mkt_vol)
+    idio_vol = getattr(args, "idio_vol", None)
+    if idio_vol is not None:
+        idio_vol = float(idio_vol)
+    erp = getattr(args, "market_premium", None)
+    if erp is not None:
+        erp = float(erp)
+    inst_share = getattr(args, "inst_benchmarked_share", None)
+    if inst_share is not None:
+        inst_share = float(inst_share)
+
+    try:
+        receipt = evaluate_benchmark_mandate_profile(
+            ticker=ticker,
+            capm_beta=beta,
+            market_volatility_ann=mkt_vol,
+            idiosyncratic_volatility_ann=idio_vol,
+            expected_market_risk_premium_pct=erp,
+            benchmarked_institutional_share=inst_share,
+        )
+    except Exception as ex:
+        print(f"\nError: Institutional Benchmark Mandate evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    haven_str = "YES (NEGLECTED LOW-BETA ALPHA HAVEN)" if receipt.is_neglected_low_beta_haven else "NO"
+    trap_str = "YES (CROWDED HIGH-BETA LEVERAGE TRAP)" if receipt.is_crowded_high_beta_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Baker, Bradley & Wurgler (2011) Benchmark Mandate Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price:                 ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Beta, Volatility & Institutional Mandate Inputs:")
+    print(f"    CAPM Beta (beta_i):             {receipt.capm_beta:>10.2f}")
+    print(f"    Market Volatility (sigma_M):    {receipt.market_volatility_ann:>10.1%}")
+    print(f"    Idiosyncratic Vol (sigma_e):    {receipt.idiosyncratic_volatility_ann:>10.1%}")
+    print(f"    Expected Market Risk Premium:   {receipt.expected_market_risk_premium_pct:>10.2f}%")
+    print(f"    Benchmarked Institutional Share:{receipt.benchmarked_institutional_share:>10.1%}")
+    print("-" * 80)
+    print("  Baker-Bradley-Wurgler (2011) Tracking-Error Inferences:")
+    print(f"    Single-Stock Tracking Error:    {receipt.single_stock_tracking_error:>10.2%}")
+    print(f"    Active Return Alpha Hurdle:     {receipt.active_return_alpha_hurdle_pct:>+10.2f}% / yr")
+    print(f"    Institutional Crowding Wedge:   {receipt.institutional_crowding_wedge:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Mandate Regime & Unconstrained Alpha Projections:")
+    print(f"    Benchmark Mandate Regime:       {receipt.regime}")
+    print(f"    Neglected Low-Beta Haven:       {haven_str}")
+    print(f"    Crowded High-Beta Trap:         {trap_str}")
+    print(f"    Expected Unconstrained Alpha:   {receipt.expected_unconstrained_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -8082,6 +8154,53 @@ def main() -> None:
         help="Output Attention Salience receipt as JSON",
     )
 
+    bm_parser = subparsers.add_parser(
+        "benchmark-mandate",
+        aliases=["baker-bradley", "tracking-error-limit", "low-vol-mandate"],
+        help="Run Baker, Bradley & Wurgler (2011) Institutional Benchmark Mandate & Tracking-Error Engine",
+    )
+    bm_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    bm_parser.add_argument(
+        "--beta",
+        type=float,
+        default=None,
+        help="Stock CAPM beta in [-1.0, 4.0] (optional)",
+    )
+    bm_parser.add_argument(
+        "--market-vol",
+        type=float,
+        default=None,
+        help="Annualized market volatility in (0, 2.0] (optional)",
+    )
+    bm_parser.add_argument(
+        "--idio-vol",
+        type=float,
+        default=None,
+        help="Annualized idiosyncratic volatility in (0, 3.0] (optional)",
+    )
+    bm_parser.add_argument(
+        "--market-premium",
+        type=float,
+        default=None,
+        help="Expected market risk premium in % (optional)",
+    )
+    bm_parser.add_argument(
+        "--inst-benchmarked-share",
+        type=float,
+        default=None,
+        help="Benchmarked institutional ownership share in [0, 1] (optional)",
+    )
+    bm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Benchmark Mandate receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -8268,6 +8387,8 @@ def main() -> None:
         fip_command(args)
     elif args.command in ("attention", "barber-odean", "da-engelberg", "svi-attention", "attention-spike"):
         attention_command(args)
+    elif args.command in ("benchmark-mandate", "baker-bradley", "tracking-error-limit", "low-vol-mandate"):
+        benchmark_mandate_command(args)
 
 
 if __name__ == "__main__":
