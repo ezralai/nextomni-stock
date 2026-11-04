@@ -5586,6 +5586,78 @@ def lrr_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def reversibility_command(args: argparse.Namespace) -> None:
+    """CLI handler for Lu Zhang (2005) Costly Reversibility of Capital & Value Beta Engine."""
+    import json
+    from src.analytics.costly_reversibility import evaluate_costly_reversibility_profile
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    bm = getattr(args, "book_to_market", None)
+    if bm is not None:
+        bm = float(bm)
+    asym = getattr(args, "cost_asymmetry", None)
+    if asym is not None:
+        asym = float(asym)
+    fk = getattr(args, "fixed_capital_intensity", None)
+    if fk is not None:
+        fk = float(fk)
+    macro = getattr(args, "macro_state_zscore", None)
+    if macro is not None:
+        macro = float(macro)
+
+    try:
+        receipt = evaluate_costly_reversibility_profile(
+            ticker=ticker,
+            book_to_market_ratio=bm,
+            downward_upward_cost_asymmetry=asym,
+            fixed_capital_intensity=fk,
+            macro_state_zscore=macro,
+        )
+    except Exception as ex:
+        print(f"\nError: Costly Reversibility evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    lead_str = "YES (COMPENSATED IRREVERSIBLE VALUE LEADER)" if receipt.is_compensated_irreversible_value_leader else "NO"
+    trap_str = "YES (STRANDED CAPITAL RECESSION TRAP)" if receipt.is_stranded_capital_recession_trap else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Lu Zhang (2005) Costly Reversibility & Value Beta Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Physical Capital Adjustment & Macroeconomic Inputs:")
+    print(f"    Book-to-Market Ratio (B/M):     {receipt.book_to_market_ratio:>10.2f}x")
+    print(f"    Adjustment Asymmetry (th-/th+): {receipt.downward_upward_cost_asymmetry:>10.2f}x")
+    print(f"    Fixed Capital Intensity (f_K):  {receipt.fixed_capital_intensity:>10.2%}")
+    print(f"    Macroeconomic State (S_macro):  {receipt.macro_state_zscore:>+10.2f} SD")
+    print("-" * 80)
+    print("  Lu Zhang Costly Reversibility Inferences:")
+    print(f"    Capital Irreversibility (CII):  {receipt.capital_irreversibility_index:>10.2f}")
+    print(f"    Disinvestment Friction (Phi):   {receipt.disinvestment_friction_mult:>10.2f}x")
+    print(f"    Countercyclical Value Beta:     {receipt.countercyclical_value_beta:>10.2f}")
+    print(f"    Lu Zhang Value Impulse (LZVI):  {receipt.lu_zhang_value_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Costly Reversibility Regime & Alpha Projections:")
+    print(f"    Costly Reversibility Regime:    {receipt.regime}")
+    print(f"    Compensated Value Leader:       {lead_str}")
+    print(f"    Stranded Capital Trap:          {trap_str}")
+    print(f"    Expected Reversibility Alpha:   {receipt.expected_reversibility_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -8673,6 +8745,47 @@ def main() -> None:
         help="Output Long-Run Risks receipt as JSON",
     )
 
+    rev_parser = subparsers.add_parser(
+        "reversibility",
+        aliases=["lu-zhang", "costly-reversibility", "asymmetric-capital"],
+        help="Run Lu Zhang (2005) Costly Reversibility of Capital, Asymmetric Adjustment Costs & Value Beta Engine",
+    )
+    rev_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    rev_parser.add_argument(
+        "--book-to-market",
+        type=float,
+        default=None,
+        help="Book-to-Market equity ratio (B/M)_t in [0.05, 5.0] (optional)",
+    )
+    rev_parser.add_argument(
+        "--cost-asymmetry",
+        type=float,
+        default=None,
+        help="Downward-to-upward capital adjustment cost ratio theta^-/theta^+ in [1.0, 25.0] (optional)",
+    )
+    rev_parser.add_argument(
+        "--fixed-capital-intensity",
+        type=float,
+        default=None,
+        help="Operating fixed capital overhead f_K in [0.0, 1.0] (optional)",
+    )
+    rev_parser.add_argument(
+        "--macro-state-zscore",
+        type=float,
+        default=None,
+        help="Standardized macroeconomic state S_macro in [-3.0, 3.0] (< 0 recession) (optional)",
+    )
+    rev_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Costly Reversibility receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -8869,6 +8982,8 @@ def main() -> None:
         pastor_veronesi_command(args)
     elif args.command in ("lrr", "bansal-yaron", "long-run-risks", "epstein-zin"):
         lrr_command(args)
+    elif args.command in ("reversibility", "lu-zhang", "costly-reversibility", "asymmetric-capital"):
+        reversibility_command(args)
 
 
 if __name__ == "__main__":

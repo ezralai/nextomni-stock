@@ -4390,6 +4390,77 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Long-Run Risks profile.")
 
+                st.divider()
+                st.markdown("#### 🏭 Lu Zhang (2005) Costly Reversibility of Capital & Countercyclical Value Beta Engine")
+                st.caption(
+                    "Evaluates physical capital adjustment asymmetry ($\\theta^- / \\theta^+$), disinvestment friction ($\\Phi_{\\text{disinv}}$), "
+                    "countercyclical value beta ($\\beta_{\\text{Zhang},t}$), and stranded-capital recession risk."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.costly_reversibility import (
+                            evaluate_costly_reversibility_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Lu Zhang Costly Reversibility Parameters (Optional)", expanded=False):
+                            lz_c1, lz_c2, lz_c3, lz_c4 = st.columns(4)
+                            lz_bm = lz_c1.number_input("Book-to-Market [0.05..5.0]", value=0.0, min_value=0.0, max_value=5.0, step=0.1, key="lz_bm")
+                            lz_as = lz_c2.number_input("Cost Asymmetry [1..25]", value=0.0, min_value=0.0, max_value=25.0, step=1.0, key="lz_as")
+                            lz_fk = lz_c3.number_input("Fixed Capital f_K [0..1]", value=0.0, min_value=0.0, max_value=1.0, step=0.05, key="lz_fk")
+                            lz_mc = lz_c4.number_input("Macro State Z [-3..3]", value=0.0, min_value=-3.0, max_value=3.0, step=0.25, key="lz_mc")
+
+                        lz_rec = evaluate_costly_reversibility_profile(
+                            ticker=selected_ticker,
+                            book_to_market_ratio=lz_bm if lz_bm > 0.0 else None,
+                            downward_upward_cost_asymmetry=lz_as if lz_as >= 1.0 else None,
+                            fixed_capital_intensity=lz_fk if lz_fk > 0.0 else None,
+                            macro_state_zscore=lz_mc if lz_mc != 0.0 else None,
+                        )
+
+                        lz1, lz2, lz3, lz4 = st.columns(4)
+                        lz_badge = (
+                            "🟢 COMPENSATED VALUE LEADER"
+                            if lz_rec.is_compensated_irreversible_value_leader
+                            else (
+                                "🔴 STRANDED CAPITAL TRAP"
+                                if lz_rec.is_stranded_capital_recession_trap
+                                else f"Regime: {lz_rec.regime}"
+                            )
+                        )
+                        lz1.metric(
+                            "Countercyclical Value Beta",
+                            f"{lz_rec.countercyclical_value_beta:.2f}",
+                            delta=f"B/M: {lz_rec.book_to_market_ratio:.2f}x",
+                            delta_color="normal" if lz_rec.is_compensated_irreversible_value_leader else ("inverse" if lz_rec.is_stranded_capital_recession_trap else "off"),
+                            help="Lu Zhang (2005) conditional market beta amplified by costly capital reversibility in contractions",
+                        )
+                        lz2.metric(
+                            "Capital Irreversibility (CII)",
+                            f"{lz_rec.capital_irreversibility_index:.2f}",
+                            delta=f"Friction Phi: {lz_rec.disinvestment_friction_mult:.2f}x",
+                            help="Asymmetric disinvestment adjustment cost index and contraction friction multiplier",
+                        )
+                        lz3.metric(
+                            "Lu Zhang Impulse (LZVI)",
+                            f"{lz_rec.lu_zhang_value_impulse:+.3f}",
+                            delta=lz_badge,
+                            delta_color="normal" if lz_rec.lu_zhang_value_impulse >= 0.40 else ("inverse" if lz_rec.lu_zhang_value_impulse <= -0.35 else "off"),
+                            help="Composite Lu Zhang (2005) costly reversibility value pricing impulse",
+                        )
+                        lz4.metric(
+                            "Expected Reversibility Alpha",
+                            f"{lz_rec.expected_reversibility_alpha_pct:+.2f}% Ann",
+                            delta="Value Risk Premium" if lz_rec.expected_reversibility_alpha_pct > 0 else "Stranded Overhead Drag",
+                            help="Projected annualized abnormal return from Lu Zhang costly capital reversibility",
+                        )
+
+                        st.caption(f"🧾 **Costly Reversibility Summary:** {lz_rec.summary}")
+                        st.caption(f"🛡️ **Reversibility Audit Digest:** `{lz_rec.signature[:16]}...` (Verified: `{lz_rec.verify_integrity()}`)")
+                    except Exception as lz_ex:
+                        st.info(f"Costly Reversibility evaluation deferred: {lz_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Costly Reversibility profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
