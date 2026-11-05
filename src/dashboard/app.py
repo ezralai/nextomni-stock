@@ -5722,6 +5722,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Variable Rare Disasters profile.")
 
+                st.markdown("---")
+                st.subheader("🌊 Albert S. Kyle & Wei Xiong (2001) Contagion as a Wealth Effect Engine")
+                st.caption(
+                    "Evaluates the Kyle & Xiong (2001) financial contagion framework, analyzing how arbitrageur equity wealth shocks "
+                    "contract risk-bearing capacity ($\\kappa_t$), forcing multi-asset liquidation, non-fundamental excess co-movement "
+                    "($\\Delta \\rho_{\\text{wealth}}$), and fire-sale discounts."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.kyle_xiong_contagion import (
+                            evaluate_kyle_xiong_profile,
+                            verify_kyle_xiong_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Arbitrageur Wealth Shock & Risk Parameters (Optional)", expanded=False):
+                            kx_c1, kx_c2 = st.columns(2)
+                            kx_wealth_dd = kx_c1.slider("Arbitrageur Wealth Drawdown (%) [0 = Auto]", min_value=0, max_value=85, value=0, step=5, key="kx_wealth_dd")
+                            kx_gamma = kx_c2.slider("Arbitrageur Risk Aversion gamma", min_value=1.0, max_value=8.0, value=2.5, step=0.5, key="kx_gamma")
+
+                        kx_rec = evaluate_kyle_xiong_profile(
+                            ticker=selected_ticker,
+                            wealth_drawdown_override=float(kx_wealth_dd) if kx_wealth_dd > 0 else None,
+                            gamma_override=float(kx_gamma),
+                        )
+
+                        kx1, kx2, kx3, kx4 = st.columns(4)
+                        kx_badge = (
+                            "🔴 SYSTEMIC CONTAGION"
+                            if kx_rec.is_systemic_contagion
+                            else (
+                                "⚡ MODERATE SPILLOVER"
+                                if kx_rec.is_moderate_spillover
+                                else (
+                                    "🟢 BENIGN DECOUPLED"
+                                    if kx_rec.is_benign_decoupled
+                                    else "🛡️ CAPITAL SURPLUS"
+                                )
+                            )
+                        )
+
+                        kx1.metric(
+                            "Spillover Beta",
+                            f"{kx_rec.contagion_spillover_beta:.2f}x",
+                            delta=f"{kx_rec.forced_liquidation_pressure:.1f} / 100 Pressure",
+                            delta_color="inverse" if kx_rec.contagion_spillover_beta > 0.40 else "normal",
+                            help="Kyle & Xiong (2001) cross-market contagion sensitivity beta induced by arbitrageur wealth liquidation",
+                        )
+                        kx2.metric(
+                            "Excess Co-Movement",
+                            f"{kx_rec.non_fundamental_excess_corr:.2f}",
+                            delta=kx_badge,
+                            delta_color="inverse" if kx_rec.non_fundamental_excess_corr > 0.35 else "normal",
+                            help="Non-fundamental correlation increase Delta rho_wealth arising purely from convergence traders unwinding unrelated positions",
+                        )
+                        kx3.metric(
+                            "Risk Capacity (kappa)",
+                            f"{kx_rec.risk_bearing_capacity:.2f}",
+                            delta=f"Drawdown: -{kx_rec.wealth_drawdown_pct:.1f}%",
+                            delta_color="inverse" if kx_rec.wealth_drawdown_pct > 20.0 else "normal",
+                            help="Effective arbitrageur risk-bearing capacity kappa_t = W_t / (gamma * sigma^2)",
+                        )
+                        kx4.metric(
+                            "Fire-Sale Discount",
+                            f"{kx_rec.liquidation_discount_pct:.2f}%",
+                            delta=f"Vol Amp: {kx_rec.volatility_amplification_factor:.2f}x",
+                            delta_color="inverse" if kx_rec.liquidation_discount_pct > 2.0 else "normal",
+                            help="Expected price markdown required to absorb forced arbitrageur liquidation in illiquid conditions",
+                        )
+
+                        st.caption(f"🧾 **Contagion Summary:** {kx_rec.summary}")
+                        st.caption(f"🛡️ **Kyle-Xiong Audit Digest:** `{kx_rec.audit_digest[:16]}...` (Verified: `{verify_kyle_xiong_audit_digest(kx_rec)}`)")
+                    except Exception as kx_ex:
+                        st.info(f"Kyle & Xiong Contagion evaluation deferred: {kx_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Kyle & Xiong Contagion profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

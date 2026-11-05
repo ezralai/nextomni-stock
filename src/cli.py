@@ -7086,6 +7086,92 @@ def rare_disasters_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def kyle_xiong_command(args: argparse.Namespace) -> None:
+    """CLI handler for Albert S. Kyle & Wei Xiong (2001) Contagion as a Wealth Effect Engine."""
+    import json
+    from src.analytics.kyle_xiong_contagion import (
+        evaluate_kyle_xiong_profile,
+        calculate_kyle_xiong_contagion,
+        verify_kyle_xiong_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    wealth_dd = getattr(args, "wealth_drawdown", None)
+    if wealth_dd is not None:
+        wealth_dd = float(wealth_dd)
+
+    gamma_val = getattr(args, "gamma", None)
+    if gamma_val is not None:
+        gamma_val = float(gamma_val)
+
+    vol_val = getattr(args, "volatility", None)
+    if vol_val is not None:
+        vol_val = float(vol_val)
+
+    try:
+        if wealth_dd is not None and vol_val is not None:
+            kwargs = {
+                "ticker": ticker,
+                "arbitrageur_wealth_ratio": max(0.05, 1.0 - (wealth_dd / 100.0)),
+                "fundamental_volatility": vol_val,
+            }
+            if gamma_val is not None:
+                kwargs["risk_aversion_gamma"] = gamma_val
+            receipt = calculate_kyle_xiong_contagion(**kwargs)
+        else:
+            receipt = evaluate_kyle_xiong_profile(
+                ticker=ticker,
+                wealth_drawdown_override=wealth_dd,
+                gamma_override=gamma_val,
+            )
+    except Exception as ex:
+        print(f"\nError: Kyle-Xiong Contagion evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    sys_str = "YES (SYSTEMIC LIQUIDATION CONTAGION)" if receipt.is_systemic_contagion else "NO"
+    mod_str = "YES (MODERATE WEALTH SPILLOVER)" if receipt.is_moderate_spillover else "NO"
+    ben_str = "YES (BENIGN DECOUPLED)" if receipt.is_benign_decoupled else "NO"
+    sur_str = "YES (ARBITRAGE CAPITAL SURPLUS)" if receipt.is_capital_surplus else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Kyle & Xiong (2001) Wealth Contagion Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Arbitrageur Wealth & Capital Capacity Parameters:")
+    print(f"    Arbitrageur Wealth Ratio:          {receipt.arbitrageur_wealth_ratio:>10.2f}x (W_t / W_0)")
+    print(f"    Arbitrageur Wealth Drawdown:       {receipt.wealth_drawdown_pct:>10.2f}%")
+    print(f"    Risk-Bearing Capacity (kappa):     {receipt.risk_bearing_capacity:>10.2f}")
+    print("-" * 80)
+    print("  Kyle & Xiong (2001) Spillover & Forced Liquidation Inferences:")
+    print(f"    Contagion Spillover Beta:          {receipt.contagion_spillover_beta:>10.2f}x")
+    print(f"    Non-Fundamental Excess Corr:       {receipt.non_fundamental_excess_corr:>10.2f} (Delta rho)")
+    print(f"    Forced Liquidation Pressure:       {receipt.forced_liquidation_pressure:>10.1f} / 100")
+    print(f"    Fire-Sale Liquidation Discount:    {receipt.liquidation_discount_pct:>10.2f}%")
+    print(f"    Volatility Amplification Factor:   {receipt.volatility_amplification_factor:>10.2f}x")
+    print("-" * 80)
+    print("  Contagion Regime Classification:")
+    print(f"    Market Contagion Regime:           {receipt.regime}")
+    print(f"    Systemic Liquidation Contagion:    {sys_str}")
+    print(f"    Moderate Wealth Spillover:         {mod_str}")
+    print(f"    Benign Decoupled:                  {ben_str}")
+    print(f"    Arbitrage Capital Surplus:         {sur_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_kyle_xiong_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -10948,6 +11034,42 @@ def main() -> None:
         help="Output Gabaix Variable Rare Disasters receipt as JSON",
     )
 
+    # Subparser: kyle-xiong (Albert S. Kyle & Wei Xiong 2001 Contagion as a Wealth Effect Engine)
+    kyle_parser = subparsers.add_parser(
+        "kyle-xiong",
+        aliases=["wealth-contagion", "forced-liquidation", "spillover-beta", "kyle-2001"],
+        help="Albert S. Kyle & Wei Xiong (2001) Contagion as a Wealth Effect & Forced Liquidation Engine",
+    )
+    kyle_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    kyle_parser.add_argument(
+        "--wealth-drawdown",
+        type=float,
+        default=None,
+        help="Arbitrageur equity wealth drawdown percentage in [0.0, 95.0] (optional)",
+    )
+    kyle_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=None,
+        help="Asset annualized fundamental volatility sigma in [0.02, 2.00] (optional)",
+    )
+    kyle_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=None,
+        help="Arbitrageur risk aversion gamma in [0.5, 20.0] (optional)",
+    )
+    kyle_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Kyle & Xiong Wealth Contagion receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -11180,6 +11302,8 @@ def main() -> None:
         merton_recognition_command(args)
     elif args.command in ("rare-disasters", "gabaix-disasters", "tail-resilience", "variable-disasters", "disaster-risk"):
         rare_disasters_command(args)
+    elif args.command in ("kyle-xiong", "wealth-contagion", "forced-liquidation", "spillover-beta", "kyle-2001"):
+        kyle_xiong_command(args)
 
 
 if __name__ == "__main__":
