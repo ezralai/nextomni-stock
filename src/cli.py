@@ -6831,6 +6831,95 @@ def noise_bands_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def bad_beta_command(args: argparse.Namespace) -> None:
+    """CLI handler for Campbell & Vuolteenaho (2004) Two-Beta ("Bad Beta, Good Beta") Engine."""
+    import json
+    from src.analytics.bad_beta_good_beta import (
+        evaluate_two_beta_profile,
+        calculate_two_beta_decomposition,
+        verify_two_beta_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    beta_cf = getattr(args, "beta_cf", None)
+    if beta_cf is not None:
+        beta_cf = float(beta_cf)
+
+    beta_dr = getattr(args, "beta_dr", None)
+    if beta_dr is not None:
+        beta_dr = float(beta_dr)
+
+    gamma = getattr(args, "gamma", None)
+    if gamma is None:
+        gamma = 6.0
+    else:
+        gamma = float(gamma)
+
+    try:
+        if beta_cf is not None and beta_dr is not None:
+            receipt = calculate_two_beta_decomposition(
+                ticker=ticker,
+                cash_flow_bad_beta=beta_cf,
+                discount_rate_good_beta=beta_dr,
+                risk_aversion_gamma=gamma,
+            )
+        else:
+            receipt = evaluate_two_beta_profile(
+                ticker=ticker,
+                cash_flow_beta_override=beta_cf,
+                discount_rate_beta_override=beta_dr,
+                risk_aversion_gamma=gamma,
+            )
+    except Exception as ex:
+        print(f"\nError: Two-Beta evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    cf_str = "YES (HIGH PERMANENT CASH-FLOW RISK)" if receipt.is_cash_flow_vulnerable else "NO"
+    dr_str = "YES (GROWTH PROFILE / DISCOUNT-RATE DOMINATED)" if receipt.is_discount_rate_growth else "NO"
+    def_str = "YES (DEFENSIVE LOW-BETA RESILIENCE)" if receipt.is_defensive_insulated else "NO"
+    bal_str = "YES (BALANCED INTERTEMPORAL RISK)" if receipt.is_balanced_exposure else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Campbell-Vuolteenaho (2004) Two-Beta Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Two-Beta Systematic Market Decomposition:")
+    print(f"    Total Market Beta (beta_M):        {receipt.total_market_beta:>10.2f}x (beta_CF + beta_DR)")
+    print(f"    Cash-Flow Beta ('Bad Beta'):       {receipt.cash_flow_bad_beta:>10.2f}x (beta_CF)")
+    print(f"    Discount-Rate Beta ('Good Beta'):  {receipt.discount_rate_good_beta:>10.2f}x (beta_DR)")
+    print(f"    Bad Beta Ratio (beta_CF / beta_M): {receipt.bad_beta_ratio:>10.2%}")
+    print("-" * 80)
+    print("  ICAPM Risk Prices & Cost of Capital Inferences:")
+    print(f"    Relative Risk Aversion (gamma):    {receipt.relative_risk_aversion_gamma:>10.2f}")
+    print(f"    Cash-Flow Risk Price (lambda_CF):  {receipt.cash_flow_risk_price_pct:>10.2f}% / unit beta")
+    print(f"    Discount-Rate Price (lambda_DR):   {receipt.discount_rate_risk_price_pct:>10.2f}% / unit beta")
+    print(f"    Standard CAPM Required Return:     {receipt.standard_capm_return_pct:>10.2f}% / year")
+    print(f"    Two-Beta ICAPM Required Return:    {receipt.two_beta_icapm_return_pct:>10.2f}% / year")
+    print(f"    Bad Beta Hurdle Surcharge:         {receipt.bad_beta_hurdle_surcharge_bps:>+10.1f} bps / year")
+    print("-" * 80)
+    print("  Two-Beta Risk Regime & Classification:")
+    print(f"    Intertemporal Risk Regime:         {receipt.regime}")
+    print(f"    Cash-Flow Vulnerable (Bad Beta):   {cf_str}")
+    print(f"    Discount-Rate Growth (Good Beta):  {dr_str}")
+    print(f"    Defensive Insulated:               {def_str}")
+    print(f"    Balanced Intertemporal Exposure:   {bal_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_two_beta_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -10593,6 +10682,41 @@ def main() -> None:
         help="Output Noise Valuation receipt as JSON",
     )
 
+    bad_beta_parser = subparsers.add_parser(
+        "bad-beta",
+        aliases=["two-beta", "campbell-vuolteenaho", "icapm-two-beta"],
+        help="Run Campbell & Vuolteenaho (2004) Two-Beta ('Bad Beta, Good Beta') Engine",
+    )
+    bad_beta_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    bad_beta_parser.add_argument(
+        "--beta-cf",
+        type=float,
+        default=None,
+        help="Cash-flow beta ('Bad Beta') beta_CF (optional)",
+    )
+    bad_beta_parser.add_argument(
+        "--beta-dr",
+        type=float,
+        default=None,
+        help="Discount-rate beta ('Good Beta') beta_DR (optional)",
+    )
+    bad_beta_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=6.0,
+        help="Investor relative risk aversion gamma (default: 6.0)",
+    )
+    bad_beta_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Two-Beta receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -10819,6 +10943,8 @@ def main() -> None:
         admati_pfleiderer_command(args)
     elif args.command in ("noise-bands", "valuation-bounds", "noise-trading", "black-bounds"):
         noise_bands_command(args)
+    elif args.command in ("bad-beta", "two-beta", "campbell-vuolteenaho", "icapm-two-beta"):
+        bad_beta_command(args)
 
 
 if __name__ == "__main__":

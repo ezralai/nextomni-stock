@@ -5500,6 +5500,81 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Noise Valuation profile.")
 
+                st.divider()
+                st.markdown("#### ⚖️ Campbell-Vuolteenaho (2004) Two-Beta ('Bad Beta, Good Beta') Engine")
+                st.caption(
+                    "Decomposes systematic market risk into permanent Cash-Flow Beta ($\\beta_{\\text{CF}}$, 'Bad Beta') "
+                    "and temporary Discount-Rate Beta ($\\beta_{\\text{DR}}$, 'Good Beta'), calculating ICAPM hurdle rates and bad-beta risk surcharges."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.bad_beta_good_beta import (
+                            evaluate_two_beta_profile,
+                            verify_two_beta_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Two-Beta Parameters & Risk Aversion (Optional)", expanded=False):
+                            tb_c1, tb_c2, tb_c3 = st.columns(3)
+                            tb_cf_override = tb_c1.number_input("Override Bad Beta (beta_CF) [0 = Auto]", min_value=0.0, max_value=4.0, value=0.0, step=0.05, key="tb_cf_override")
+                            tb_dr_override = tb_c2.number_input("Override Good Beta (beta_DR) [0 = Auto]", min_value=0.0, max_value=5.0, value=0.0, step=0.05, key="tb_dr_override")
+                            tb_gamma = tb_c3.slider("Relative Risk Aversion (gamma)", min_value=2.0, max_value=12.0, value=6.0, step=0.5, key="tb_gamma")
+
+                        tb_rec = evaluate_two_beta_profile(
+                            ticker=selected_ticker,
+                            cash_flow_beta_override=float(tb_cf_override) if tb_cf_override > 0.0 else None,
+                            discount_rate_beta_override=float(tb_dr_override) if tb_dr_override > 0.0 else None,
+                            risk_aversion_gamma=float(tb_gamma),
+                        )
+
+                        tb1, tb2, tb3, tb4 = st.columns(4)
+                        tb_badge = (
+                            "🔴 CASH-FLOW VULNERABLE"
+                            if tb_rec.is_cash_flow_vulnerable
+                            else (
+                                "⚡ DISCOUNT-RATE GROWTH"
+                                if tb_rec.is_discount_rate_growth
+                                else (
+                                    "🛡️ DEFENSIVE INSULATED"
+                                    if tb_rec.is_defensive_insulated
+                                    else f"{tb_rec.regime}"
+                                )
+                            )
+                        )
+
+                        tb1.metric(
+                            "Bad Beta (beta_CF)",
+                            f"{tb_rec.cash_flow_bad_beta:.2f}x",
+                            delta=tb_badge,
+                            delta_color="inverse" if tb_rec.cash_flow_bad_beta > 0.60 else "normal",
+                            help="Cash-Flow Beta ('Bad Beta') measuring sensitivity to permanent market cashflow shocks; carries high risk price",
+                        )
+                        tb2.metric(
+                            "Good Beta (beta_DR)",
+                            f"{tb_rec.discount_rate_good_beta:.2f}x",
+                            delta=f"Total Beta: {tb_rec.total_market_beta:.2f}x",
+                            help="Discount-Rate Beta ('Good Beta') measuring sensitivity to temporary discount-rate fluctuations",
+                        )
+                        tb3.metric(
+                            "Bad Beta Surcharge",
+                            f"{tb_rec.bad_beta_hurdle_surcharge_bps:+.1f} bps",
+                            delta=f"ICAPM: {tb_rec.two_beta_icapm_return_pct:.2f}%",
+                            delta_color="inverse" if tb_rec.bad_beta_hurdle_surcharge_bps > 50.0 else "normal",
+                            help="Required hurdle rate difference between two-beta ICAPM and single-beta CAPM",
+                        )
+                        tb4.metric(
+                            "Bad Beta Ratio",
+                            f"{tb_rec.bad_beta_ratio:.1%}",
+                            delta="Cash-Flow Share",
+                            help="Fraction of systematic market risk driven by permanent cash-flow innovations",
+                        )
+
+                        st.caption(f"🧾 **Two-Beta Summary:** {tb_rec.summary}")
+                        st.caption(f"🛡️ **Two-Beta Audit Digest:** `{tb_rec.audit_digest[:16]}...` (Verified: `{verify_two_beta_audit_digest(tb_rec)}`)")
+                    except Exception as tb_ex:
+                        st.info(f"Campbell-Vuolteenaho Two-Beta evaluation deferred: {tb_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Two-Beta profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
