@@ -6024,6 +6024,81 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Breeden CCAPM profile.")
 
+                st.markdown("---")
+                st.subheader("🎲 Nicholas Barberis, Ming Huang & Tano Santos (2001) Prospect Theory & Loss Aversion Engine")
+                st.caption(
+                    "Evaluates the Barberis, Huang & Santos (2001) behavioral asset pricing framework, modeling path-dependent dynamic loss "
+                    "aversion ($\\lambda_t$), prior gain/loss cushion states ($z_t = P_{\\text{ref}} / P_t$), house money effects, "
+                    "and prospect theory hurdle rate surcharges."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.barberis_huang_santos import (
+                            evaluate_bhs_prospect_profile,
+                            verify_bhs_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Reference Benchmark & Baseline Loss Aversion (Optional)", expanded=False):
+                            bhs_c1, bhs_c2 = st.columns(2)
+                            bhs_ref = bhs_c1.number_input("Override Reference Purchase Price ($) [0 = Auto]", min_value=0.0, max_value=10000.0, value=0.0, step=1.0, key="bhs_ref")
+                            bhs_lam = bhs_c2.slider("Baseline Loss Aversion lambda_0", min_value=1.5, max_value=3.5, value=2.25, step=0.1, key="bhs_lam")
+
+                        bhs_rec = evaluate_bhs_prospect_profile(
+                            ticker=selected_ticker,
+                            reference_price_override=float(bhs_ref) if bhs_ref > 0.0 else None,
+                            lambda_zero_override=float(bhs_lam),
+                        )
+
+                        bhs1, bhs2, bhs3, bhs4 = st.columns(4)
+                        bhs_badge = (
+                            "🔴 ACUTE LOSS AVERSION"
+                            if bhs_rec.is_acute_loss_aversion
+                            else (
+                                "⚡ RECESSION SENSITIVITY"
+                                if bhs_rec.is_moderate_sensitivity
+                                else (
+                                    "🟢 NEUTRAL PROSPECT"
+                                    if bhs_rec.is_benign_neutral
+                                    else "🏰 HOUSE MONEY CUSHION"
+                                )
+                            )
+                        )
+
+                        bhs1.metric(
+                            "Dynamic Loss Aversion",
+                            f"{bhs_rec.dynamic_loss_aversion_lambda:.2f}x",
+                            delta=f"z_state: {bhs_rec.prior_cushion_state_z:.2f}",
+                            delta_color="inverse" if bhs_rec.dynamic_loss_aversion_lambda > 3.0 else "normal",
+                            help="Barberis, Huang & Santos (2001) path-dependent loss aversion coefficient lambda_t(z_t)",
+                        )
+                        bhs2.metric(
+                            "Loss Surcharge",
+                            f"{bhs_rec.prospective_loss_surcharge_pct:+.2f}% Ann",
+                            delta=bhs_badge,
+                            delta_color="inverse" if bhs_rec.prospective_loss_surcharge_pct > 1.5 else "normal",
+                            help="Prospective loss surcharge required to compensate loss-averse investors",
+                        )
+                        bhs3.metric(
+                            "Total Prospect Hurdle",
+                            f"{bhs_rec.total_prospect_hurdle_pct:.2f}% Ann",
+                            delta=f"CAPM: {bhs_rec.capm_benchmark_return_pct:.2f}%",
+                            help="Required hurdle return incorporating CAPM systematic risk and behavioral loss aversion penalty",
+                        )
+                        bhs4.metric(
+                            "House Money Cushion",
+                            f"{bhs_rec.house_money_cushion_pct:.1f}%",
+                            delta=f"Prior: {bhs_rec.prior_return_pct:+.1f}%",
+                            delta_color="normal" if bhs_rec.house_money_cushion_pct > 10.0 else "inverse",
+                            help="Accumulated psychological capital cushion from prior gains dampening pain of future losses",
+                        )
+
+                        st.caption(f"🧾 **Prospect Theory Summary:** {bhs_rec.summary}")
+                        st.caption(f"🛡️ **BHS Audit Digest:** `{bhs_rec.audit_digest[:16]}...` (Verified: `{verify_bhs_audit_digest(bhs_rec)}`)")
+                    except Exception as bhs_ex:
+                        st.info(f"BHS Prospect Theory evaluation deferred: {bhs_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate BHS Prospect Theory profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

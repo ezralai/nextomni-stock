@@ -7431,6 +7431,88 @@ def breeden_ccapm_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def bhs_prospect_command(args: argparse.Namespace) -> None:
+    """CLI handler for Barberis, Huang & Santos (2001) Prospect Theory Engine."""
+    import json
+    from src.analytics.barberis_huang_santos import (
+        evaluate_bhs_prospect_profile,
+        calculate_bhs_prospect,
+        verify_bhs_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    ref_price = getattr(args, "reference_price", None)
+    if ref_price is not None:
+        ref_price = float(ref_price)
+
+    lam_0 = getattr(args, "lambda_zero", None)
+    if lam_0 is not None:
+        lam_0 = float(lam_0)
+
+    try:
+        if ref_price is not None:
+            kwargs = {
+                "ticker": ticker,
+                "reference_price": ref_price,
+            }
+            if lam_0 is not None:
+                kwargs["baseline_loss_aversion"] = lam_0
+            receipt = calculate_bhs_prospect(**kwargs)
+        else:
+            receipt = evaluate_bhs_prospect_profile(
+                ticker=ticker,
+                reference_price_override=ref_price,
+                lambda_zero_override=lam_0,
+            )
+    except Exception as ex:
+        print(f"\nError: BHS Prospect Theory evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    acute_str = "YES (ACUTE LOSS AVERSION PANIC)" if receipt.is_acute_loss_aversion else "NO"
+    mod_str = "YES (MODERATE RECESSION SENSITIVITY)" if receipt.is_moderate_sensitivity else "NO"
+    ben_str = "YES (BENIGN NEUTRAL PROSPECT)" if receipt.is_benign_neutral else "NO"
+    cush_str = "YES (HOUSE MONEY CUSHION)" if receipt.is_house_money_cushion else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Barberis, Huang & Santos (2001) Prospect Theory Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print(f"  Reference / Cost-Basis Price:   ${receipt.reference_price:.2f}")
+    print("-" * 80)
+    print("  Prior Return & Cushion State Parameters:")
+    print(f"    Prior Return Relative to Ref:      {receipt.prior_return_pct:>+10.2f}%")
+    print(f"    Prior Cushion State (z_t):         {receipt.prior_cushion_state_z:>10.2f} (P_ref / P_t)")
+    print(f"    House Money Cushion:               {receipt.house_money_cushion_pct:>10.2f}%")
+    print(f"    Dynamic Loss Aversion (lambda):    {receipt.dynamic_loss_aversion_lambda:>10.2f}x")
+    print("-" * 80)
+    print("  Prospect Theory Required Return & Surcharge Inferences:")
+    print(f"    CAPM Market Benchmark Return:      {receipt.capm_benchmark_return_pct:>10.2f}% / year")
+    print(f"    Prospective Loss Surcharge:        {receipt.prospective_loss_surcharge_pct:>+10.2f}% / year")
+    print(f"    Prospective Loss Surcharge (bps):  {receipt.prospective_loss_surcharge_bps:>+10.1f} bps / year")
+    print(f"    Total Prospect Hurdle Return:      {receipt.total_prospect_hurdle_pct:>10.2f}% / year")
+    print("-" * 80)
+    print("  Prospect Theory Regime Classification:")
+    print(f"    Behavioral Risk Regime:            {receipt.regime}")
+    print(f"    Acute Loss Aversion Panic:         {acute_str}")
+    print(f"    Moderate Recession Sensitivity:    {mod_str}")
+    print(f"    Benign Neutral Prospect:           {ben_str}")
+    print(f"    House Money Cushion:               {cush_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_bhs_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -11437,6 +11519,36 @@ def main() -> None:
         help="Output Breeden CCAPM receipt as JSON",
     )
 
+    # Subparser: bhs-prospect (Nicholas Barberis, Ming Huang & Tano Santos 2001 Prospect Theory Engine)
+    bhs_parser = subparsers.add_parser(
+        "bhs-prospect",
+        aliases=["prospect-theory", "loss-aversion", "house-money", "barberis-2001"],
+        help="Barberis, Huang & Santos (2001) Prospect Theory, Dynamic Loss Aversion & Cushion Engine",
+    )
+    bhs_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    bhs_parser.add_argument(
+        "--reference-price",
+        type=float,
+        default=None,
+        help="Purchase/reference cost-basis price P_ref (optional)",
+    )
+    bhs_parser.add_argument(
+        "--lambda-zero",
+        type=float,
+        default=None,
+        help="Benchmark baseline loss aversion lambda_0 in [1.5, 3.5] (optional)",
+    )
+    bhs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output BHS Prospect Theory receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -11677,6 +11789,8 @@ def main() -> None:
         hong_stein_crash_command(args)
     elif args.command in ("breeden-ccapm", "ccapm", "consumption-beta", "macro-consumption", "breeden-1979"):
         breeden_ccapm_command(args)
+    elif args.command in ("bhs-prospect", "prospect-theory", "loss-aversion", "house-money", "barberis-2001"):
+        bhs_prospect_command(args)
 
 
 if __name__ == "__main__":
