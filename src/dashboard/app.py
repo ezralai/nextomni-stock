@@ -6175,6 +6175,81 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Allen & Gale Network Contagion profile.")
 
+                st.markdown("---")
+                st.subheader("⚖️ John Geanakoplos (2010) The Leverage Cycle & Collateral Margin Engine")
+                st.caption(
+                    "Evaluates the Geanakoplos (2010) leverage cycle framework, analyzing how fluctuations in collateral margin haircuts "
+                    "($m_t$) drive system leverage ($\\mathcal{L}_t = 1/m_t$), forced de-leveraging pressure, collateral squeeze markdowns, "
+                    "and credit cycle volatility spirals."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.geanakoplos_leverage_cycle import (
+                            evaluate_geanakoplos_leverage_profile,
+                            verify_leverage_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Collateral Haircuts & Leverage Parameters (Optional)", expanded=False):
+                            gl_c1, gl_c2 = st.columns(2)
+                            gl_m = gl_c1.slider("Current Collateral Haircut m (%) [0 = Auto]", min_value=0, max_value=80, value=0, step=5, key="gl_m")
+                            gl_m0 = gl_c2.slider("Baseline Normal Haircut m0 (%)", min_value=5, max_value=50, value=20, step=5, key="gl_m0")
+
+                        gl_rec = evaluate_geanakoplos_leverage_profile(
+                            ticker=selected_ticker,
+                            haircut_override=float(gl_m / 100.0) if gl_m > 0 else None,
+                            baseline_haircut_override=float(gl_m0 / 100.0),
+                        )
+
+                        gl1, gl2, gl3, gl4 = st.columns(4)
+                        gl_badge = (
+                            "🔴 MARGIN SQUEEZE"
+                            if gl_rec.is_acute_margin_squeeze
+                            else (
+                                "⚡ DELEVERAGING PHASE"
+                                if gl_rec.is_elevated_deleveraging
+                                else (
+                                    "🚀 EUPHORIC EXPANSION"
+                                    if gl_rec.is_euphoric_expansion
+                                    else "🟢 PRUDENT STABILITY"
+                                )
+                            )
+                        )
+
+                        gl1.metric(
+                            "Collateral Haircut",
+                            f"{gl_rec.collateral_haircut_m:.1%}",
+                            delta=f"Leverage: {gl_rec.effective_leverage_ratio:.1f}x",
+                            delta_color="inverse" if gl_rec.collateral_haircut_m > 0.35 else "normal",
+                            help="Current collateral margin haircut requirement m_t governing borrowing capacity",
+                        )
+                        gl2.metric(
+                            "Deleveraging Pressure",
+                            f"{gl_rec.forced_deleveraging_pressure:.1f} / 100",
+                            delta=gl_badge,
+                            delta_color="inverse" if gl_rec.forced_deleveraging_pressure > 30.0 else "normal",
+                            help="Forced liquidation pressure triggered by margin calls when current haircut exceeds baseline",
+                        )
+                        gl3.metric(
+                            "Squeeze Markdown",
+                            f"{gl_rec.collateral_squeeze_markdown_pct:.1f}%",
+                            delta=f"Vol Amp: {gl_rec.volatility_amplification_multiple:.2f}x",
+                            delta_color="inverse" if gl_rec.collateral_squeeze_markdown_pct > 2.0 else "normal",
+                            help="Expected fire-sale price discount required to absorb forced de-leveraging liquidation",
+                        )
+                        gl4.metric(
+                            "Total Leverage Hurdle",
+                            f"{gl_rec.total_leverage_hurdle_pct:.2f}% Ann",
+                            delta=f"Surcharge: +{gl_rec.leverage_hurdle_surcharge_pct:.2f}%",
+                            help="Required hurdle discount rate accounting for systematic risk and leverage cycle liquidation risk",
+                        )
+
+                        st.caption(f"🧾 **Leverage Cycle Summary:** {gl_rec.summary}")
+                        st.caption(f"🛡️ **Geanakoplos Audit Digest:** `{gl_rec.audit_digest[:16]}...` (Verified: `{verify_leverage_audit_digest(gl_rec)}`)")
+                    except Exception as gl_ex:
+                        st.info(f"Geanakoplos Leverage Cycle evaluation deferred: {gl_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Geanakoplos Leverage Cycle profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

@@ -7599,6 +7599,94 @@ def allen_gale_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def leverage_cycle_command(args: argparse.Namespace) -> None:
+    """CLI handler for John Geanakoplos (2010) Leverage Cycle & Collateral Haircut Engine."""
+    import json
+    from src.analytics.geanakoplos_leverage_cycle import (
+        evaluate_geanakoplos_leverage_profile,
+        calculate_geanakoplos_leverage,
+        verify_leverage_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    m_val = getattr(args, "haircut", None)
+    if m_val is not None:
+        m_val = float(m_val)
+
+    m0_val = getattr(args, "baseline_haircut", None)
+    if m0_val is not None:
+        m0_val = float(m0_val)
+
+    vol_val = getattr(args, "volatility", None)
+    if vol_val is not None:
+        vol_val = float(vol_val)
+
+    try:
+        if m_val is not None:
+            kwargs = {
+                "ticker": ticker,
+                "collateral_haircut_m": m_val,
+            }
+            if m0_val is not None:
+                kwargs["baseline_haircut_m0"] = m0_val
+            if vol_val is not None:
+                kwargs["asset_volatility"] = vol_val
+            receipt = calculate_geanakoplos_leverage(**kwargs)
+        else:
+            receipt = evaluate_geanakoplos_leverage_profile(
+                ticker=ticker,
+                haircut_override=m_val,
+                baseline_haircut_override=m0_val,
+            )
+    except Exception as ex:
+        print(f"\nError: Geanakoplos Leverage Cycle evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    acute_str = "YES (ACUTE MARGIN SQUEEZE PANIC)" if receipt.is_acute_margin_squeeze else "NO"
+    elev_str = "YES (ELEVATED DELEVERAGING PHASE)" if receipt.is_elevated_deleveraging else "NO"
+    euph_str = "YES (EUPHORIC HIGH LEVERAGE EXPANSION)" if receipt.is_euphoric_expansion else "NO"
+    prud_str = "YES (PRUDENT LOW LEVERAGE STABILITY)" if receipt.is_prudent_stability else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Geanakoplos (2010) Leverage Cycle Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Collateral Haircut & Leverage Parameters:")
+    print(f"    Collateral Margin Haircut (m):     {receipt.collateral_haircut_m:>10.2%}")
+    print(f"    Baseline Normal Haircut (m_0):     {receipt.baseline_haircut_m0:>10.2%}")
+    print(f"    Effective Leverage Ratio (L):      {receipt.effective_leverage_ratio:>10.2f}x (1 / m)")
+    print(f"    Haircut Tightening Ratio:          {receipt.haircut_tightening_ratio:>10.2f}x (m / m_0)")
+    print("-" * 80)
+    print("  Geanakoplos (2010) De-leveraging & Fire-Sale Inferences:")
+    print(f"    Forced De-leveraging Pressure:     {receipt.forced_deleveraging_pressure:>10.1f} / 100")
+    print(f"    Collateral Squeeze Markdown:       {receipt.collateral_squeeze_markdown_pct:>10.2f}%")
+    print(f"    Volatility Amplification Factor:   {receipt.volatility_amplification_multiple:>10.2f}x")
+    print(f"    Leverage Risk Hurdle Surcharge:    {receipt.leverage_hurdle_surcharge_pct:>+10.2f}% / year")
+    print(f"    Total Leverage Hurdle Return:      {receipt.total_leverage_hurdle_pct:>10.2f}% / year")
+    print("-" * 80)
+    print("  Leverage Cycle Regime Classification:")
+    print(f"    Collateral Cycle Regime:           {receipt.regime}")
+    print(f"    Acute Margin Squeeze Panic:        {acute_str}")
+    print(f"    Elevated De-leveraging Phase:      {elev_str}")
+    print(f"    Euphoric High Leverage Expansion:  {euph_str}")
+    print(f"    Prudent Low Leverage Stability:    {prud_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_leverage_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -11671,6 +11759,42 @@ def main() -> None:
         help="Output Allen & Gale Network Contagion receipt as JSON",
     )
 
+    # Subparser: leverage-cycle (John Geanakoplos 2010 The Leverage Cycle Engine)
+    leverage_parser = subparsers.add_parser(
+        "leverage-cycle",
+        aliases=["geanakoplos", "collateral-haircut", "deleveraging-crisis", "margin-squeeze"],
+        help="John Geanakoplos (2010) Leverage Cycle, Collateral Margins & De-leveraging Engine",
+    )
+    leverage_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    leverage_parser.add_argument(
+        "--haircut",
+        type=float,
+        default=None,
+        help="Collateral margin requirement haircut m_t in [0.05, 0.85] (optional)",
+    )
+    leverage_parser.add_argument(
+        "--baseline-haircut",
+        type=float,
+        default=None,
+        help="Baseline normal haircut m_0 in [0.05, 0.60] (optional)",
+    )
+    leverage_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=None,
+        help="Asset annualized volatility in [0.02, 2.00] (optional)",
+    )
+    leverage_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Geanakoplos Leverage Cycle receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -11915,6 +12039,8 @@ def main() -> None:
         bhs_prospect_command(args)
     elif args.command in ("allen-gale", "network-contagion", "incomplete-network", "liquidity-cascade", "allen-2000"):
         allen_gale_command(args)
+    elif args.command in ("leverage-cycle", "geanakoplos", "collateral-haircut", "deleveraging-crisis", "margin-squeeze"):
+        leverage_cycle_command(args)
 
 
 if __name__ == "__main__":
