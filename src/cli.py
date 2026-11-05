@@ -6206,6 +6206,87 @@ def covar_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def amh_command(args: argparse.Namespace) -> None:
+    """CLI handler for Andrew W. Lo (2004, 2005) Adaptive Markets Hypothesis Engine."""
+    import json
+    from src.analytics.adaptive_markets import (
+        evaluate_amh_profile,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    vr = getattr(args, "variance_ratio", None)
+    if vr is not None:
+        vr = float(vr)
+    rho = getattr(args, "autocorrelation", None)
+    if rho is not None:
+        rho = float(rho)
+    dd = getattr(args, "drawdown", None)
+    if dd is not None:
+        dd = float(dd)
+    vol = getattr(args, "volatility", None)
+    if vol is not None:
+        vol = float(vol)
+    vol0 = getattr(args, "baseline_volatility", None)
+    if vol0 is not None:
+        vol0 = float(vol0)
+
+    try:
+        receipt = evaluate_amh_profile(
+            ticker=ticker,
+            lo_mackinlay_variance_ratio=vr,
+            serial_autocorrelation_rho1=rho,
+            ecological_stress_drawdown=dd,
+            realized_volatility=vol,
+            baseline_volatility=vol0,
+        )
+    except Exception as ex:
+        print(f"\nError: Adaptive Markets Hypothesis evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    sat_str = "YES (HIGH COMPETITIVE SATURATION)" if receipt.is_competitive_saturation else "NO"
+    punc_str = "YES (PUNCTUATED EQUILIBRIUM BEHAVIORAL REGIME)" if receipt.is_punctuated_equilibrium else "NO"
+    rec_str = "YES (ADAPTIVE ARBITRAGE RECOVERY)" if receipt.is_adaptive_recovery else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Andrew W. Lo (2004, 2005) Adaptive Markets Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Evolutionary & Microstructure Dynamics:")
+    print(f"    Variance Ratio (Lo-MacKinlay):  {receipt.lo_mackinlay_variance_ratio:>10.4f} (VR=1.0 under Random Walk)")
+    print(f"    Serial Autocorrelation (rho_1): {receipt.serial_autocorrelation_rho1:>+10.4f}")
+    print(f"    Ecological Stress Drawdown:     {receipt.ecological_stress_drawdown:>10.2%}")
+    print(f"    Realized Volatility:            {receipt.realized_volatility:>10.2%}")
+    print(f"    Baseline Volatility:            {receipt.baseline_volatility:>10.2%}")
+    print("-" * 80)
+    print("  Andrew W. Lo Adaptive Markets Metrics:")
+    print(f"    Adaptive Efficiency Index:      {receipt.adaptive_market_efficiency_index:>10.4f} (E_AMH in [0..1])")
+    print(f"    Arbitrage Carrying Capacity:    {receipt.arbitrage_carrying_capacity:>10.2f}x (K_arb)")
+    print(f"    Adaptation Selection Pressure:  {receipt.evolutionary_adaptation_pressure:>+10.4f} (Pi_evol)")
+    print(f"    Arbitrage Impulse:              {receipt.amh_arbitrage_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  AMH Regime & Alpha Projections:")
+    print(f"    Adaptive Markets Regime:        {receipt.regime}")
+    print(f"    Competitive Saturation:         {sat_str}")
+    print(f"    Punctuated Equilibrium:         {punc_str}")
+    print(f"    Adaptive Arbitrage Recovery:    {rec_str}")
+    print(f"    Expected Adaptive Alpha:        {receipt.expected_adaptive_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -9651,6 +9732,53 @@ def main() -> None:
         help="Output CoVaR spillover receipt as JSON",
     )
 
+    amh_parser = subparsers.add_parser(
+        "amh",
+        aliases=["adaptive-markets", "andrew-lo", "market-efficiency", "punctuated-equilibrium"],
+        help="Run Andrew W. Lo (2004, 2005) Adaptive Markets Hypothesis Engine",
+    )
+    amh_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    amh_parser.add_argument(
+        "--variance-ratio",
+        type=float,
+        default=None,
+        help="Lo-MacKinlay Variance Ratio VR(k) in [0.30, 2.50] (optional)",
+    )
+    amh_parser.add_argument(
+        "--autocorrelation",
+        type=float,
+        default=None,
+        help="First-order serial autocorrelation rho_1 in [-0.80, 0.80] (optional)",
+    )
+    amh_parser.add_argument(
+        "--drawdown",
+        type=float,
+        default=None,
+        help="Ecological stress drawdown in [0.0, 0.85] (optional)",
+    )
+    amh_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=None,
+        help="Realized annualized volatility in [0.05, 1.50] (optional)",
+    )
+    amh_parser.add_argument(
+        "--baseline-volatility",
+        type=float,
+        default=None,
+        help="Normal-times baseline volatility in [0.05, 0.80] (optional)",
+    )
+    amh_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Adaptive Markets receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -9863,6 +9991,8 @@ def main() -> None:
         ses_command(args)
     elif args.command in ("covar", "adrian-brunnermeier", "delta-covar", "systemic-spillover", "tail-contagion"):
         covar_command(args)
+    elif args.command in ("amh", "adaptive-markets", "andrew-lo", "market-efficiency", "punctuated-equilibrium"):
+        amh_command(args)
 
 
 if __name__ == "__main__":

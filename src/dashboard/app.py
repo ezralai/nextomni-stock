@@ -4977,6 +4977,83 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate CoVaR Spillover profile.")
 
+                st.divider()
+                st.markdown("#### 🧬 Andrew W. Lo (2004, 2005) Adaptive Markets Hypothesis & Evolutionary Alpha Engine")
+                st.caption(
+                    "Evaluates time-varying Adaptive Market Efficiency ($\\mathcal{E}_{\\text{AMH}}$), "
+                    "Lo-MacKinlay Variance Ratio ($VR_k$), Arbitrage Carrying Capacity ($\\mathcal{K}_{\\text{arb}}$), "
+                    "and behavioral punctuated equilibrium under Andrew W. Lo (2004, 2005, 2017)."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.adaptive_markets import (
+                            evaluate_amh_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Adaptive Efficiency & Evolutionary Stress Parameters (Optional)", expanded=False):
+                            amh_c1, amh_c2, amh_c3, amh_c4 = st.columns(4)
+                            amh_vr_in = amh_c1.number_input("Variance Ratio VR(k) [0.30..2.50]", value=0.0, min_value=0.0, max_value=2.50, step=0.05, key="amh_vr_in")
+                            amh_rho_in = amh_c2.number_input("Autocorrelation rho_1 [-0.80..0.80]", value=0.0, min_value=-0.80, max_value=0.80, step=0.02, key="amh_rho_in")
+                            amh_dd_in = amh_c3.number_input("Peak Drawdown [0.0..0.85]", value=0.0, min_value=0.0, max_value=0.85, step=0.05, key="amh_dd_in")
+                            amh_vol_in = amh_c4.number_input("Annualized Volatility [0.05..1.50]", value=0.0, min_value=0.0, max_value=1.50, step=0.02, key="amh_vol_in")
+
+                        amh_rec = evaluate_amh_profile(
+                            ticker=selected_ticker,
+                            lo_mackinlay_variance_ratio=amh_vr_in if amh_vr_in > 0.0 else None,
+                            serial_autocorrelation_rho1=amh_rho_in if amh_rho_in != 0.0 else None,
+                            ecological_stress_drawdown=amh_dd_in if amh_dd_in > 0.0 else None,
+                            realized_volatility=amh_vol_in if amh_vol_in > 0.0 else None,
+                        )
+
+                        amh1, amh2, amh3, amh4 = st.columns(4)
+                        amh_badge = (
+                            "🔴 BEHAVIORAL DISLOCATION"
+                            if amh_rec.is_punctuated_equilibrium
+                            else (
+                                "🟢 COMPETITIVE SATURATION"
+                                if amh_rec.is_competitive_saturation
+                                else (
+                                    "⚡ ADAPTIVE RECOVERY"
+                                    if amh_rec.is_adaptive_recovery
+                                    else f"Regime: {amh_rec.regime}"
+                                )
+                            )
+                        )
+                        amh1.metric(
+                            "Adaptive Efficiency (E_AMH)",
+                            f"{amh_rec.adaptive_market_efficiency_index:.2f}",
+                            delta=f"VR: {amh_rec.lo_mackinlay_variance_ratio:.2f} (Base=1.00)",
+                            delta_color="normal" if amh_rec.adaptive_market_efficiency_index >= 0.70 else "inverse",
+                            help="Andrew W. Lo (2004) time-varying market efficiency index: E_AMH = 1 - 0.70|VR - 1| - 0.30|rho_1|",
+                        )
+                        amh2.metric(
+                            "Carrying Capacity (K_arb)",
+                            f"{amh_rec.arbitrage_carrying_capacity:.2f}x",
+                            delta=amh_badge,
+                            delta_color="normal" if amh_rec.is_adaptive_recovery else ("inverse" if amh_rec.is_punctuated_equilibrium else "off"),
+                            help="Ecology arbitrage carrying capacity: higher values denote fertile alpha opportunities before saturation",
+                        )
+                        amh3.metric(
+                            "Adaptation Pressure (Π_evol)",
+                            f"{amh_rec.evolutionary_adaptation_pressure:+.2f}",
+                            delta=f"Autocorr: {amh_rec.serial_autocorrelation_rho1:+.2f}",
+                            delta_color="inverse" if amh_rec.evolutionary_adaptation_pressure > 1.0 else "normal",
+                            help="Evolutionary natural selection pressure on quantitative strategies from environmental stress and inefficiency",
+                        )
+                        amh4.metric(
+                            "Expected Adaptive Alpha",
+                            f"{amh_rec.expected_adaptive_alpha_pct:+.2f}% Ann",
+                            delta=f"Arbitrage Impulse: {amh_rec.amh_arbitrage_impulse:+.2f}",
+                            help="Projected annualized abnormal alpha potential net of participant crowding and market ecology saturation",
+                        )
+
+                        st.caption(f"🧾 **Adaptive Markets Summary:** {amh_rec.summary}")
+                        st.caption(f"🛡️ **Adaptive Audit Digest:** `{amh_rec.signature[:16]}...` (Verified: `{amh_rec.verify_integrity()}`)")
+                    except Exception as amh_ex:
+                        st.info(f"Adaptive Markets Hypothesis evaluation deferred: {amh_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Adaptive Markets profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
