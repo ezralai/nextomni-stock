@@ -6920,6 +6920,85 @@ def bad_beta_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def merton_recognition_command(args: argparse.Namespace) -> None:
+    """CLI handler for Merton (1987) Incomplete Information & Investor Recognition Engine."""
+    import json
+    from src.analytics.merton_incomplete_information import (
+        evaluate_merton_incomplete_info_profile,
+        calculate_merton_incomplete_information,
+        verify_merton_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    q_val = getattr(args, "recognition_q", None)
+    if q_val is not None:
+        q_val = float(q_val)
+
+    lam_val = getattr(args, "shadow_lambda", None)
+    if lam_val is not None:
+        lam_val = float(lam_val)
+
+    try:
+        if q_val is not None and lam_val is not None:
+            receipt = calculate_merton_incomplete_information(
+                ticker=ticker,
+                investor_recognition_ratio_q=q_val,
+                shadow_cost_lambda=lam_val,
+            )
+        else:
+            receipt = evaluate_merton_incomplete_info_profile(
+                ticker=ticker,
+                recognition_q_override=q_val,
+                shadow_lambda_override=lam_val,
+            )
+    except Exception as ex:
+        print(f"\nError: Merton Incomplete Information evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    negl_str = "YES (NEGLECTED FIRM HIGH SURCHARGE)" if receipt.is_neglected_firm else "NO"
+    elev_str = "YES (ELEVATED INCOMPLETE INFORMATION)" if receipt.is_elevated_incomplete else "NO"
+    broad_str = "YES (BROAD RECOGNITION EQUILIBRIUM)" if receipt.is_broad_recognition else "NO"
+    univ_str = "YES (UNIVERSAL SATURATED COVERAGE)" if receipt.is_universal_saturated else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Merton (1987) Incomplete Information Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Investor Recognition & Idiosyncratic Risk:")
+    print(f"    Investor Recognition Ratio (q):    {receipt.investor_recognition_ratio_q:>10.2%}")
+    print(f"    Idiosyncratic Variance:            {receipt.idiosyncratic_variance:>10.6f} (sigma_eps^2)")
+    print(f"    Market Equity Beta (beta_M):       {receipt.market_equity_beta:>10.2f}x")
+    print(f"    Shadow Cost Multiplier (lambda):   {receipt.shadow_cost_lambda:>10.2f}")
+    print("-" * 80)
+    print("  Merton (1987) Cost of Capital & Surcharge Inferences:")
+    print(f"    CAPM Required Return:              {receipt.capm_required_return_pct:>10.2f}% / year")
+    print(f"    Merton Shadow Surcharge:           {receipt.merton_shadow_surcharge_pct:>+10.2f}% / year")
+    print(f"    Merton Shadow Surcharge (bps):     {receipt.merton_shadow_surcharge_bps:>+10.1f} bps / year")
+    print(f"    Total Required Hurdle Return:      {receipt.total_required_hurdle_pct:>10.2f}% / year")
+    print("-" * 80)
+    print("  Recognition Regime & Neglected Firm Classification:")
+    print(f"    Incomplete Information Regime:     {receipt.regime}")
+    print(f"    Neglected Firm High Surcharge:     {negl_str}")
+    print(f"    Elevated Incomplete Information:   {elev_str}")
+    print(f"    Broad Recognition Equilibrium:     {broad_str}")
+    print(f"    Universal Saturated Coverage:      {univ_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_merton_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -10717,6 +10796,35 @@ def main() -> None:
         help="Output Two-Beta receipt as JSON",
     )
 
+    merton_parser = subparsers.add_parser(
+        "merton-recognition",
+        aliases=["incomplete-information", "neglected-firm", "investor-recognition", "merton-1987"],
+        help="Run Merton (1987) Incomplete Information & Investor Recognition Engine",
+    )
+    merton_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    merton_parser.add_argument(
+        "--recognition-q",
+        type=float,
+        default=None,
+        help="Investor recognition / attention ratio q in [0.02, 1.00] (optional)",
+    )
+    merton_parser.add_argument(
+        "--shadow-lambda",
+        type=float,
+        default=None,
+        help="Shadow cost parameter lambda_shadow in [0.01, 5.0] (optional)",
+    )
+    merton_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Merton Incomplete Information receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -10945,6 +11053,8 @@ def main() -> None:
         noise_bands_command(args)
     elif args.command in ("bad-beta", "two-beta", "campbell-vuolteenaho", "icapm-two-beta"):
         bad_beta_command(args)
+    elif args.command in ("merton-recognition", "incomplete-information", "neglected-firm", "investor-recognition", "merton-1987"):
+        merton_recognition_command(args)
 
 
 if __name__ == "__main__":

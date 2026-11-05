@@ -5575,6 +5575,79 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Two-Beta profile.")
 
+                st.divider()
+                st.markdown("#### 🔭 Merton (1987) Incomplete Information & Investor Recognition Engine")
+                st.caption(
+                    "Evaluates the Merton (1987) incomplete information equilibrium, measuring the investor recognition ratio ($q$), "
+                    "shadow cost of limited attention, and required hurdle rate surcharges on neglected securities."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.merton_incomplete_information import (
+                            evaluate_merton_incomplete_info_profile,
+                            verify_merton_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Investor Recognition & Shadow Cost (Optional)", expanded=False):
+                            mi_c1, mi_c2 = st.columns(2)
+                            mi_q_override = mi_c1.slider("Override Recognition Ratio q (%) [0 = Auto]", min_value=0, max_value=100, value=0, step=5, key="mi_q_override")
+                            mi_lambda = mi_c2.slider("Shadow Cost Multiplier lambda", min_value=0.05, max_value=1.00, value=0.25, step=0.05, key="mi_lambda")
+
+                        mi_rec = evaluate_merton_incomplete_info_profile(
+                            ticker=selected_ticker,
+                            recognition_q_override=float(mi_q_override / 100.0) if mi_q_override > 0 else None,
+                            shadow_lambda_override=float(mi_lambda),
+                        )
+
+                        mi1, mi2, mi3, mi4 = st.columns(4)
+                        mi_badge = (
+                            "🔴 NEGLECTED FIRM SURCHARGE"
+                            if mi_rec.is_neglected_firm
+                            else (
+                                "⚡ ELEVATED INCOMPLETE"
+                                if mi_rec.is_elevated_incomplete
+                                else (
+                                    "🟢 BROAD RECOGNITION"
+                                    if mi_rec.is_broad_recognition
+                                    else "🌐 UNIVERSAL SATURATED"
+                                )
+                            )
+                        )
+
+                        mi1.metric(
+                            "Shadow Surcharge",
+                            f"{mi_rec.merton_shadow_surcharge_pct:+.2f}% Ann",
+                            delta=f"{mi_rec.merton_shadow_surcharge_bps:+.0f} bps",
+                            delta_color="inverse" if mi_rec.merton_shadow_surcharge_pct > 1.5 else "normal",
+                            help="Merton (1987) cost of capital surcharge demanded by cognizant investors for holding undiversified positions in limited-recognition stocks",
+                        )
+                        mi2.metric(
+                            "Investor Recognition (q)",
+                            f"{mi_rec.investor_recognition_ratio_q:.1%}",
+                            delta=mi_badge,
+                            delta_color="inverse" if mi_rec.investor_recognition_ratio_q <= 0.25 else "normal",
+                            help="Fraction of investors in the economy who are cognizant of and invest in the security",
+                        )
+                        mi3.metric(
+                            "Total Hurdle Return",
+                            f"{mi_rec.total_required_hurdle_pct:.2f}% Ann",
+                            delta=f"CAPM: {mi_rec.capm_required_return_pct:.2f}%",
+                            help="Total multi-factor required return combining CAPM systematic risk and Merton shadow cost surcharge",
+                        )
+                        mi4.metric(
+                            "Idiosyncratic Variance",
+                            f"{mi_rec.idiosyncratic_variance:.4f}",
+                            delta=f"Beta_M: {mi_rec.market_equity_beta:.2f}x",
+                            help="Annualized idiosyncratic variance representing undiversified risk borne by cognizant investors",
+                        )
+
+                        st.caption(f"🧾 **Incomplete Information Summary:** {mi_rec.summary}")
+                        st.caption(f"🛡️ **Merton Audit Digest:** `{mi_rec.audit_digest[:16]}...` (Verified: `{verify_merton_audit_digest(mi_rec)}`)")
+                    except Exception as mi_ex:
+                        st.info(f"Merton Incomplete Information evaluation deferred: {mi_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Merton Incomplete Information profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
