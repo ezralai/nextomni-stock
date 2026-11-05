@@ -5798,6 +5798,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Kyle & Xiong Contagion profile.")
 
+                st.markdown("---")
+                st.subheader("🦈 Markus K. Brunnermeier & Lasse Heje Pedersen (2005) Predatory Trading Engine")
+                st.caption(
+                    "Evaluates the Brunnermeier & Pedersen (2005) predatory trading framework, detecting strategic front-running of "
+                    "distressed institutional liquidation, predatory price overshoot ($\\Omega_{\\text{overshoot}}$), liquidity evaporation, "
+                    "and post-trough rebound potential."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.predatory_trading import (
+                            evaluate_predatory_trading_profile,
+                            verify_predatory_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Distressed Liquidation & Predator Dynamics (Optional)", expanded=False):
+                            pt_c1, pt_c2 = st.columns(2)
+                            pt_size = pt_c1.slider("Distressed Liquidation (% ADV) [0 = Auto]", min_value=0.0, max_value=15.0, value=0.0, step=0.5, key="pt_size")
+                            pt_pred = pt_c2.slider("Strategic Predator Share (%)", min_value=10, max_value=90, value=50, step=5, key="pt_pred")
+
+                        pt_rec = evaluate_predatory_trading_profile(
+                            ticker=selected_ticker,
+                            distressed_size_override=float(pt_size) if pt_size > 0 else None,
+                            predator_ratio_override=float(pt_pred / 100.0),
+                        )
+
+                        pt1, pt2, pt3, pt4 = st.columns(4)
+                        pt_badge = (
+                            "🔴 AGGRESSIVE PREDATORY RUN"
+                            if pt_rec.is_aggressive_predatory_run
+                            else (
+                                "⚡ COORDINATED FRONT-RUNNING"
+                                if pt_rec.is_coordinated_front_running
+                                else (
+                                    "🛡️ COMPETITIVE ABSORPTION"
+                                    if pt_rec.is_competitive_absorption
+                                    else "🟢 BENIGN LIQUIDITY"
+                                )
+                            )
+                        )
+
+                        pt1.metric(
+                            "Price Overshoot",
+                            f"{pt_rec.price_overshoot_ratio:.2f}x",
+                            delta=f"Rebound: +{pt_rec.expected_rebound_potential_pct:.1f}%",
+                            delta_color="inverse" if pt_rec.price_overshoot_ratio > 1.25 else "normal",
+                            help="Brunnermeier & Pedersen (2005) price overshoot ratio induced by strategic predators front-running distressed liquidation",
+                        )
+                        pt2.metric(
+                            "Predatory Shorting",
+                            f"{pt_rec.predatory_shorting_volume_pct_adv:.2f}% ADV",
+                            delta=pt_badge,
+                            delta_color="inverse" if pt_rec.predatory_shorting_volume_pct_adv > 2.0 else "normal",
+                            help="Volume sold or shorted by strategic predators alongside the distressed trader",
+                        )
+                        pt3.metric(
+                            "Liquidity Drain",
+                            f"{pt_rec.predatory_liquidity_drain_pct:.1f}%",
+                            delta=f"Distressed: {pt_rec.distressed_liquidation_size_pct_adv:.1f}% ADV",
+                            delta_color="inverse" if pt_rec.predatory_liquidity_drain_pct > 30.0 else "normal",
+                            help="Fraction of order book depth drained by opportunistic predators",
+                        )
+                        pt4.metric(
+                            "Slippage Inflation",
+                            f"{pt_rec.distressed_slippage_inflation_pct:+.1f}%",
+                            delta=f"Depth: {pt_rec.market_depth_multiplier:.2f}x",
+                            delta_color="inverse" if pt_rec.distressed_slippage_inflation_pct > 25.0 else "normal",
+                            help="Execution slippage cost penalty borne by the distressed entity due to predatory front-running",
+                        )
+
+                        st.caption(f"🧾 **Predatory Trading Summary:** {pt_rec.summary}")
+                        st.caption(f"🛡️ **Predatory Audit Digest:** `{pt_rec.audit_digest[:16]}...` (Verified: `{verify_predatory_audit_digest(pt_rec)}`)")
+                    except Exception as pt_ex:
+                        st.info(f"Predatory Trading evaluation deferred: {pt_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Predatory Trading profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

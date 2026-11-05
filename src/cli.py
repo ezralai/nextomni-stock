@@ -7172,6 +7172,92 @@ def kyle_xiong_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def predatory_trading_command(args: argparse.Namespace) -> None:
+    """CLI handler for Markus K. Brunnermeier & Lasse Heje Pedersen (2005) Predatory Trading Engine."""
+    import json
+    from src.analytics.predatory_trading import (
+        evaluate_predatory_trading_profile,
+        calculate_predatory_trading,
+        verify_predatory_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    dist_size = getattr(args, "distressed_size", None)
+    if dist_size is not None:
+        dist_size = float(dist_size)
+
+    pred_ratio = getattr(args, "predator_concentration", None)
+    if pred_ratio is not None:
+        pred_ratio = float(pred_ratio)
+
+    depth_val = getattr(args, "market_depth", None)
+    if depth_val is not None:
+        depth_val = float(depth_val)
+
+    try:
+        if dist_size is not None and pred_ratio is not None:
+            kwargs = {
+                "ticker": ticker,
+                "distressed_liquidation_size_pct_adv": dist_size,
+                "predator_concentration_ratio": pred_ratio,
+            }
+            if depth_val is not None:
+                kwargs["market_depth_multiplier"] = depth_val
+            receipt = calculate_predatory_trading(**kwargs)
+        else:
+            receipt = evaluate_predatory_trading_profile(
+                ticker=ticker,
+                distressed_size_override=dist_size,
+                predator_ratio_override=pred_ratio,
+            )
+    except Exception as ex:
+        print(f"\nError: Predatory Trading evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    agg_str = "YES (AGGRESSIVE PREDATORY RUN)" if receipt.is_aggressive_predatory_run else "NO"
+    coord_str = "YES (COORDINATED FRONT RUNNING)" if receipt.is_coordinated_front_running else "NO"
+    comp_str = "YES (COMPETITIVE ABSORPTION)" if receipt.is_competitive_absorption else "NO"
+    ben_str = "YES (BENIGN LIQUIDITY PROVISION)" if receipt.is_benign_liquidity else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Brunnermeier & Pedersen (2005) Predatory Trading Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Distressed Liquidation & Predator Order Flow Parameters:")
+    print(f"    Distressed Liquidation Size:       {receipt.distressed_liquidation_size_pct_adv:>10.2f}% of ADV")
+    print(f"    Predator Concentration Share:      {receipt.predator_concentration_ratio:>10.2%}")
+    print(f"    Market Depth Multiplier:           {receipt.market_depth_multiplier:>10.2f}x")
+    print(f"    Predatory Shorting Volume:         {receipt.predatory_shorting_volume_pct_adv:>10.2f}% of ADV")
+    print("-" * 80)
+    print("  Brunnermeier & Pedersen (2005) Price Overshoot & Slippage Inferences:")
+    print(f"    Predatory Price Overshoot Ratio:   {receipt.price_overshoot_ratio:>10.2f}x")
+    print(f"    Predatory Liquidity Drain Rate:    {receipt.predatory_liquidity_drain_pct:>10.2f}%")
+    print(f"    Distressed Slippage Inflation:     {receipt.distressed_slippage_inflation_pct:>+10.2f}%")
+    print(f"    Expected Post-Trough Rebound:      {receipt.expected_rebound_potential_pct:>10.2f}%")
+    print("-" * 80)
+    print("  Predatory Trading Regime Classification:")
+    print(f"    Microstructure Regime:             {receipt.regime}")
+    print(f"    Aggressive Predatory Run:          {agg_str}")
+    print(f"    Coordinated Front-Running:         {coord_str}")
+    print(f"    Competitive Absorption:            {comp_str}")
+    print(f"    Benign Liquidity Provision:        {ben_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_predatory_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -11070,6 +11156,42 @@ def main() -> None:
         help="Output Kyle & Xiong Wealth Contagion receipt as JSON",
     )
 
+    # Subparser: predatory-trading (Markus K. Brunnermeier & Lasse Heje Pedersen 2005 Predatory Trading Engine)
+    predatory_parser = subparsers.add_parser(
+        "predatory-trading",
+        aliases=["predatory", "strategic-frontrun", "liquidation-overshoot", "brunnermeier-2005"],
+        help="Markus K. Brunnermeier & Lasse Heje Pedersen (2005) Predatory Trading & Price Overshoot Engine",
+    )
+    predatory_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    predatory_parser.add_argument(
+        "--distressed-size",
+        type=float,
+        default=None,
+        help="Distressed liquidation order flow as % of ADV in [0.1, 25.0] (optional)",
+    )
+    predatory_parser.add_argument(
+        "--predator-concentration",
+        type=float,
+        default=None,
+        help="Strategic predator concentration share in [0.05, 0.95] (optional)",
+    )
+    predatory_parser.add_argument(
+        "--market-depth",
+        type=float,
+        default=None,
+        help="Market depth multiplier lambda_inv in [0.20, 5.00] (optional)",
+    )
+    predatory_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Predatory Trading receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -11304,6 +11426,8 @@ def main() -> None:
         rare_disasters_command(args)
     elif args.command in ("kyle-xiong", "wealth-contagion", "forced-liquidation", "spillover-beta", "kyle-2001"):
         kyle_xiong_command(args)
+    elif args.command in ("predatory-trading", "predatory", "strategic-frontrun", "liquidation-overshoot", "brunnermeier-2005"):
+        predatory_trading_command(args)
 
 
 if __name__ == "__main__":
