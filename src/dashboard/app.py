@@ -5648,6 +5648,80 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Merton Incomplete Information profile.")
 
+                st.markdown("---")
+                st.subheader("🌪️ Xavier Gabaix (2012) Variable Rare Disasters & Macro Tail Risk Engine")
+                st.caption(
+                    "Evaluates the Gabaix (2012) variable rare disaster framework, modeling time-varying macroeconomic tail risk "
+                    "intensity ($\\lambda_t$), pricing kernel disaster spikes ($B^{-\\gamma}$), firm cash-flow resilience ($F_i$), "
+                    "and affine price-to-dividend multiples."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.variable_rare_disasters import (
+                            evaluate_rare_disasters_profile,
+                            verify_disaster_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Macro Disaster & Resilience Parameters (Optional)", expanded=False):
+                            vrd_c1, vrd_c2 = st.columns(2)
+                            vrd_lambda = vrd_c1.slider("Macro Disaster Arrival Rate lambda (%) [0 = Auto]", min_value=0.0, max_value=15.0, value=0.0, step=0.5, key="vrd_lambda")
+                            vrd_rec_f = vrd_c2.slider("Dividend Recovery Factor F (%) [0 = Auto]", min_value=0, max_value=120, value=0, step=5, key="vrd_rec_f")
+
+                        vrd_receipt = evaluate_rare_disasters_profile(
+                            ticker=selected_ticker,
+                            disaster_lambda_override=float(vrd_lambda / 100.0) if vrd_lambda > 0 else None,
+                            recovery_f_override=float(vrd_rec_f / 100.0) if vrd_rec_f > 0 else None,
+                        )
+
+                        vrd1, vrd2, vrd3, vrd4 = st.columns(4)
+                        vrd_badge = (
+                            "🔴 DISASTER VULNERABLE"
+                            if vrd_receipt.is_disaster_vulnerable
+                            else (
+                                "⚡ CYCLICAL EXPOSURE"
+                                if vrd_receipt.is_cyclical_exposure
+                                else (
+                                    "🟢 BENIGN STABILITY"
+                                    if vrd_receipt.is_benign_stability
+                                    else "🏰 RESILIENT FORTRESS"
+                                )
+                            )
+                        )
+
+                        vrd1.metric(
+                            "Disaster Premium (H)",
+                            f"{vrd_receipt.disaster_resilience_premium_pct:+.2f}% Ann",
+                            delta=f"{vrd_receipt.disaster_resilience_premium_bps:+.0f} bps",
+                            delta_color="inverse" if vrd_receipt.disaster_resilience_premium_pct > 3.0 else "normal",
+                            help="Gabaix (2012) disaster resilience premium demanded by investors for exposure to macro disaster tail risk",
+                        )
+                        vrd2.metric(
+                            "Dividend Recovery (F)",
+                            f"{vrd_receipt.firm_dividend_recovery_factor_f:.1%}",
+                            delta=vrd_badge,
+                            delta_color="inverse" if vrd_receipt.firm_dividend_recovery_factor_f <= 0.60 else "normal",
+                            help="Firm cash flow and dividend recovery factor during a catastrophic macroeconomic contraction",
+                        )
+                        vrd3.metric(
+                            "Total Tail Hurdle",
+                            f"{vrd_receipt.total_disaster_hurdle_pct:.2f}% Ann",
+                            delta=f"CAPM: {vrd_receipt.capm_required_return_pct:.2f}%",
+                            help="Total hurdle discount rate accounting for normal market risk and variable disaster resilience",
+                        )
+                        vrd4.metric(
+                            "Implied P/D Multiple",
+                            f"{vrd_receipt.implied_price_dividend_multiple:.1f}x",
+                            delta=f"Kernel Spike: {vrd_receipt.pricing_kernel_disaster_spike:.1f}x",
+                            help="Gabaix closed-form implied price-to-dividend valuation multiple under disaster risk",
+                        )
+
+                        st.caption(f"🧾 **Variable Rare Disasters Summary:** {vrd_receipt.summary}")
+                        st.caption(f"🛡️ **Gabaix Audit Digest:** `{vrd_receipt.audit_digest[:16]}...` (Verified: `{verify_disaster_audit_digest(vrd_receipt)}`)")
+                    except Exception as vrd_ex:
+                        st.info(f"Variable Rare Disasters evaluation deferred: {vrd_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Variable Rare Disasters profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

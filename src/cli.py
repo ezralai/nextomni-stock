@@ -6999,6 +6999,93 @@ def merton_recognition_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def rare_disasters_command(args: argparse.Namespace) -> None:
+    """CLI handler for Xavier Gabaix (2012) Variable Rare Disasters & Macro Tail Risk Engine."""
+    import json
+    from src.analytics.variable_rare_disasters import (
+        evaluate_rare_disasters_profile,
+        calculate_variable_rare_disasters,
+        verify_disaster_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    lam_val = getattr(args, "disaster_lambda", None)
+    if lam_val is not None:
+        lam_val = float(lam_val)
+
+    rec_val = getattr(args, "recovery_f", None)
+    if rec_val is not None:
+        rec_val = float(rec_val)
+
+    gamma_val = getattr(args, "gamma", None)
+    if gamma_val is not None:
+        gamma_val = float(gamma_val)
+
+    try:
+        if lam_val is not None and rec_val is not None:
+            kwargs = {
+                "ticker": ticker,
+                "disaster_arrival_rate_lambda": lam_val,
+                "firm_dividend_recovery_factor_f": rec_val,
+            }
+            if gamma_val is not None:
+                kwargs["risk_aversion_gamma"] = gamma_val
+            receipt = calculate_variable_rare_disasters(**kwargs)
+        else:
+            receipt = evaluate_rare_disasters_profile(
+                ticker=ticker,
+                disaster_lambda_override=lam_val,
+                recovery_f_override=rec_val,
+            )
+    except Exception as ex:
+        print(f"\nError: Variable Rare Disasters evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    vuln_str = "YES (DISASTER VULNERABLE HIGH PREMIUM)" if receipt.is_disaster_vulnerable else "NO"
+    cycl_str = "YES (CYCLICAL TAIL RISK EXPOSURE)" if receipt.is_cyclical_exposure else "NO"
+    stab_str = "YES (BENIGN TAIL STABILITY)" if receipt.is_benign_stability else "NO"
+    fort_str = "YES (DISASTER RESILIENT FORTRESS)" if receipt.is_resilient_fortress else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Gabaix (2012) Variable Rare Disasters Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Macro Disasters & Tail Resilience Parameters:")
+    print(f"    Disaster Arrival Rate (lambda):    {receipt.disaster_arrival_rate_lambda:>10.2%} / year")
+    print(f"    Consumption Contraction (B):       {receipt.consumption_factor_b:>10.2%}")
+    print(f"    Pricing Kernel Spike (B^-gamma):   {receipt.pricing_kernel_disaster_spike:>10.2f}x")
+    print(f"    Firm Recovery Factor (F):          {receipt.firm_dividend_recovery_factor_f:>10.2%}")
+    print("-" * 80)
+    print("  Gabaix (2012) Disaster Resilience & Hurdle Inferences:")
+    print(f"    CAPM Required Return:              {receipt.capm_required_return_pct:>10.2f}% / year")
+    print(f"    Disaster Resilience Premium (H):   {receipt.disaster_resilience_premium_pct:>+10.2f}% / year")
+    print(f"    Disaster Resilience Premium (bps): {receipt.disaster_resilience_premium_bps:>+10.1f} bps / year")
+    print(f"    Total Disaster Hurdle Return:      {receipt.total_disaster_hurdle_pct:>10.2f}% / year")
+    print(f"    Implied Price/Dividend Multiple:   {receipt.implied_price_dividend_multiple:>10.2f}x")
+    print("-" * 80)
+    print("  Disaster Resilience Regime Classification:")
+    print(f"    Macro Tail Regime:                 {receipt.regime}")
+    print(f"    Disaster Vulnerable High Premium:  {vuln_str}")
+    print(f"    Cyclical Tail Risk Exposure:       {cycl_str}")
+    print(f"    Benign Tail Stability:             {stab_str}")
+    print(f"    Disaster Resilient Fortress:       {fort_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_disaster_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -10825,6 +10912,42 @@ def main() -> None:
         help="Output Merton Incomplete Information receipt as JSON",
     )
 
+    # Subparser: rare-disasters (Xavier Gabaix 2012 Variable Rare Disasters Engine)
+    disaster_parser = subparsers.add_parser(
+        "rare-disasters",
+        aliases=["gabaix-disasters", "tail-resilience", "variable-disasters", "disaster-risk"],
+        help="Xavier Gabaix (2012) Variable Rare Disasters, Macro Tail Risk & Firm Resilience Engine",
+    )
+    disaster_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    disaster_parser.add_argument(
+        "--disaster-lambda",
+        type=float,
+        default=None,
+        help="Macro disaster arrival intensity lambda in [0.005, 0.20] (optional)",
+    )
+    disaster_parser.add_argument(
+        "--recovery-f",
+        type=float,
+        default=None,
+        help="Firm dividend recovery factor F in [0.05, 1.50] (optional)",
+    )
+    disaster_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=None,
+        help="Relative risk aversion gamma in [1.0, 20.0] (optional)",
+    )
+    disaster_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Gabaix Variable Rare Disasters receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -11055,6 +11178,8 @@ def main() -> None:
         bad_beta_command(args)
     elif args.command in ("merton-recognition", "incomplete-information", "neglected-firm", "investor-recognition", "merton-1987"):
         merton_recognition_command(args)
+    elif args.command in ("rare-disasters", "gabaix-disasters", "tail-resilience", "variable-disasters", "disaster-risk"):
+        rare_disasters_command(args)
 
 
 if __name__ == "__main__":
