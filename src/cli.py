@@ -6369,6 +6369,97 @@ def search_bargaining_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def chs_distress_command(args: argparse.Namespace) -> None:
+    """CLI handler for Campbell-Hilscher-Szilagyi (2008) Financial Distress Puzzle Engine."""
+    import json
+    from src.analytics.campbell_distress_puzzle import (
+        evaluate_campbell_distress_profile,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    nimta = getattr(args, "nimta", None)
+    if nimta is not None:
+        nimta = float(nimta)
+    tlmta = getattr(args, "tlmta", None)
+    if tlmta is not None:
+        tlmta = float(tlmta)
+    cashmta = getattr(args, "cashmta", None)
+    if cashmta is not None:
+        cashmta = float(cashmta)
+    exret = getattr(args, "excess_return", None)
+    if exret is not None:
+        exret = float(exret)
+    sigma = getattr(args, "sigma", None)
+    if sigma is not None:
+        sigma = float(sigma)
+    rsize = getattr(args, "relative_size", None)
+    if rsize is not None:
+        rsize = float(rsize)
+    mb = getattr(args, "market_to_book", None)
+    if mb is not None:
+        mb = float(mb)
+
+    try:
+        receipt = evaluate_campbell_distress_profile(
+            ticker=ticker,
+            net_income_to_market_assets=nimta,
+            total_liabilities_to_market_assets=tlmta,
+            cash_to_market_assets=cashmta,
+            trailing_excess_return=exret,
+            idiosyncratic_volatility_sigma=sigma,
+            relative_firm_size=rsize,
+            market_to_book_ratio=mb,
+        )
+    except Exception as ex:
+        print(f"\nError: Campbell Distress evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    trap_str = "YES (DISTRESS ANOMALY OVERPRICED TRAP)" if receipt.is_distress_anomaly_trap else "NO"
+    fort_str = "YES (SOLVENT FINANCIAL FORTRESS)" if receipt.is_solvent_financial_fortress else "NO"
+    watch_str = "YES (ELEVATED DISTRESS WATCH)" if receipt.is_elevated_distress_watch else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Campbell-Hilscher-Szilagyi (2008) Distress Puzzle Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  CHS Accounting & Market Balance-Sheet Ratios:")
+    print(f"    Net Income to Market Assets:    {receipt.net_income_to_market_assets:>10.2%} (NIMTA)")
+    print(f"    Total Liabilities to Mkt Assets:{receipt.total_liabilities_to_market_assets:>10.2%} (TLMTA)")
+    print(f"    Cash to Market Assets:          {receipt.cash_to_market_assets:>10.2%} (CASHMTA)")
+    print(f"    Trailing Excess Return:         {receipt.trailing_excess_return:>+10.2%} (EXRET vs S&P 500)")
+    print(f"    Idiosyncratic Volatility:       {receipt.idiosyncratic_volatility_sigma:>10.2%} (SIGMA)")
+    print(f"    Relative Market Size (log):     {receipt.relative_firm_size:>10.2f} (RSIZE)")
+    print(f"    Market-to-Book Ratio:           {receipt.market_to_book_ratio:>10.2f}x (MB)")
+    print("-" * 80)
+    print("  Campbell-Hilscher-Szilagyi Distress Inferences:")
+    print(f"    CHS Logit Distress Score:      {receipt.chs_logit_score:>10.4f}")
+    print(f"    12-Month Failure Probability:   {receipt.failure_probability_12m_pct:>10.4f}% (P(Failure))")
+    print(f"    Distress Anomaly Alpha Drag:    {receipt.distress_anomaly_alpha_drag_pct:>+10.2f}% / year")
+    print(f"    Fragility Impulse:              {receipt.chs_fragility_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Distress Regime & Alpha Projections:")
+    print(f"    Solvency Distress Regime:       {receipt.regime}")
+    print(f"    Distress Anomaly Trap:          {trap_str}")
+    print(f"    Solvent Financial Fortress:     {fort_str}")
+    print(f"    Elevated Distress Watch:        {watch_str}")
+    print(f"    Expected Distress Alpha:        {receipt.expected_distress_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -9908,6 +9999,65 @@ def main() -> None:
         help="Output Search & Bargaining receipt as JSON",
     )
 
+    chs_parser = subparsers.add_parser(
+        "chs-distress",
+        aliases=["campbell-hilscher-szilagyi", "distress-puzzle", "failure-probability", "chs"],
+        help="Run Campbell, Hilscher & Szilagyi (2008) Financial Distress Puzzle Engine",
+    )
+    chs_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    chs_parser.add_argument(
+        "--nimta",
+        type=float,
+        default=None,
+        help="Net Income to Market Total Assets in [-1.0, 0.50] (optional)",
+    )
+    chs_parser.add_argument(
+        "--tlmta",
+        type=float,
+        default=None,
+        help="Total Liabilities to Market Total Assets in [0.0, 0.98] (optional)",
+    )
+    chs_parser.add_argument(
+        "--cashmta",
+        type=float,
+        default=None,
+        help="Cash & Short-Term Investments to Market Total Assets in [0.0, 0.80] (optional)",
+    )
+    chs_parser.add_argument(
+        "--excess-return",
+        type=float,
+        default=None,
+        help="Trailing excess log return over S&P 500 in [-1.50, 1.50] (optional)",
+    )
+    chs_parser.add_argument(
+        "--sigma",
+        type=float,
+        default=None,
+        help="Annualized idiosyncratic volatility in [0.05, 1.50] (optional)",
+    )
+    chs_parser.add_argument(
+        "--relative-size",
+        type=float,
+        default=None,
+        help="Relative log equity size in [-12.0, 5.0] (optional)",
+    )
+    chs_parser.add_argument(
+        "--market-to-book",
+        type=float,
+        default=None,
+        help="Market-to-book equity ratio in [0.10, 25.0] (optional)",
+    )
+    chs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Campbell Distress receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -10124,6 +10274,8 @@ def main() -> None:
         amh_command(args)
     elif args.command in ("search-bargaining", "duffie-garleanu-pedersen", "dgp", "otc-illiquidity", "bargaining-spread"):
         search_bargaining_command(args)
+    elif args.command in ("chs-distress", "campbell-hilscher-szilagyi", "distress-puzzle", "failure-probability", "chs"):
+        chs_distress_command(args)
 
 
 if __name__ == "__main__":

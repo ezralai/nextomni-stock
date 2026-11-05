@@ -5130,6 +5130,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Search-and-Bargaining profile.")
 
+                st.divider()
+                st.markdown("#### 📉 Campbell-Hilscher-Szilagyi (2008) Financial Distress Puzzle & Failure Engine")
+                st.caption(
+                    "Evaluates dynamic multi-period failure probability ($P_t(\\text{Failure})$), "
+                    "CHS logit distress score, and the empirical Distress Anomaly alpha drag under Campbell, Hilscher & Szilagyi (2008)."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.campbell_distress_puzzle import (
+                            evaluate_campbell_distress_profile,
+                        )
+
+                        with st.expander("⚙️ Customize CHS Accounting Ratios & Distress Parameters (Optional)", expanded=False):
+                            chs_c1, chs_c2, chs_c3, chs_c4 = st.columns(4)
+                            chs_nimta_in = chs_c1.number_input("NIMTA (Net Income / MTA) [-1.0..0.50]", value=0.0, min_value=-1.0, max_value=0.50, step=0.02, key="chs_nimta_in")
+                            chs_tlmta_in = chs_c2.number_input("TLMTA (Total Liab / MTA) [0.0..0.98]", value=0.0, min_value=0.0, max_value=0.98, step=0.05, key="chs_tlmta_in")
+                            chs_cash_in = chs_c3.number_input("CASHMTA (Cash / MTA) [0.0..0.80]", value=0.0, min_value=0.0, max_value=0.80, step=0.05, key="chs_cash_in")
+                            chs_sigma_in = chs_c4.number_input("Idiosyncratic Vol SIGMA [0.05..1.50]", value=0.0, min_value=0.0, max_value=1.50, step=0.02, key="chs_sigma_in")
+
+                        chs_rec = evaluate_campbell_distress_profile(
+                            ticker=selected_ticker,
+                            net_income_to_market_assets=chs_nimta_in if chs_nimta_in != 0.0 else None,
+                            total_liabilities_to_market_assets=chs_tlmta_in if chs_tlmta_in > 0.0 else None,
+                            cash_to_market_assets=chs_cash_in if chs_cash_in > 0.0 else None,
+                            idiosyncratic_volatility_sigma=chs_sigma_in if chs_sigma_in > 0.0 else None,
+                        )
+
+                        chs1, chs2, chs3, chs4 = st.columns(4)
+                        chs_badge = (
+                            "🔴 OVERPRICED DISTRESS TRAP"
+                            if chs_rec.is_distress_anomaly_trap
+                            else (
+                                "🟢 FINANCIAL FORTRESS"
+                                if chs_rec.is_solvent_financial_fortress
+                                else (
+                                    "⚡ ELEVATED DISTRESS WATCH"
+                                    if chs_rec.is_elevated_distress_watch
+                                    else f"Regime: {chs_rec.regime}"
+                                )
+                            )
+                        )
+                        chs1.metric(
+                            "Failure Probability (12M)",
+                            f"{chs_rec.failure_probability_12m_pct:.3f}%",
+                            delta=f"CHS Score: {chs_rec.chs_logit_score:.2f}",
+                            delta_color="inverse" if chs_rec.failure_probability_12m_pct > 1.0 else "normal",
+                            help="Campbell-Hilscher-Szilagyi (2008) dynamic multi-period logit probability of corporate failure/bankruptcy over next 12 months",
+                        )
+                        chs2.metric(
+                            "Distress Anomaly Drag",
+                            f"{chs_rec.distress_anomaly_alpha_drag_pct:+.2f}% Ann",
+                            delta=chs_badge,
+                            delta_color="inverse" if chs_rec.is_distress_anomaly_trap else ("normal" if chs_rec.is_solvent_financial_fortress else "off"),
+                            help="Expected negative alpha drag from the financial distress puzzle anomaly (distressed lottery speculation)",
+                        )
+                        chs3.metric(
+                            "Liabilities (TLMTA)",
+                            f"{chs_rec.total_liabilities_to_market_assets:.1%}",
+                            delta=f"Cash: {chs_rec.cash_to_market_assets:.1%}",
+                            delta_color="inverse" if chs_rec.total_liabilities_to_market_assets > 0.60 else "normal",
+                            help="Total liabilities divided by market total assets (MTA = Total Liabilities + Market Cap)",
+                        )
+                        chs4.metric(
+                            "Expected Distress Alpha",
+                            f"{chs_rec.expected_distress_alpha_pct:+.2f}% Ann",
+                            delta=f"Fragility Impulse: {chs_rec.chs_fragility_impulse:+.2f}",
+                            help="Projected annualized abnormal alpha net of failure probability drag and liquidity buffer",
+                        )
+
+                        st.caption(f"🧾 **Distress Puzzle Summary:** {chs_rec.summary}")
+                        st.caption(f"🛡️ **Distress Audit Digest:** `{chs_rec.signature[:16]}...` (Verified: `{chs_rec.verify_integrity()}`)")
+                    except Exception as chs_ex:
+                        st.info(f"Campbell Distress Puzzle evaluation deferred: {chs_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Campbell Distress profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
