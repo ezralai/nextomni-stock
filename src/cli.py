@@ -7687,6 +7687,106 @@ def leverage_cycle_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def diamond_dybvig_command(args: argparse.Namespace) -> None:
+    """CLI handler for Douglas W. Diamond & Philip H. Dybvig (1983) Bank Runs, Liquidity Transformation & Sequential Service Engine."""
+    import json
+    from src.analytics.diamond_dybvig_run import (
+        evaluate_diamond_dybvig_profile,
+        calculate_diamond_dybvig_run,
+        verify_diamond_dybvig_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    reserve_val = getattr(args, "reserve", None)
+    if reserve_val is not None:
+        reserve_val = float(reserve_val)
+
+    withdrawals_val = getattr(args, "withdrawals", None)
+    if withdrawals_val is not None:
+        withdrawals_val = float(withdrawals_val)
+
+    r1_val = getattr(args, "r1", None)
+    if r1_val is not None:
+        r1_val = float(r1_val)
+
+    r2_val = getattr(args, "r2", None)
+    if r2_val is not None:
+        r2_val = float(r2_val)
+
+    salvage_val = getattr(args, "salvage", None)
+    if salvage_val is not None:
+        salvage_val = float(salvage_val)
+
+    insured = bool(getattr(args, "insured", False))
+
+    try:
+        kwargs = {"ticker": ticker, "deposit_insurance": insured}
+        if reserve_val is not None:
+            kwargs["liquid_reserve_ratio"] = reserve_val
+        if withdrawals_val is not None:
+            kwargs["early_withdrawal_ratio"] = withdrawals_val
+        if r1_val is not None:
+            kwargs["r1_payout"] = r1_val
+        if r2_val is not None:
+            kwargs["R2_yield"] = r2_val
+        if salvage_val is not None:
+            kwargs["salvage_L"] = salvage_val
+
+        receipt = evaluate_diamond_dybvig_profile(**kwargs)
+    except Exception as ex:
+        print(f"\nError: Diamond-Dybvig evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    run_str = "YES (SYSTEMIC COORDINATION RUN)" if receipt.is_systemic_coordination_run else "NO"
+    elev_str = "YES (ELEVATED RUN HAZARD)" if receipt.is_elevated_run_hazard else "NO"
+    norm_str = "YES (NORMAL STABILITY)" if receipt.is_normal_stability else "NO"
+    ins_str = "YES (INSURED SAFETY)" if receipt.is_insured_safety else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Diamond & Dybvig (1983) Bank Runs & Liquidity Transformation")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print(f"  Deposit Insurance Active:       {receipt.deposit_insurance_active}")
+    print("-" * 80)
+    print("  Liquidity Transformation & Asset Allocation:")
+    print(f"    Liquid Reserve Buffer (c):         {receipt.liquid_reserve_ratio:>10.2%}")
+    print(f"    Illiquid Productive Pool (1-c):    {receipt.illiquid_asset_ratio:>10.2%}")
+    print(f"    Total Liquidation Capacity:        {receipt.total_liquidation_capacity:>10.4f}x")
+    print(f"    Premature Salvage Recovery (L):    {receipt.salvage_liquidation_L:>10.2%}")
+    print("-" * 80)
+    print("  Sequential Service & Coordination Run Dynamics:")
+    print(f"    Observed Early Withdrawals (f_1):  {receipt.early_withdrawal_ratio:>10.2%}")
+    print(f"    Asset Exhaustion Cutoff (f_bar):   {receipt.exhaustion_threshold_fbar:>10.2%}")
+    print(f"    Short-Term Promised Return (r_1):  {receipt.r1_payout:>10.3f}x")
+    print(f"    Long-Term Productive Yield (R_2):  {receipt.R2_yield:>10.3f}x")
+    print(f"    Patient Depositor Payoff (v_2):    {receipt.patient_t2_expected_payoff:>10.3f}x")
+    print(f"    Liquidity Mismatch Ratio (LMR):    {receipt.liquidity_mismatch_ratio:>10.2%}")
+    print(f"    Fire-Sale Loss Destroyed:          {receipt.fire_sale_loss_fraction:>10.2%}")
+    print(f"    Run Coordination Probability:      {receipt.run_hazard_probability:>10.1%}")
+    print(f"    Distressed Asset Price:            ${receipt.distressed_asset_price:>9.2f}")
+    print("-" * 80)
+    print("  Diamond-Dybvig Equilibrium Regime:")
+    print(f"    Active Regime:                     {receipt.regime}")
+    print(f"    Systemic Coordination Run:         {run_str}")
+    print(f"    Elevated Run Hazard:               {elev_str}")
+    print(f"    Normal Stability:                  {norm_str}")
+    print(f"    Insured Safety:                    {ins_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_diamond_dybvig_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -11795,6 +11895,59 @@ def main() -> None:
         help="Output Geanakoplos Leverage Cycle receipt as JSON",
     )
 
+    # Subparser: diamond-dybvig (Douglas W. Diamond & Philip H. Dybvig 1983 Bank Runs Engine)
+    diamond_parser = subparsers.add_parser(
+        "diamond-dybvig",
+        aliases=["bank-run", "liquidity-transformation", "sequential-service", "redemption-panic"],
+        help="Douglas W. Diamond & Philip H. Dybvig (1983) Bank Runs, Liquidity Transformation & Sequential Service Engine",
+    )
+    diamond_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    diamond_parser.add_argument(
+        "--reserve",
+        type=float,
+        default=None,
+        help="Liquid cash reserve buffer ratio c in [0.01, 0.90] (optional)",
+    )
+    diamond_parser.add_argument(
+        "--withdrawals",
+        type=float,
+        default=None,
+        help="Observed or stress early withdrawal ratio f_1 in [0.0, 1.0] (optional)",
+    )
+    diamond_parser.add_argument(
+        "--r1",
+        type=float,
+        default=None,
+        help="Promised gross short-term payout r_1 >= 1.0 (optional)",
+    )
+    diamond_parser.add_argument(
+        "--r2",
+        type=float,
+        default=None,
+        help="Long-term productive investment yield R_2 > r_1 (optional)",
+    )
+    diamond_parser.add_argument(
+        "--salvage",
+        type=float,
+        default=None,
+        help="Premature liquidation salvage recovery rate L in (0.0, 1.0) (optional)",
+    )
+    diamond_parser.add_argument(
+        "--insured",
+        action="store_true",
+        help="Enable full deposit insurance / central bank backstop",
+    )
+    diamond_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Diamond & Dybvig Run receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -12041,6 +12194,8 @@ def main() -> None:
         allen_gale_command(args)
     elif args.command in ("leverage-cycle", "geanakoplos", "collateral-haircut", "deleveraging-crisis", "margin-squeeze"):
         leverage_cycle_command(args)
+    elif args.command in ("diamond-dybvig", "bank-run", "liquidity-transformation", "sequential-service", "redemption-panic"):
+        diamond_dybvig_command(args)
 
 
 if __name__ == "__main__":

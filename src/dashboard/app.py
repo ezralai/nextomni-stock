@@ -6250,6 +6250,92 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Geanakoplos Leverage Cycle profile.")
 
+                st.markdown("---")
+                st.subheader("🏦 Douglas W. Diamond & Philip H. Dybvig (1983) Bank Runs & Liquidity Transformation Engine")
+                st.caption(
+                    "Evaluates the Diamond & Dybvig (1983) liquidity transformation framework, modeling sequential service constraints, "
+                    "illiquid asset fire-sale haircuts, early withdrawal panic dynamics ($f_1$), asset exhaustion thresholds ($\\bar{f}$), "
+                    "and coordination run hazard probabilities."
+                )
+                if len(df_eda) >= 5:
+                    try:
+                        from src.analytics.diamond_dybvig_run import (
+                            calculate_diamond_dybvig_run,
+                            verify_diamond_dybvig_audit_digest,
+                        )
+
+                        dd_col1, dd_col2, dd_col3 = st.columns(3)
+                        with dd_col1:
+                            dd_withdraw = st.slider(
+                                "Early Withdrawal Demand (f_1)",
+                                min_value=0.0,
+                                max_value=1.0,
+                                value=0.20,
+                                step=0.01,
+                                format="%.2f",
+                                help="Fraction of depositors/shareholders redeeming shares prematurely at t=1",
+                            )
+                        with dd_col2:
+                            dd_reserve = st.slider(
+                                "Liquid Cash Buffer (c)",
+                                min_value=0.05,
+                                max_value=0.50,
+                                value=0.15,
+                                step=0.01,
+                                format="%.2f",
+                                help="Fraction of portfolio held in liquid cash / short-term storage",
+                            )
+                        with dd_col3:
+                            dd_salvage = st.slider(
+                                "Illiquid Salvage Yield (L)",
+                                min_value=0.20,
+                                max_value=0.95,
+                                value=0.65,
+                                step=0.05,
+                                format="%.2f",
+                                help="Premature fire-sale salvage recovery rate for illiquid productive assets",
+                            )
+
+                        dd_rec = calculate_diamond_dybvig_run(
+                            p_t=float(df_eda["close"].iloc[-1]),
+                            adv=float(df_eda["volume"].mean()) if "volume" in df_eda.columns else 1_000_000.0,
+                            liquid_reserve_ratio=dd_reserve,
+                            early_withdrawal_ratio=dd_withdraw,
+                            salvage_L=dd_salvage,
+                            ticker=selected_ticker,
+                        )
+
+                        dd_m1, dd_m2, dd_m3, dd_m4 = st.columns(4)
+                        dd_m1.metric(
+                            "Run Coordination Hazard",
+                            f"{dd_rec.run_hazard_probability:.1%}",
+                            delta=f"Regime: {dd_rec.regime}",
+                            delta_color="inverse" if dd_rec.run_hazard_probability > 0 else "normal",
+                        )
+                        dd_m2.metric(
+                            "Exhaustion Cutoff (f_bar)",
+                            f"{dd_rec.exhaustion_threshold_fbar:.1%}",
+                            delta=f"Buffer Gap: {dd_rec.exhaustion_threshold_fbar - dd_rec.early_withdrawal_ratio:+.1%}",
+                        )
+                        dd_m3.metric(
+                            "Patient Payoff v_2(f_1)",
+                            f"{dd_rec.patient_t2_expected_payoff:.3f}x",
+                            delta=f"vs r_1: {dd_rec.patient_t2_expected_payoff - dd_rec.r1_payout:+.3f}x",
+                        )
+                        dd_m4.metric(
+                            "Distressed Price",
+                            f"${dd_rec.distressed_asset_price:.2f}",
+                            delta=f"-{dd_rec.fire_sale_loss_fraction:.1%}",
+                            delta_color="inverse",
+                        )
+
+                        st.caption(f"🧾 **Diamond-Dybvig Summary:** {dd_rec.summary}")
+                        st.caption(f"🛡️ **Diamond-Dybvig Audit Digest:** `{dd_rec.audit_digest[:16]}...` (Verified: `{verify_diamond_dybvig_audit_digest(dd_rec)}`)")
+                    except Exception as dd_ex:
+                        st.info(f"Diamond & Dybvig Run evaluation deferred: {dd_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 5 price sessions to evaluate Diamond & Dybvig Run profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
