@@ -7344,6 +7344,93 @@ def hong_stein_crash_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def breeden_ccapm_command(args: argparse.Namespace) -> None:
+    """CLI handler for Douglas T. Breeden (1979) Consumption CAPM Engine."""
+    import json
+    from src.analytics.breeden_ccapm import (
+        evaluate_breeden_ccapm_profile,
+        calculate_breeden_ccapm,
+        verify_breeden_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    beta_c = getattr(args, "consumption_beta", None)
+    if beta_c is not None:
+        beta_c = float(beta_c)
+
+    lambda_c = getattr(args, "consumption_premium", None)
+    if lambda_c is not None:
+        lambda_c = float(lambda_c)
+
+    c_vol = getattr(args, "consumption_vol", None)
+    if c_vol is not None:
+        c_vol = float(c_vol)
+
+    try:
+        if beta_c is not None and lambda_c is not None:
+            kwargs = {
+                "ticker": ticker,
+                "consumption_beta": beta_c,
+                "consumption_risk_premium": lambda_c,
+            }
+            if c_vol is not None:
+                kwargs["consumption_growth_std"] = c_vol
+            receipt = calculate_breeden_ccapm(**kwargs)
+        else:
+            receipt = evaluate_breeden_ccapm_profile(
+                ticker=ticker,
+                consumption_beta_override=beta_c,
+                lambda_c_override=lambda_c,
+            )
+    except Exception as ex:
+        print(f"\nError: Breeden CCAPM evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    high_str = "YES (HIGH CONSUMPTION EXPOSURE)" if receipt.is_high_consumption_exposure else "NO"
+    mod_str = "YES (MODERATE PROCYCLICAL)" if receipt.is_moderate_procyclical else "NO"
+    def_str = "YES (DEFENSIVE CONSUMPTION HEDGE)" if receipt.is_defensive_hedge else "NO"
+    count_str = "YES (COUNTERCYCLICAL ASSET)" if receipt.is_countercyclical_asset else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Breeden (1979) Consumption CAPM Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Intertemporal Macro Consumption Parameters:")
+    print(f"    Consumption Beta (beta_C):         {receipt.consumption_beta:>10.2f}x")
+    print(f"    Consumption Correlation:           {receipt.consumption_correlation:>10.2f}")
+    print(f"    Consumption Growth Volatility:     {receipt.consumption_growth_volatility_pct:>10.2f}% / year")
+    print(f"    Unit Price of Consumption Risk:    {receipt.consumption_risk_premium_pct:>10.2f}% (lambda_C)")
+    print("-" * 80)
+    print("  Breeden (1979) CCAPM Required Return & Hedging Inferences:")
+    print(f"    CCAPM Required Hurdle Return:      {receipt.ccapm_required_return_pct:>10.2f}% / year")
+    print(f"    CAPM Market Benchmark Return:      {receipt.capm_benchmark_return_pct:>10.2f}% / year")
+    print(f"    Consumption Pricing Wedge:         {receipt.equity_premium_puzzle_wedge_pct:>+10.2f}% (CAPM - CCAPM)")
+    print(f"    Intertemporal Hedge Elasticity:    {receipt.intertemporal_hedge_elasticity:>10.2f}%")
+    print(f"    Macro Hurdle Discount Rate:        {receipt.macro_hurdle_rate_pct:>10.2f}% / year")
+    print("-" * 80)
+    print("  Consumption Risk Regime Classification:")
+    print(f"    Macroeconomic Risk Regime:         {receipt.regime}")
+    print(f"    High Consumption Exposure:         {high_str}")
+    print(f"    Moderate Procyclical Consumption:  {mod_str}")
+    print(f"    Defensive Consumption Hedge:       {def_str}")
+    print(f"    Countercyclical Asset:             {count_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_breeden_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -11314,6 +11401,42 @@ def main() -> None:
         help="Output Hong & Stein Crash Asymmetry receipt as JSON",
     )
 
+    # Subparser: breeden-ccapm (Douglas T. Breeden 1979 Consumption CAPM Engine)
+    breeden_parser = subparsers.add_parser(
+        "breeden-ccapm",
+        aliases=["ccapm", "consumption-beta", "macro-consumption", "breeden-1979"],
+        help="Douglas T. Breeden (1979) Consumption-Based Capital Asset Pricing Model (CCAPM) Engine",
+    )
+    breeden_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    breeden_parser.add_argument(
+        "--consumption-beta",
+        type=float,
+        default=None,
+        help="Consumption beta beta_{i, C} in [-3.0, 6.0] (optional)",
+    )
+    breeden_parser.add_argument(
+        "--consumption-premium",
+        type=float,
+        default=None,
+        help="Unit price of consumption risk lambda_C in [0.005, 0.20] (optional)",
+    )
+    breeden_parser.add_argument(
+        "--consumption-vol",
+        type=float,
+        default=None,
+        help="Real consumption growth volatility in [0.005, 0.15] (optional)",
+    )
+    breeden_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Breeden CCAPM receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -11552,6 +11675,8 @@ def main() -> None:
         predatory_trading_command(args)
     elif args.command in ("hong-stein-crash", "crash-asymmetry", "latent-overhang", "short-constraint-crash", "hong-stein-2003"):
         hong_stein_crash_command(args)
+    elif args.command in ("breeden-ccapm", "ccapm", "consumption-beta", "macro-consumption", "breeden-1979"):
+        breeden_ccapm_command(args)
 
 
 if __name__ == "__main__":

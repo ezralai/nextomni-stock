@@ -5950,6 +5950,80 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Hong-Stein Crash Asymmetry profile.")
 
+                st.markdown("---")
+                st.subheader("☕ Douglas T. Breeden (1979) Consumption CAPM (CCAPM) Engine")
+                st.caption(
+                    "Evaluates the Breeden (1979) Consumption-Based Asset Pricing Model, measuring continuous-time consumption beta "
+                    "($\\beta_{i, C}$), intertemporal hedging demand, consumption risk premia ($\\lambda_C$), and the equity premium puzzle "
+                    "pricing wedge ($E[R_i]_{\\text{CAPM}} - E[R_i]_{\\text{CCAPM}}$)."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.breeden_ccapm import (
+                            evaluate_breeden_ccapm_profile,
+                            verify_breeden_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Macro Consumption Risk Parameters (Optional)", expanded=False):
+                            cc_c1, cc_c2 = st.columns(2)
+                            cc_beta = cc_c1.slider("Override Consumption Beta beta_C [0 = Auto]", min_value=-1.0, max_value=3.5, value=0.0, step=0.1, key="cc_beta")
+                            cc_lambda = cc_c2.slider("Consumption Risk Premium lambda_C (%)", min_value=1.0, max_value=8.0, value=3.8, step=0.2, key="cc_lambda")
+
+                        cc_rec = evaluate_breeden_ccapm_profile(
+                            ticker=selected_ticker,
+                            consumption_beta_override=float(cc_beta) if cc_beta != 0.0 else None,
+                            lambda_c_override=float(cc_lambda / 100.0),
+                        )
+
+                        cc1, cc2, cc3, cc4 = st.columns(4)
+                        cc_badge = (
+                            "🔴 HIGH CONSUMPTION RISK"
+                            if cc_rec.is_high_consumption_exposure
+                            else (
+                                "⚡ MODERATE PROCYCLICAL"
+                                if cc_rec.is_moderate_procyclical
+                                else (
+                                    "🛡️ DEFENSIVE HEDGE"
+                                    if cc_rec.is_defensive_hedge
+                                    else "🟢 COUNTERCYCLICAL ASSET"
+                                )
+                            )
+                        )
+
+                        cc1.metric(
+                            "CCAPM Required Return",
+                            f"{cc_rec.ccapm_required_return_pct:.2f}% Ann",
+                            delta=f"Beta_C: {cc_rec.consumption_beta:.2f}x",
+                            delta_color="inverse" if cc_rec.consumption_beta > 1.5 else "normal",
+                            help="Breeden (1979) consumption-based required hurdle return Rf + beta_C * lambda_C",
+                        )
+                        cc2.metric(
+                            "Consumption Wedge",
+                            f"{cc_rec.equity_premium_puzzle_wedge_pct:+.2f}%",
+                            delta=cc_badge,
+                            delta_color="normal" if abs(cc_rec.equity_premium_puzzle_wedge_pct) < 2.0 else "inverse",
+                            help="Pricing wedge between standard market CAPM and macro CCAPM required returns",
+                        )
+                        cc3.metric(
+                            "Macro Hurdle Rate",
+                            f"{cc_rec.macro_hurdle_rate_pct:.2f}% Ann",
+                            delta=f"CAPM: {cc_rec.capm_benchmark_return_pct:.2f}%",
+                            help="Discount rate benchmark reflecting aggregate real consumption smoothing requirements",
+                        )
+                        cc4.metric(
+                            "Hedge Elasticity",
+                            f"{cc_rec.intertemporal_hedge_elasticity:.2f}%",
+                            delta=f"Lambda_C: {cc_rec.consumption_risk_premium_pct:.1f}%",
+                            help="Intertemporal consumption hedge elasticity beta_C * sigma_C",
+                        )
+
+                        st.caption(f"🧾 **Breeden CCAPM Summary:** {cc_rec.summary}")
+                        st.caption(f"🛡️ **Breeden Audit Digest:** `{cc_rec.audit_digest[:16]}...` (Verified: `{verify_breeden_audit_digest(cc_rec)}`)")
+                    except Exception as cc_ex:
+                        st.info(f"Breeden CCAPM evaluation deferred: {cc_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Breeden CCAPM profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
