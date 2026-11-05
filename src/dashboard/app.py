@@ -5427,6 +5427,79 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Admati-Pfleiderer profile.")
 
+                st.divider()
+                st.markdown("#### 🎯 Black (1986) Noise Valuation Bounds & Mean-Reversion Engine")
+                st.caption(
+                    "Evaluates the Black (1986) factor-of-two valuation envelope ($[0.50 P^*, 2.00 P^*]$), "
+                    "noise-to-information ratio, and expected annual fundamental mean-reversion alpha."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.noise_valuation_bands import (
+                            evaluate_noise_valuation_profile,
+                            verify_noise_valuation_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Valuation Bounds & Convergence Speed (Optional)", expanded=False):
+                            nb_c1, nb_c2 = st.columns(2)
+                            nb_fund_override = nb_c1.number_input("Override Intrinsic Value P* ($) [0 = Auto]", min_value=0.0, max_value=10000.0, value=0.0, step=5.0, key="nb_fund_override")
+                            nb_kappa_pct = nb_c2.slider("Annual Mean-Reversion Speed kappa (%)", min_value=10.0, max_value=80.0, value=35.0, step=5.0, key="nb_kappa_pct")
+
+                        nb_rec = evaluate_noise_valuation_profile(
+                            ticker=selected_ticker,
+                            fundamental_value_override=float(nb_fund_override) if nb_fund_override > 0.0 else None,
+                        )
+
+                        nb1, nb2, nb3, nb4 = st.columns(4)
+                        nb_badge = (
+                            "🔴 EXTREME DISLOCATION"
+                            if nb_rec.is_extreme_dislocation
+                            else (
+                                "⚠️ NOISE OVERVALUATION"
+                                if nb_rec.is_overvalued
+                                else (
+                                    "💎 DEEP VALUE DISCOUNT"
+                                    if nb_rec.is_undervalued
+                                    else "🟢 EQUILIBRIUM CORRIDOR"
+                                )
+                            )
+                        )
+
+                        nb1.metric(
+                            "Factor-of-Two Bounds",
+                            f"${nb_rec.lower_factor2_bound:.1f} - ${nb_rec.upper_factor2_bound:.1f}",
+                            delta="Inside Envelope" if nb_rec.is_within_factor2_bounds else "Outside Envelope",
+                            delta_color="normal" if nb_rec.is_within_factor2_bounds else "inverse",
+                            help="Black (1986) factor-of-two efficiency boundaries: [0.50 * P*, 2.00 * P*]",
+                        )
+                        nb2.metric(
+                            "Pricing Deviation from P*",
+                            f"{nb_rec.noise_deviation_pct:+.1f}%",
+                            delta=nb_badge,
+                            delta_color="inverse" if abs(nb_rec.noise_deviation_pct) > 25.0 else "normal",
+                            help="Percentage deviation of latest market price from fundamental intrinsic value P*",
+                        )
+                        nb3.metric(
+                            "Mean-Reversion Alpha",
+                            f"{nb_rec.expected_reversion_alpha_pct:+.1f}% Ann",
+                            delta=f"P* = ${nb_rec.fundamental_value:.2f}",
+                            delta_color="normal" if nb_rec.expected_reversion_alpha_pct > 0 else ("inverse" if nb_rec.expected_reversion_alpha_pct < -5.0 else "off"),
+                            help="Projected annualized alpha from fundamental mean-reversion toward intrinsic value",
+                        )
+                        nb4.metric(
+                            "Noise-to-Info Ratio",
+                            f"{nb_rec.noise_to_information_ratio:.2f}",
+                            delta=f"Info Share: {nb_rec.information_share_pct:.1f}%",
+                            help="Ratio of return variance driven by noise trading vs fundamental information",
+                        )
+
+                        st.caption(f"🧾 **Valuation Bounds Summary:** {nb_rec.summary}")
+                        st.caption(f"🛡️ **Noise Audit Digest:** `{nb_rec.audit_digest[:16]}...` (Verified: `{verify_noise_valuation_audit_digest(nb_rec)}`)")
+                    except Exception as nb_ex:
+                        st.info(f"Noise Valuation Bounds evaluation deferred: {nb_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Noise Valuation profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

@@ -6741,6 +6741,96 @@ def admati_pfleiderer_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def noise_bands_command(args: argparse.Namespace) -> None:
+    """CLI handler for Black (1986) Noise Valuation Bounds & Mean-Reversion Engine."""
+    import json
+    from src.analytics.noise_valuation_bands import (
+        evaluate_noise_valuation_profile,
+        calculate_noise_valuation_bands,
+        verify_noise_valuation_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    fund_val = getattr(args, "fundamental_value", None)
+    if fund_val is not None:
+        fund_val = float(fund_val)
+
+    noise_ratio = getattr(args, "noise_ratio", None)
+    if noise_ratio is not None:
+        noise_ratio = float(noise_ratio)
+
+    kappa = getattr(args, "kappa", None)
+    if kappa is None:
+        kappa = 0.35
+    else:
+        kappa = float(kappa)
+
+    try:
+        if fund_val is not None and noise_ratio is not None:
+            receipt = calculate_noise_valuation_bands(
+                ticker=ticker,
+                latest_price=fund_val * (1.0 + 0.15),  # representative test point
+                fundamental_value=fund_val,
+                noise_to_information_ratio=noise_ratio,
+                mean_reversion_speed_kappa=kappa,
+            )
+        else:
+            receipt = evaluate_noise_valuation_profile(
+                ticker=ticker,
+                fundamental_value_override=fund_val,
+                noise_ratio_override=noise_ratio,
+            )
+    except Exception as ex:
+        print(f"\nError: Noise Valuation evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    disloc_str = "YES (OUTSIDE FACTOR-OF-TWO ENVELOPE)" if receipt.is_extreme_dislocation else "NO"
+    over_str = "YES (NOISE OVERVALUATION DRAG)" if receipt.is_overvalued else "NO"
+    under_str = "YES (DEEP VALUE MEAN-REVERSION TAILWIND)" if receipt.is_undervalued else "NO"
+    eq_str = "YES (WELL-ANCHORED WITHIN EQUILIBRIUM CORRIDOR)" if receipt.is_equilibrium_band else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Black (1986) Noise Valuation Bounds Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print(f"  Fundamental Value (P*):         ${receipt.fundamental_value:.2f}")
+    print("-" * 80)
+    print("  Black (1986) Factor-of-Two Efficiency Envelopes:")
+    print(f"    Lower Factor-of-Two Bound:         ${receipt.lower_factor2_bound:>10.2f} (0.50x P*)")
+    print(f"    Inner Lower Corridor:              ${receipt.inner_lower_bound:>10.2f} (0.80x P*)")
+    print(f"    Inner Upper Corridor:              ${receipt.inner_upper_bound:>10.2f} (1.25x P*)")
+    print(f"    Upper Factor-of-Two Bound:         ${receipt.upper_factor2_bound:>10.2f} (2.00x P*)")
+    print(f"    Inside Factor-of-Two Envelope:     {'YES' if receipt.is_within_factor2_bounds else 'NO'}")
+    print("-" * 80)
+    print("  Noise Dynamics & Variance Decomposition:")
+    print(f"    Pricing Deviation from P*:         {receipt.noise_deviation_pct:>+10.2f}%")
+    print(f"    Noise-to-Information Ratio:        {receipt.noise_to_information_ratio:>10.4f} (Var_noise / Var_info)")
+    print(f"    Information Share:                 {receipt.information_share_pct:>10.2f}%")
+    print(f"    Annual Convergence Rate (kappa):   {receipt.mean_reversion_speed_kappa:>10.2%}")
+    print(f"    Expected Mean-Reversion Alpha:     {receipt.expected_reversion_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print("  Valuation Regime & Mean-Reversion Inferences:")
+    print(f"    Noise Valuation Regime:            {receipt.regime}")
+    print(f"    Extreme Noise Dislocation:         {disloc_str}")
+    print(f"    Noise-Driven Overvaluation:        {over_str}")
+    print(f"    Noise-Driven Undervaluation:       {under_str}")
+    print(f"    Equilibrium Corridor:              {eq_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_noise_valuation_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -10468,6 +10558,41 @@ def main() -> None:
         help="Output Admati-Pfleiderer receipt as JSON",
     )
 
+    noise_parser = subparsers.add_parser(
+        "noise-bands",
+        aliases=["valuation-bounds", "noise-trading", "black-bounds"],
+        help="Run Black (1986) Noise Valuation Bounds & Mean-Reversion Engine",
+    )
+    noise_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    noise_parser.add_argument(
+        "--fundamental-value",
+        type=float,
+        default=None,
+        help="Intrinsic fundamental value P* ($) (optional)",
+    )
+    noise_parser.add_argument(
+        "--noise-ratio",
+        type=float,
+        default=None,
+        help="Noise-to-information variance ratio in [0.01, 30.0] (optional)",
+    )
+    noise_parser.add_argument(
+        "--kappa",
+        type=float,
+        default=0.35,
+        help="Annual speed of mean-reversion kappa (default: 0.35 = 35%/yr)",
+    )
+    noise_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Noise Valuation receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -10692,6 +10817,8 @@ def main() -> None:
         information_risk_command(args)
     elif args.command in ("admati-pfleiderer", "volume-clustering", "concentrated-trading", "intraday-liquidity", "ap-clustering"):
         admati_pfleiderer_command(args)
+    elif args.command in ("noise-bands", "valuation-bounds", "noise-trading", "black-bounds"):
+        noise_bands_command(args)
 
 
 if __name__ == "__main__":
