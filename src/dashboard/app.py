@@ -6099,6 +6099,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate BHS Prospect Theory profile.")
 
+                st.markdown("---")
+                st.subheader("🕸️ Franklin Allen & Douglas Gale (2000) Financial Network Contagion Engine")
+                st.caption(
+                    "Evaluates the Allen & Gale (2000) financial network contagion framework, analyzing how cross-holding network "
+                    "completeness ($\\gamma_{\\text{net}}$) vs. incompleteness governs localized liquidity deficit absorption, "
+                    "contagion cascade multipliers ($\\mathcal{M}_{\\text{cascade}}$), and systemic fire-sale price markdowns."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.allen_gale_network import (
+                            evaluate_allen_gale_network_profile,
+                            verify_allen_gale_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Network Completeness & Liquidity Shock (Optional)", expanded=False):
+                            ag_c1, ag_c2 = st.columns(2)
+                            ag_comp = ag_c1.slider("Network Completeness gamma_net (%) [0 = Auto]", min_value=0, max_value=100, value=0, step=5, key="ag_comp")
+                            ag_shock = ag_c2.slider("Localized Liquidity Shock theta (%) [0 = Auto]", min_value=0, max_value=100, value=0, step=5, key="ag_shock")
+
+                        ag_rec = evaluate_allen_gale_network_profile(
+                            ticker=selected_ticker,
+                            network_completeness_override=float(ag_comp / 100.0) if ag_comp > 0 else None,
+                            liquidity_shock_override=float(ag_shock / 100.0) if ag_shock > 0 else None,
+                        )
+
+                        ag1, ag2, ag3, ag4 = st.columns(4)
+                        ag_badge = (
+                            "🔴 SYSTEMIC CASCADE"
+                            if ag_rec.is_systemic_cascade
+                            else (
+                                "⚡ FRAGILE NETWORK"
+                                if ag_rec.is_incomplete_fragile
+                                else (
+                                    "🟢 RESILIENT SHARING"
+                                    if ag_rec.is_resilient_sharing
+                                    else "🏰 NETWORK FORTRESS"
+                                )
+                            )
+                        )
+
+                        ag1.metric(
+                            "Cascade Multiplier",
+                            f"{ag_rec.contagion_cascade_multiplier:.2f}x",
+                            delta=f"{ag_rec.systemic_contagion_index:.1f} / 100 Index",
+                            delta_color="inverse" if ag_rec.contagion_cascade_multiplier > 1.3 else "normal",
+                            help="Allen & Gale (2000) contagion cascade multiplier amplifying localized liquidity deficits",
+                        )
+                        ag2.metric(
+                            "Network Completeness",
+                            f"{ag_rec.network_completeness_ratio:.0%}",
+                            delta=ag_badge,
+                            delta_color="normal" if ag_rec.network_completeness_ratio > 0.70 else "inverse",
+                            help="Degree of cross-holding interconnectedness enabling global liquidity dispersion",
+                        )
+                        ag3.metric(
+                            "Liquidity Deficit",
+                            f"{ag_rec.unabsorbed_liquidity_deficit:.2f}",
+                            delta=f"Buffer: {ag_rec.cross_holding_absorption_capacity:.2f}",
+                            delta_color="inverse" if ag_rec.unabsorbed_liquidity_deficit > 0.0 else "normal",
+                            help="Unabsorbed localized liquidity strain spilling over into neighboring network nodes",
+                        )
+                        ag4.metric(
+                            "Fire-Sale Markdown",
+                            f"{ag_rec.network_fire_sale_markdown_pct:.1f}%",
+                            delta=f"Surcharge: +{ag_rec.systemic_hurdle_surcharge_pct:.1f}%",
+                            delta_color="inverse" if ag_rec.network_fire_sale_markdown_pct > 3.0 else "normal",
+                            help="Expected asset liquidation price markdown resulting from cascading cross-market fire-sales",
+                        )
+
+                        st.caption(f"🧾 **Network Contagion Summary:** {ag_rec.summary}")
+                        st.caption(f"🛡️ **Allen-Gale Audit Digest:** `{ag_rec.audit_digest[:16]}...` (Verified: `{verify_allen_gale_audit_digest(ag_rec)}`)")
+                    except Exception as ag_ex:
+                        st.info(f"Allen & Gale Network Contagion evaluation deferred: {ag_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Allen & Gale Network Contagion profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

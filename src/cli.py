@@ -7513,6 +7513,92 @@ def bhs_prospect_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def allen_gale_command(args: argparse.Namespace) -> None:
+    """CLI handler for Franklin Allen & Douglas Gale (2000) Network Contagion Engine."""
+    import json
+    from src.analytics.allen_gale_network import (
+        evaluate_allen_gale_network_profile,
+        calculate_allen_gale_network,
+        verify_allen_gale_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    comp_val = getattr(args, "network_completeness", None)
+    if comp_val is not None:
+        comp_val = float(comp_val)
+
+    shock_val = getattr(args, "liquidity_shock", None)
+    if shock_val is not None:
+        shock_val = float(shock_val)
+
+    agg_l = getattr(args, "aggregate_liquidity", None)
+    if agg_l is not None:
+        agg_l = float(agg_l)
+
+    try:
+        if comp_val is not None and shock_val is not None:
+            kwargs = {
+                "ticker": ticker,
+                "network_completeness_ratio": comp_val,
+                "local_liquidity_shock_ratio": shock_val,
+            }
+            if agg_l is not None:
+                kwargs["aggregate_liquidity_buffer"] = agg_l
+            receipt = calculate_allen_gale_network(**kwargs)
+        else:
+            receipt = evaluate_allen_gale_network_profile(
+                ticker=ticker,
+                network_completeness_override=comp_val,
+                liquidity_shock_override=shock_val,
+            )
+    except Exception as ex:
+        print(f"\nError: Allen & Gale Network Contagion evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    casc_str = "YES (SYSTEMIC CASCADE COLLAPSE)" if receipt.is_systemic_cascade else "NO"
+    frag_str = "YES (INCOMPLETE FRAGILE NETWORK)" if receipt.is_incomplete_fragile else "NO"
+    resil_str = "YES (RESILIENT PARTIAL SHARING)" if receipt.is_resilient_sharing else "NO"
+    fort_str = "YES (COMPLETE NETWORK FORTRESS)" if receipt.is_complete_fortress else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Allen & Gale (2000) Financial Network Contagion Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Financial Network Topology & Liquidity Parameters:")
+    print(f"    Network Completeness Ratio:        {receipt.network_completeness_ratio:>10.2%}")
+    print(f"    Localized Liquidity Shock:         {receipt.local_liquidity_shock_ratio:>10.2%}")
+    print(f"    Cross-Holding Buffer Capacity:     {receipt.cross_holding_absorption_capacity:>10.2f}")
+    print(f"    Unabsorbed Liquidity Deficit:      {receipt.unabsorbed_liquidity_deficit:>10.2f}")
+    print("-" * 80)
+    print("  Allen & Gale (2000) Network Cascade & Contagion Inferences:")
+    print(f"    Contagion Cascade Multiplier:      {receipt.contagion_cascade_multiplier:>10.2f}x")
+    print(f"    Systemic Contagion Index:          {receipt.systemic_contagion_index:>10.1f} / 100")
+    print(f"    Network Fire-Sale Price Markdown:  {receipt.network_fire_sale_markdown_pct:>10.2f}%")
+    print(f"    Systemic Hurdle Risk Surcharge:    {receipt.systemic_hurdle_surcharge_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print("  Network Contagion Regime Classification:")
+    print(f"    Architecture Topology Regime:      {receipt.regime}")
+    print(f"    Systemic Cascade Collapse:         {casc_str}")
+    print(f"    Incomplete Fragile Network:        {frag_str}")
+    print(f"    Resilient Partial Sharing:         {resil_str}")
+    print(f"    Complete Network Fortress:         {fort_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_allen_gale_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -11549,6 +11635,42 @@ def main() -> None:
         help="Output BHS Prospect Theory receipt as JSON",
     )
 
+    # Subparser: allen-gale (Franklin Allen & Douglas Gale 2000 Financial Network Contagion Engine)
+    allen_gale_parser = subparsers.add_parser(
+        "allen-gale",
+        aliases=["network-contagion", "incomplete-network", "liquidity-cascade", "allen-2000"],
+        help="Franklin Allen & Douglas Gale (2000) Financial Network Contagion & Cascades Engine",
+    )
+    allen_gale_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    allen_gale_parser.add_argument(
+        "--network-completeness",
+        type=float,
+        default=None,
+        help="Network completeness degree gamma_net in [0.05, 1.00] (optional)",
+    )
+    allen_gale_parser.add_argument(
+        "--liquidity-shock",
+        type=float,
+        default=None,
+        help="Localized liquidity demand shock theta in [0.01, 1.00] (optional)",
+    )
+    allen_gale_parser.add_argument(
+        "--aggregate-liquidity",
+        type=float,
+        default=None,
+        help="Aggregate liquidity buffer L_agg in [0.10, 5.00] (optional)",
+    )
+    allen_gale_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Allen & Gale Network Contagion receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -11791,6 +11913,8 @@ def main() -> None:
         breeden_ccapm_command(args)
     elif args.command in ("bhs-prospect", "prospect-theory", "loss-aversion", "house-money", "barberis-2001"):
         bhs_prospect_command(args)
+    elif args.command in ("allen-gale", "network-contagion", "incomplete-network", "liquidity-cascade", "allen-2000"):
+        allen_gale_command(args)
 
 
 if __name__ == "__main__":
