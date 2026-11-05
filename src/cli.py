@@ -6563,6 +6563,100 @@ def grossman_stiglitz_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def information_risk_command(args: argparse.Namespace) -> None:
+    """CLI handler for Easley, Hvidkjaer & O'Hara (2002, 2004) Information Risk Engine."""
+    import json
+    from src.analytics.information_risk_capital import (
+        evaluate_information_risk_profile,
+        calculate_information_risk_premium,
+        verify_information_risk_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    pin = getattr(args, "pin", None)
+    if pin is not None:
+        pin = float(pin)
+
+    beta = getattr(args, "beta", None)
+    if beta is not None:
+        beta = float(beta)
+
+    rf = getattr(args, "rf", None)
+    if rf is None:
+        rf = 0.0425
+    else:
+        rf = float(rf)
+
+    erp = getattr(args, "erp", None)
+    if erp is None:
+        erp = 0.0550
+    else:
+        erp = float(erp)
+
+    lambda_info = getattr(args, "lambda_info", None)
+    if lambda_info is None:
+        lambda_info = 0.2500
+    else:
+        lambda_info = float(lambda_info)
+
+    try:
+        receipt = evaluate_information_risk_profile(
+            ticker=ticker,
+            pin_override=pin,
+            market_beta_override=beta,
+            risk_free_rate=rf,
+            equity_risk_premium=erp,
+            lambda_info=lambda_info,
+        )
+    except Exception as ex:
+        print(f"\nError: Information Risk evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    severe_str = "YES (SEVERE ADVERSE SELECTION)" if receipt.is_severe_surcharge else "NO"
+    elev_str = "YES (ELEVATED INFORMATION RISK)" if receipt.is_elevated_risk else "NO"
+    benign_str = "YES (BENIGN TRANSPARENT LIQUIDITY)" if receipt.is_benign_transparent else "NO"
+    disc_str = "YES (DISCLOSURE EFFICIENCY DISCOUNT)" if receipt.is_minimal_discount else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Easley-Hvidkjaer-O'Hara (2002, 2004) Information Risk Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Price (P_t):             ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Microstructure & Asset Pricing Parameters:")
+    print(f"    Probability of Informed Trading:   {receipt.pin:>10.2%} (PIN)")
+    print(f"    Baseline Market PIN Benchmark:     {receipt.baseline_market_pin:>10.2%} (PIN_bar)")
+    print(f"    Market Equity Beta (CAPM):         {receipt.market_equity_beta:>10.2f}x")
+    print(f"    Standardized Information Beta:     {receipt.info_risk_beta:>+10.2f} (Beta_INFO)")
+    print(f"    Info Factor Risk Premium:          {receipt.lambda_info_factor_premium:>10.2%} (lambda_INFO)")
+    print("-" * 80)
+    print("  Easley-Hvidkjaer-O'Hara Cost of Capital Inferences:")
+    print(f"    CAPM Required Return (r_CAPM):     {receipt.capm_required_return_pct:>10.2f}% / year")
+    print(f"    Information Risk Surcharge:        {receipt.cost_of_capital_surcharge_pct:>+10.2f}% / year")
+    print(f"    Information Risk Surcharge (bps):  {receipt.cost_of_capital_surcharge_bps:>+10.1f} bps / year")
+    print(f"    Total Required Hurdle Rate:        {receipt.total_required_hurdle_pct:>10.2f}% / year")
+    print("-" * 80)
+    print("  Information Risk Regime & Surcharge Flags:")
+    print(f"    Information Risk Regime:           {receipt.regime}")
+    print(f"    Severe Adverse Selection:          {severe_str}")
+    print(f"    Elevated Information Risk:         {elev_str}")
+    print(f"    Benign Transparent Liquidity:      {benign_str}")
+    print(f"    Minimal Disclosure Discount:       {disc_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_information_risk_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -10208,6 +10302,53 @@ def main() -> None:
         help="Output Grossman-Stiglitz receipt as JSON",
     )
 
+    info_risk_parser = subparsers.add_parser(
+        "information-risk",
+        aliases=["eho-risk", "cost-of-capital", "info-beta", "easley-ohara"],
+        help="Run Easley, Hvidkjaer & O'Hara (2002, 2004) Information Risk & Cost of Capital Engine",
+    )
+    info_risk_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    info_risk_parser.add_argument(
+        "--pin",
+        type=float,
+        default=None,
+        help="Probability of Informed Trading in [0.01, 0.85] (optional)",
+    )
+    info_risk_parser.add_argument(
+        "--beta",
+        type=float,
+        default=None,
+        help="Systematic market equity beta (optional)",
+    )
+    info_risk_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.0425,
+        help="Annual risk-free rate Rf (default: 0.0425 = 4.25%)",
+    )
+    info_risk_parser.add_argument(
+        "--erp",
+        type=float,
+        default=0.0550,
+        help="Market Equity Risk Premium ERP (default: 0.0550 = 5.50%)",
+    )
+    info_risk_parser.add_argument(
+        "--lambda-info",
+        type=float,
+        default=0.2500,
+        help="Factor risk price per unit PIN difference (default: 0.2500 = 25.0% / unit PIN)",
+    )
+    info_risk_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Information Risk receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -10428,6 +10569,8 @@ def main() -> None:
         chs_distress_command(args)
     elif args.command in ("grossman-stiglitz", "gs-equilibrium", "informational-efficiency", "info-rent", "grossman"):
         grossman_stiglitz_command(args)
+    elif args.command in ("information-risk", "eho-risk", "cost-of-capital", "info-beta", "easley-ohara"):
+        information_risk_command(args)
 
 
 if __name__ == "__main__":

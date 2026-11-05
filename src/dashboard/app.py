@@ -5279,6 +5279,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Grossman-Stiglitz profile.")
 
+                st.divider()
+                st.markdown("#### 🏛️ Easley-Hvidkjaer-O'Hara (2002, 2004) Information Risk & Cost of Capital Engine")
+                st.caption(
+                    "Evaluates the multi-factor asset pricing cost of capital under Easley, Hvidkjaer & O'Hara (2002, 2004), "
+                    "measuring required expected return surcharges ($\\Delta r_{\\text{info}}$) from systematic, undiversifiable private information risk ($\\text{PIN}$)."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.information_risk_capital import (
+                            evaluate_information_risk_profile,
+                            verify_information_risk_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Information Risk & Hurdle Parameters (Optional)", expanded=False):
+                            eho_c1, eho_c2, eho_c3 = st.columns(3)
+                            eho_pin_override = eho_c1.slider("Override PIN (%) [0 = Auto]", min_value=0.0, max_value=60.0, value=0.0, step=1.0, key="eho_pin_override")
+                            eho_erp_pct = eho_c2.slider("Equity Risk Premium ERP (%)", min_value=3.0, max_value=9.0, value=5.5, step=0.25, key="eho_erp_pct")
+                            eho_lambda_pct = eho_c3.slider("Info Factor Premium lambda_INFO (%)", min_value=10.0, max_value=50.0, value=25.0, step=2.5, key="eho_lambda_pct")
+
+                        eho_rec = evaluate_information_risk_profile(
+                            ticker=selected_ticker,
+                            pin_override=float(eho_pin_override / 100.0) if eho_pin_override > 0.0 else None,
+                            equity_risk_premium=float(eho_erp_pct / 100.0),
+                            lambda_info=float(eho_lambda_pct / 100.0),
+                        )
+
+                        eho1, eho2, eho3, eho4 = st.columns(4)
+                        eho_badge = (
+                            "🔴 SEVERE ADVERSE SELECTION"
+                            if eho_rec.is_severe_surcharge
+                            else (
+                                "⚡ ELEVATED INFO RISK"
+                                if eho_rec.is_elevated_risk
+                                else (
+                                    "🟢 BENIGN TRANSPARENT"
+                                    if eho_rec.is_benign_transparent
+                                    else "💎 DISCLOSURE DISCOUNT"
+                                )
+                            )
+                        )
+
+                        eho1.metric(
+                            "Info Risk Surcharge",
+                            f"{eho_rec.cost_of_capital_surcharge_pct:+.2f}% Ann",
+                            delta=f"{eho_rec.cost_of_capital_surcharge_bps:+.0f} bps",
+                            delta_color="inverse" if eho_rec.cost_of_capital_surcharge_pct > 1.0 else "normal",
+                            help="Easley-Hvidkjaer-O'Hara (2002) annual cost of capital hurdle premium demanded by uninformed investors for bearing asymmetric information risk",
+                        )
+                        eho2.metric(
+                            "Informed Trading (PIN)",
+                            f"{eho_rec.pin:.1%}",
+                            delta=f"Benchmark: {eho_rec.baseline_market_pin:.1%}",
+                            delta_color="inverse" if eho_rec.pin > eho_rec.baseline_market_pin else "normal",
+                            help="Probability of informed trading (PIN) measuring asymmetric order flow relative to the US market average (~19.1%)",
+                        )
+                        eho3.metric(
+                            "Information Beta (Beta_INFO)",
+                            f"{eho_rec.info_risk_beta:+.2f}",
+                            delta=eho_badge,
+                            delta_color="inverse" if eho_rec.info_risk_beta > 1.0 else ("normal" if eho_rec.info_risk_beta <= 0 else "off"),
+                            help="Standardized information risk beta measuring cross-sectional factor loading on asymmetric information",
+                        )
+                        eho4.metric(
+                            "Total Required Hurdle Return",
+                            f"{eho_rec.total_required_hurdle_pct:.2f}% Ann",
+                            delta=f"CAPM: {eho_rec.capm_required_return_pct:.2f}%",
+                            help="Multi-factor cost of capital hurdle return combining CAPM systematic risk and EHO information risk surcharge",
+                        )
+
+                        st.caption(f"🧾 **Information Risk Summary:** {eho_rec.summary}")
+                        st.caption(f"🛡️ **EHO Audit Digest:** `{eho_rec.audit_digest[:16]}...` (Verified: `{verify_information_risk_audit_digest(eho_rec)}`)")
+                    except Exception as eho_ex:
+                        st.info(f"Information Risk & Cost of Capital evaluation deferred: {eho_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Information Risk profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
