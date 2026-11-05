@@ -7258,6 +7258,92 @@ def predatory_trading_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def hong_stein_crash_command(args: argparse.Namespace) -> None:
+    """CLI handler for Harrison Hong & Jeremy C. Stein (2003) Crash Asymmetry & Overhang Engine."""
+    import json
+    from src.analytics.hong_stein_crash import (
+        evaluate_hong_stein_crash_profile,
+        calculate_hong_stein_crash,
+        verify_hong_stein_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    disp_val = getattr(args, "opinion_dispersion", None)
+    if disp_val is not None:
+        disp_val = float(disp_val)
+
+    const_val = getattr(args, "short_constraint", None)
+    if const_val is not None:
+        const_val = float(const_val)
+
+    turn_val = getattr(args, "turnover", None)
+    if turn_val is not None:
+        turn_val = float(turn_val)
+
+    try:
+        if disp_val is not None and const_val is not None:
+            kwargs = {
+                "ticker": ticker,
+                "opinion_dispersion_ratio": disp_val,
+                "short_sale_constraint_tightness": const_val,
+            }
+            if turn_val is not None:
+                kwargs["turnover_ratio"] = turn_val
+            receipt = calculate_hong_stein_crash(**kwargs)
+        else:
+            receipt = evaluate_hong_stein_crash_profile(
+                ticker=ticker,
+                opinion_dispersion_override=disp_val,
+                short_constraint_override=const_val,
+            )
+    except Exception as ex:
+        print(f"\nError: Hong-Stein Crash evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    acute_str = "YES (ACUTE CRASH VULNERABILITY)" if receipt.is_acute_crash_vulnerability else "NO"
+    elev_str = "YES (ELEVATED LATENT OVERHANG)" if receipt.is_elevated_latent_overhang else "NO"
+    symm_str = "YES (SYMMETRIC UNCONSTRAINED)" if receipt.is_symmetric_unconstrained else "NO"
+    cons_str = "YES (CONSENSUS STABILITY)" if receipt.is_consensus_stability else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Hong & Stein (2003) Crash Asymmetry Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Differences of Opinion & Short-Sale Constraint Parameters:")
+    print(f"    Opinion Dispersion Ratio:          {receipt.opinion_dispersion_ratio:>10.2%}")
+    print(f"    Short-Sale Constraint Friction:    {receipt.short_sale_constraint_tightness:>10.2%}")
+    print(f"    Trading Turnover Multiplier:       {receipt.turnover_ratio:>10.2f}x")
+    print("-" * 80)
+    print("  Hong & Stein (2003) Latent Overhang & Crash Asymmetry Inferences:")
+    print(f"    Latent Information Overhang:       {receipt.latent_information_overhang:>10.2f} (I_latent)")
+    print(f"    Conditional Crash Skewness:        {receipt.conditional_crash_skewness:>10.2f} (S_crash)")
+    print(f"    Crash Vulnerability Index:         {receipt.crash_vulnerability_index:>10.1f} / 100")
+    print(f"    Downside Volatility Surcharge:     {receipt.downside_volatility_surcharge_pct:>+10.2f}%")
+    print(f"    Expected Cascade Drawdown:         {receipt.expected_crash_drawdown_pct:>10.2f}%")
+    print("-" * 80)
+    print("  Crash Vulnerability Regime Classification:")
+    print(f"    Market Asymmetry Regime:           {receipt.regime}")
+    print(f"    Acute Crash Vulnerability:         {acute_str}")
+    print(f"    Elevated Latent Overhang:          {elev_str}")
+    print(f"    Symmetric Unconstrained:           {symm_str}")
+    print(f"    Consensus Stability:               {cons_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_hong_stein_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -11192,6 +11278,42 @@ def main() -> None:
         help="Output Predatory Trading receipt as JSON",
     )
 
+    # Subparser: hong-stein-crash (Harrison Hong & Jeremy C. Stein 2003 Differences of Opinion Engine)
+    hong_stein_parser = subparsers.add_parser(
+        "hong-stein-crash",
+        aliases=["crash-asymmetry", "latent-overhang", "short-constraint-crash", "hong-stein-2003"],
+        help="Harrison Hong & Jeremy C. Stein (2003) Differences of Opinion, Short Constraints & Crashes Engine",
+    )
+    hong_stein_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    hong_stein_parser.add_argument(
+        "--opinion-dispersion",
+        type=float,
+        default=None,
+        help="Investor opinion dispersion ratio sigma_theta in [0.01, 1.00] (optional)",
+    )
+    hong_stein_parser.add_argument(
+        "--short-constraint",
+        type=float,
+        default=None,
+        help="Short-sale constraint tightness C_short in [0.00, 1.00] (optional)",
+    )
+    hong_stein_parser.add_argument(
+        "--turnover",
+        type=float,
+        default=None,
+        help="Trading volume turnover multiplier in [0.10, 10.0] (optional)",
+    )
+    hong_stein_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Hong & Stein Crash Asymmetry receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -11428,6 +11550,8 @@ def main() -> None:
         kyle_xiong_command(args)
     elif args.command in ("predatory-trading", "predatory", "strategic-frontrun", "liquidation-overshoot", "brunnermeier-2005"):
         predatory_trading_command(args)
+    elif args.command in ("hong-stein-crash", "crash-asymmetry", "latent-overhang", "short-constraint-crash", "hong-stein-2003"):
+        hong_stein_crash_command(args)
 
 
 if __name__ == "__main__":

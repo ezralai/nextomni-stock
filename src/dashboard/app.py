@@ -5874,6 +5874,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Predatory Trading profile.")
 
+                st.markdown("---")
+                st.subheader("⚡ Harrison Hong & Jeremy C. Stein (2003) Differences of Opinion & Crash Asymmetry Engine")
+                st.caption(
+                    "Evaluates the Hong & Stein (2003) market crash framework, modeling how short-sale constraints sideline pessimistic "
+                    "investors, accumulating latent negative information overhang ($I_{\\text{latent}}$) that suddenly reveals in a cascading "
+                    "downturn to produce severe negative return skewness ($\\mathcal{S}_{\\text{crash}}$)."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.hong_stein_crash import (
+                            evaluate_hong_stein_crash_profile,
+                            verify_hong_stein_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Opinion Dispersion & Short-Sale Constraints (Optional)", expanded=False):
+                            hs_c1, hs_c2 = st.columns(2)
+                            hs_disp = hs_c1.slider("Opinion Dispersion sigma_theta (%) [0 = Auto]", min_value=0, max_value=60, value=0, step=5, key="hs_disp")
+                            hs_const = hs_c2.slider("Short-Sale Constraint Tightness (%)", min_value=0, max_value=100, value=55, step=5, key="hs_const")
+
+                        hs_rec = evaluate_hong_stein_crash_profile(
+                            ticker=selected_ticker,
+                            opinion_dispersion_override=float(hs_disp / 100.0) if hs_disp > 0 else None,
+                            short_constraint_override=float(hs_const / 100.0),
+                        )
+
+                        hs1, hs2, hs3, hs4 = st.columns(4)
+                        hs_badge = (
+                            "🔴 ACUTE CRASH VULNERABILITY"
+                            if hs_rec.is_acute_crash_vulnerability
+                            else (
+                                "⚡ ELEVATED OVERHANG"
+                                if hs_rec.is_elevated_latent_overhang
+                                else (
+                                    "🟢 SYMMETRIC UNCONSTRAINED"
+                                    if hs_rec.is_symmetric_unconstrained
+                                    else "🛡️ CONSENSUS STABILITY"
+                                )
+                            )
+                        )
+
+                        hs1.metric(
+                            "Crash Skewness",
+                            f"{hs_rec.conditional_crash_skewness:.2f}",
+                            delta=f"{hs_rec.crash_vulnerability_index:.1f} / 100 Index",
+                            delta_color="inverse" if hs_rec.conditional_crash_skewness < -0.80 else "normal",
+                            help="Hong & Stein (2003) conditional negative return skewness induced by unrevealed bearish overhang",
+                        )
+                        hs2.metric(
+                            "Latent Overhang",
+                            f"{hs_rec.latent_information_overhang:.2f}",
+                            delta=hs_badge,
+                            delta_color="inverse" if hs_rec.latent_information_overhang > 0.80 else "normal",
+                            help="Accumulated pent-up negative private information held by sidelined pessimists",
+                        )
+                        hs3.metric(
+                            "Downside Surcharge",
+                            f"{hs_rec.downside_volatility_surcharge_pct:+.1f}%",
+                            delta=f"Constraint: {hs_rec.short_sale_constraint_tightness:.0%}",
+                            delta_color="inverse" if hs_rec.downside_volatility_surcharge_pct > 5.0 else "normal",
+                            help="Asymmetric downside volatility surcharge expected when negative signals cascade into price",
+                        )
+                        hs4.metric(
+                            "Expected Cascade DD",
+                            f"{hs_rec.expected_crash_drawdown_pct:.1f}%",
+                            delta=f"Dispersion: {hs_rec.opinion_dispersion_ratio:.1%}",
+                            delta_color="inverse" if hs_rec.expected_crash_drawdown_pct > 5.0 else "normal",
+                            help="Simulated price drawdown during a clustered revelation of latent bearish signals",
+                        )
+
+                        st.caption(f"🧾 **Crash Asymmetry Summary:** {hs_rec.summary}")
+                        st.caption(f"🛡️ **Hong-Stein Audit Digest:** `{hs_rec.audit_digest[:16]}...` (Verified: `{verify_hong_stein_audit_digest(hs_rec)}`)")
+                    except Exception as hs_ex:
+                        st.info(f"Hong-Stein Crash Asymmetry evaluation deferred: {hs_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Hong-Stein Crash Asymmetry profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
