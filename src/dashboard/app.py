@@ -6420,6 +6420,90 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Merton ICAPM profile.")
 
+                st.markdown("---")
+                st.subheader("⚖️ Stephen A. Ross (1976) Arbitrage Pricing Theory (APT) Engine")
+                st.caption(
+                    "Evaluates the Ross (1976) Arbitrage Pricing Theory framework (Chen, Roll & Ross 1986), estimating multi-factor "
+                    "macroeconomic sensitivities ($b_{\\text{growth}}, b_{\\text{inf}}, b_{\\text{def}}, b_{\\text{term}}$), "
+                    "no-arbitrage expected returns ($E[R_i]$), systematic vs idiosyncratic variance decomposition, and arbitrage mispricing spreads ($\\Delta_{\\text{APT}}$)."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.ross_apt import (
+                            evaluate_ross_apt_profile,
+                            verify_ross_apt_audit_digest,
+                        )
+
+                        apt_col1, apt_col2, apt_col3 = st.columns(3)
+                        with apt_col1:
+                            apt_growth_input = st.slider(
+                                "Growth Factor Price (lambda_growth %)",
+                                min_value=1.0,
+                                max_value=8.0,
+                                value=4.5,
+                                step=0.25,
+                                format="%.2f%%",
+                                help="Expected annual risk price for real economic output growth",
+                            )
+                        with apt_col2:
+                            apt_inf_input = st.slider(
+                                "Inflation Shock Price (lambda_inf %)",
+                                min_value=-6.0,
+                                max_value=1.0,
+                                value=-2.5,
+                                step=0.25,
+                                format="%.2f%%",
+                                help="Risk price for unexpected inflation innovations",
+                            )
+                        with apt_col3:
+                            apt_def_input = st.slider(
+                                "Credit Default Price (lambda_def %)",
+                                min_value=-6.0,
+                                max_value=0.0,
+                                value=-3.0,
+                                step=0.25,
+                                format="%.2f%%",
+                                help="Risk price for credit default spread widening",
+                            )
+
+                        apt_rec = evaluate_ross_apt_profile(
+                            ticker=selected_ticker,
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            lambda_growth=apt_growth_input / 100.0,
+                            lambda_inflation=apt_inf_input / 100.0,
+                            lambda_default=apt_def_input / 100.0,
+                        )
+
+                        apt_m1, apt_m2, apt_m3, apt_m4 = st.columns(4)
+                        apt_m1.metric(
+                            "APT Expected Return",
+                            f"{apt_rec.apt_expected_return_pct:.2f}%",
+                            delta=f"Sys Prem: {apt_rec.total_systematic_risk_premium_pct:+.2f}%",
+                        )
+                        apt_m2.metric(
+                            "Arbitrage Spread (Delta)",
+                            f"{apt_rec.apt_arbitrage_spread_pct:+.2f}%",
+                            delta=f"Regime: {apt_rec.regime}",
+                            delta_color="normal" if apt_rec.apt_arbitrage_spread_pct >= 0 else "inverse",
+                        )
+                        apt_m3.metric(
+                            "Systematic Variance Ratio",
+                            f"{apt_rec.systematic_variance_ratio_pct:.1f}%",
+                            delta=f"Idio: {apt_rec.idiosyncratic_variance_ratio_pct:.1f}%",
+                        )
+                        apt_m4.metric(
+                            "Growth Beta (b_growth)",
+                            f"{apt_rec.growth_factor_beta:.3f}",
+                            delta=f"Def Beta: {apt_rec.default_factor_beta:.3f}",
+                        )
+
+                        st.caption(f"🧾 **Ross APT Summary:** {apt_rec.summary}")
+                        st.caption(f"🛡️ **Ross APT Audit Digest:** `{apt_rec.audit_digest[:16]}...` (Verified: `{verify_ross_apt_audit_digest(apt_rec)}`)")
+                    except Exception as apt_ex:
+                        st.info(f"Ross APT evaluation deferred: {apt_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Ross APT profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

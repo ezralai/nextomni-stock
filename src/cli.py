@@ -7879,6 +7879,104 @@ def merton_icapm_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def ross_apt_command(args: argparse.Namespace) -> None:
+    """CLI handler for Stephen A. Ross (1976) Arbitrage Pricing Theory & Macro Multi-Factor Engine."""
+    import json
+    from src.analytics.ross_apt import (
+        evaluate_ross_apt_profile,
+        verify_ross_apt_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    growth_prem = getattr(args, "growth_premium", None)
+    if growth_prem is not None:
+        growth_prem = float(growth_prem)
+
+    inf_prem = getattr(args, "inflation_premium", None)
+    if inf_prem is not None:
+        inf_prem = float(inf_prem)
+
+    def_prem = getattr(args, "default_premium", None)
+    if def_prem is not None:
+        def_prem = float(def_prem)
+
+    term_prem = getattr(args, "term_premium", None)
+    if term_prem is not None:
+        term_prem = float(term_prem)
+
+    rf_val = getattr(args, "rf", None)
+    if rf_val is not None:
+        rf_val = float(rf_val)
+
+    try:
+        kwargs = {"ticker": ticker}
+        if growth_prem is not None:
+            kwargs["lambda_growth"] = growth_prem
+        if inf_prem is not None:
+            kwargs["lambda_inflation"] = inf_prem
+        if def_prem is not None:
+            kwargs["lambda_default"] = def_prem
+        if term_prem is not None:
+            kwargs["lambda_term"] = term_prem
+        if rf_val is not None:
+            kwargs["risk_free_rate"] = rf_val
+
+        receipt = evaluate_ross_apt_profile(**kwargs)
+    except Exception as ex:
+        print(f"\nError: Ross APT evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    buy_str = "YES (STATISTICAL UNDERPRICING ALPHA)" if receipt.is_arbitrage_buy else "NO"
+    sell_str = "YES (STATISTICAL OVERPRICING DEFICIT)" if receipt.is_arbitrage_sell else "NO"
+    macro_str = "YES (SYSTEMIC FACTOR RISK DOMINANCE)" if receipt.is_macro_dominated else "NO"
+    idle_str = "YES (FAIRLY PRICED NO-ARBITRAGE EQUILIBRIUM)" if receipt.is_idiosyncratic_idle else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Stephen A. Ross (1976) Arbitrage Pricing Theory (APT)")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print(f"  Historical Realized Return:     {receipt.annualized_asset_return_pct:>+10.2f}% / year")
+    print(f"  Risk-Free Benchmark (R_f):      {receipt.risk_free_rate_pct:>10.2f}% / year")
+    print("-" * 80)
+    print("  Chen-Roll-Ross (1986) Systematic Macroeconomic Loadings:")
+    print(f"    Growth Factor Loading (b_growth):  {receipt.growth_factor_beta:>10.4f} (Risk Price: {receipt.growth_premium_pct:>+.2f}%)")
+    print(f"    Inflation Shock Beta (b_inf):      {receipt.inflation_factor_beta:>10.4f} (Risk Price: {receipt.inflation_premium_pct:>+.2f}%)")
+    print(f"    Credit Default Beta (b_def):       {receipt.default_factor_beta:>10.4f} (Risk Price: {receipt.default_premium_pct:>+.2f}%)")
+    print(f"    Term Structure Beta (b_term):      {receipt.term_factor_beta:>10.4f} (Risk Price: {receipt.term_premium_pct:>+.2f}%)")
+    print("-" * 80)
+    print("  Variance & Factor Risk Premium Decomposition:")
+    print(f"    Growth Risk Contribution:          {receipt.growth_risk_contribution_pct:>+10.2f}% / year")
+    print(f"    Inflation Risk Contribution:       {receipt.inflation_risk_contribution_pct:>+10.2f}% / year")
+    print(f"    Default Risk Contribution:         {receipt.default_risk_contribution_pct:>+10.2f}% / year")
+    print(f"    Term Structure Contribution:       {receipt.term_risk_contribution_pct:>+10.2f}% / year")
+    print(f"    Total Systematic Risk Premium:     {receipt.total_systematic_risk_premium_pct:>+10.2f}% / year")
+    print(f"    APT Expected No-Arbitrage Return:  {receipt.apt_expected_return_pct:>10.2f}% / year")
+    print(f"    Arbitrage Spread (Delta_APT):      {receipt.apt_arbitrage_spread_pct:>+10.2f}% / year")
+    print(f"    Systematic Variance Ratio:         {receipt.systematic_variance_ratio_pct:>10.2f}%")
+    print(f"    Idiosyncratic Variance Ratio:      {receipt.idiosyncratic_variance_ratio_pct:>10.2f}%")
+    print("-" * 80)
+    print("  APT Equilibrium Regime Classification:")
+    print(f"    Active APT Regime:                 {receipt.regime}")
+    print(f"    Arbitrage Buy Opportunity:         {buy_str}")
+    print(f"    Arbitrage Sell Overpricing:        {sell_str}")
+    print(f"    Macro Factor Dominated:            {macro_str}")
+    print(f"    Idiosyncratic Idle Equilibrium:    {idle_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_ross_apt_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -12082,6 +12180,54 @@ def main() -> None:
         help="Output Merton ICAPM receipt as JSON",
     )
 
+    # Subparser: ross-apt (Stephen A. Ross 1976 Arbitrage Pricing Theory Engine)
+    apt_parser = subparsers.add_parser(
+        "ross-apt",
+        aliases=["apt", "arbitrage-pricing", "multi-factor-apt", "ross-1976"],
+        help="Stephen A. Ross (1976) Arbitrage Pricing Theory & Macro Multi-Factor Engine",
+    )
+    apt_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    apt_parser.add_argument(
+        "--growth-premium",
+        type=float,
+        default=None,
+        help="Risk price for economic growth lambda_growth (e.g. 0.045)",
+    )
+    apt_parser.add_argument(
+        "--inflation-premium",
+        type=float,
+        default=None,
+        help="Risk price for unexpected inflation lambda_inf (e.g. -0.025)",
+    )
+    apt_parser.add_argument(
+        "--default-premium",
+        type=float,
+        default=None,
+        help="Risk price for credit default spread lambda_def (e.g. -0.030)",
+    )
+    apt_parser.add_argument(
+        "--term-premium",
+        type=float,
+        default=None,
+        help="Risk price for term structure slope lambda_term (e.g. 0.020)",
+    )
+    apt_parser.add_argument(
+        "--rf",
+        type=float,
+        default=None,
+        help="Annualized benchmark risk-free rate (e.g. 0.0425)",
+    )
+    apt_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Ross APT receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -12332,6 +12478,8 @@ def main() -> None:
         diamond_dybvig_command(args)
     elif args.command in ("merton-icapm", "icapm", "intertemporal-capm", "state-hedging", "merton-1973"):
         merton_icapm_command(args)
+    elif args.command in ("ross-apt", "apt", "arbitrage-pricing", "multi-factor-apt", "ross-1976"):
+        ross_apt_command(args)
 
 
 if __name__ == "__main__":
