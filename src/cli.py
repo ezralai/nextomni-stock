@@ -7977,6 +7977,103 @@ def ross_apt_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def dssw_command(args: argparse.Namespace) -> None:
+    """CLI handler for De Long, Shleifer, Summers & Waldmann (1990) Noise Trader Risk Engine."""
+    import json
+    from src.analytics.dssw_noise_trader_risk import (
+        evaluate_dssw_profile,
+        verify_dssw_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    mu_val = getattr(args, "mean_sentiment", None)
+    if mu_val is not None:
+        mu_val = float(mu_val)
+
+    st_val = getattr(args, "shock", None)
+    if st_val is not None:
+        st_val = float(st_val)
+
+    var_val = getattr(args, "variance", None)
+    if var_val is not None:
+        var_val = float(var_val)
+
+    gamma_val = getattr(args, "risk_aversion", None)
+    if gamma_val is not None:
+        gamma_val = float(gamma_val)
+
+    rf_val = getattr(args, "rf", None)
+    if rf_val is not None:
+        rf_val = float(rf_val)
+
+    try:
+        kwargs = {"ticker": ticker}
+        if mu_val is not None:
+            kwargs["mean_sentiment_override"] = mu_val
+        if st_val is not None:
+            kwargs["sentiment_shock_override"] = st_val
+        if var_val is not None:
+            kwargs["sentiment_variance_override"] = var_val
+        if gamma_val is not None:
+            kwargs["risk_aversion"] = gamma_val
+        if rf_val is not None:
+            kwargs["risk_free_rate"] = rf_val
+
+        receipt = evaluate_dssw_profile(**kwargs)
+    except Exception as ex:
+        print(f"\nError: DSSW Noise Trader Risk evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    euph_str = "YES (SENTIMENT EUPHORIA)" if receipt.is_sentiment_euphoria else "NO"
+    panic_str = "YES (PANIC DEPRESSION WEDGE)" if receipt.is_panic_depression else "NO"
+    risk_str = "YES (CREATE-SPACE ARBITRAGE RISK DOMINATED)" if receipt.is_arbitrage_risk_dominated else "NO"
+    fund_str = "YES (RATIONAL FUNDAMENTAL EQUILIBRIUM)" if receipt.is_fundamental_equilibrium else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: De Long, Shleifer, Summers & Waldmann (1990) Noise Trader Risk")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Fundamental Intrinsic Value:    ${receipt.fundamental_price:.2f}")
+    print(f"  DSSW Equilibrium Market Price:  ${receipt.dssw_market_price:.2f}")
+    print(f"  Mispricing Dollar Wedge:        ${receipt.mispricing_dollar_wedge:>+9.2f} ({receipt.mispricing_percentage_pct:>+6.2f}%)")
+    print("-" * 80)
+    print("  Noise Trader Sentiment & Arbitrage Risk Parameters:")
+    print(f"    Average Sentiment Bias (mu):       {receipt.mean_sentiment_mu:>+10.4f}")
+    print(f"    Active Sentiment Shock (S_t):      {receipt.active_sentiment_shock:>+10.4f}")
+    print(f"    Sentiment Variance (sigma_S^2):    {receipt.sentiment_variance_sigma_sq:>10.4f}")
+    print(f"    Arbitrageur Risk Aversion (gamma): {receipt.risk_aversion_gamma:>10.2f}")
+    print(f"    Discount / Risk-Free Rate (r):     {receipt.risk_free_rate_pct:>10.2f}% / year")
+    print("-" * 80)
+    print("  DSSW Equilibrium Component Price Breakdown:")
+    print(f"    Persistent Sentiment Premium:      ${receipt.persistent_bias_premium_dollar:>+9.2f}")
+    print(f"    Transitory Sentiment Wedge:        ${receipt.transitory_shock_wedge_dollar:>+9.2f}")
+    print(f"    Create-Space Volatility Discount: -${receipt.create_space_discount_dollar:>9.2f}")
+    print("-" * 80)
+    print("  Noise Trader Performance & Limits of Arbitrage:")
+    print(f"    Return Differential (E[R_N] - E[R_A]): {receipt.expected_return_differential_pct:>+8.2f}% / year")
+    print(f"    Noise Traders Outperforming Arbs:      {receipt.is_noise_trader_outperforming}")
+    print("-" * 80)
+    print("  DSSW Equilibrium Regime:")
+    print(f"    Active Regime:                     {receipt.regime}")
+    print(f"    Sentiment Euphoria:                {euph_str}")
+    print(f"    Panic Depression:                  {panic_str}")
+    print(f"    Arbitrage Risk Dominated:          {risk_str}")
+    print(f"    Fundamental Equilibrium:           {fund_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_dssw_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -12228,6 +12325,54 @@ def main() -> None:
         help="Output Ross APT receipt as JSON",
     )
 
+    # Subparser: dssw-noise (De Long, Shleifer, Summers & Waldmann 1990 Noise Trader Risk Engine)
+    dssw_parser = subparsers.add_parser(
+        "dssw-noise",
+        aliases=["noise-trader-risk", "limits-of-arbitrage", "resale-price-risk", "dssw-1990"],
+        help="De Long, Shleifer, Summers & Waldmann (1990) Noise Trader Risk & Limits of Arbitrage Engine",
+    )
+    dssw_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    dssw_parser.add_argument(
+        "--mean-sentiment",
+        type=float,
+        default=None,
+        help="Average bullish sentiment bias mu (e.g. 0.05)",
+    )
+    dssw_parser.add_argument(
+        "--shock",
+        type=float,
+        default=None,
+        help="Current period sentiment realization shock S_t (e.g. 0.08)",
+    )
+    dssw_parser.add_argument(
+        "--variance",
+        type=float,
+        default=None,
+        help="Sentiment unpredictability variance sigma_S^2 (e.g. 0.015)",
+    )
+    dssw_parser.add_argument(
+        "--risk-aversion",
+        type=float,
+        default=None,
+        help="Arbitrageur absolute risk aversion gamma (e.g. 1.25)",
+    )
+    dssw_parser.add_argument(
+        "--rf",
+        type=float,
+        default=None,
+        help="Risk-free / dividend discount rate r (e.g. 0.0425)",
+    )
+    dssw_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output DSSW Noise Trader Risk receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -12480,6 +12625,8 @@ def main() -> None:
         merton_icapm_command(args)
     elif args.command in ("ross-apt", "apt", "arbitrage-pricing", "multi-factor-apt", "ross-1976"):
         ross_apt_command(args)
+    elif args.command in ("dssw-noise", "noise-trader-risk", "limits-of-arbitrage", "resale-price-risk", "dssw-1990"):
+        dssw_command(args)
 
 
 if __name__ == "__main__":

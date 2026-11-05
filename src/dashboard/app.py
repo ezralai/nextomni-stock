@@ -6504,6 +6504,91 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Ross APT profile.")
 
+                st.markdown("---")
+                st.subheader("👥 De Long, Shleifer, Summers & Waldmann (1990) Noise Trader Risk Engine")
+                st.caption(
+                    "Evaluates the DSSW (1990) limits-of-arbitrage framework, modeling how unpredictable noise trader sentiment "
+                    "($S_t$, $\\sigma_S^2$) generates resale price risk for finite-horizon rational arbitrageurs, drives the create-space "
+                    "volatility discount, and enables noise traders to potentially outperform arbitrageurs."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.dssw_noise_trader_risk import (
+                            evaluate_dssw_profile,
+                            verify_dssw_audit_digest,
+                        )
+
+                        dssw_col1, dssw_col2, dssw_col3 = st.columns(3)
+                        with dssw_col1:
+                            dssw_shock_input = st.slider(
+                                "Active Sentiment Shock (S_t)",
+                                min_value=-0.30,
+                                max_value=0.30,
+                                value=0.08,
+                                step=0.01,
+                                format="%.2f",
+                                help="Current period unexpected sentiment shock",
+                            )
+                        with dssw_col2:
+                            dssw_var_input = st.slider(
+                                "Sentiment Variance (sigma_S^2)",
+                                min_value=0.002,
+                                max_value=0.060,
+                                value=0.015,
+                                step=0.002,
+                                format="%.3f",
+                                help="Unpredictability/variance of future noise trader sentiment",
+                            )
+                        with dssw_col3:
+                            dssw_gamma_input = st.slider(
+                                "Arbitrageur Risk Aversion (gamma)",
+                                min_value=0.5,
+                                max_value=4.0,
+                                value=1.25,
+                                step=0.25,
+                                format="%.2f",
+                                help="Absolute risk aversion coefficient of rational arbitrageurs",
+                            )
+
+                        dssw_rec = evaluate_dssw_profile(
+                            ticker=selected_ticker,
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            sentiment_shock_override=dssw_shock_input,
+                            sentiment_variance_override=dssw_var_input,
+                            risk_aversion=dssw_gamma_input,
+                        )
+
+                        dssw_m1, dssw_m2, dssw_m3, dssw_m4 = st.columns(4)
+                        dssw_m1.metric(
+                            "DSSW Market Price",
+                            f"${dssw_rec.dssw_market_price:.2f}",
+                            delta=f"Wedge: {dssw_rec.mispricing_percentage_pct:+.1f}%",
+                            delta_color="normal" if abs(dssw_rec.mispricing_percentage_pct) <= 15.0 else "inverse",
+                        )
+                        dssw_m2.metric(
+                            "Create-Space Discount",
+                            f"${dssw_rec.create_space_discount_dollar:.2f}",
+                            delta=f"Bias Prem: +${dssw_rec.persistent_bias_premium_dollar:.2f}",
+                        )
+                        dssw_m3.metric(
+                            "Return Diff (Noise - Arbs)",
+                            f"{dssw_rec.expected_return_differential_pct:+.2f}%",
+                            delta="Noise Outperforms" if dssw_rec.is_noise_trader_outperforming else "Arbs Outperform",
+                            delta_color="normal" if dssw_rec.is_noise_trader_outperforming else "off",
+                        )
+                        dssw_m4.metric(
+                            "Active Regime",
+                            dssw_rec.regime,
+                            delta=f"Fundamental: ${dssw_rec.fundamental_price:.2f}",
+                        )
+
+                        st.caption(f"🧾 **DSSW Summary:** {dssw_rec.summary}")
+                        st.caption(f"🛡️ **DSSW Audit Digest:** `{dssw_rec.audit_digest[:16]}...` (Verified: `{verify_dssw_audit_digest(dssw_rec)}`)")
+                    except Exception as dssw_ex:
+                        st.info(f"DSSW Noise Trader Risk evaluation deferred: {dssw_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate DSSW Noise Trader Risk profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
