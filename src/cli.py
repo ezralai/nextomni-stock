@@ -6287,6 +6287,88 @@ def amh_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def search_bargaining_command(args: argparse.Namespace) -> None:
+    """CLI handler for Duffie-Gârleanu-Pedersen (2005) OTC Search & Bargaining Engine."""
+    import json
+    from src.analytics.search_bargaining_illiquidity import (
+        evaluate_search_bargaining_profile,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    lam = getattr(args, "search_intensity", None)
+    if lam is not None:
+        lam = float(lam)
+    q = getattr(args, "bargaining_power", None)
+    if q is not None:
+        q = float(q)
+    chi = getattr(args, "inventory_cost", None)
+    if chi is not None:
+        chi = float(chi)
+    r = getattr(args, "discount_rate", None)
+    if r is not None:
+        r = float(r)
+    d = getattr(args, "cash_flow_rate", None)
+    if d is not None:
+        d = float(d)
+
+    try:
+        receipt = evaluate_search_bargaining_profile(
+            ticker=ticker,
+            search_intensity_lambda=lam,
+            investor_bargaining_power=q,
+            dealer_inventory_cost=chi,
+            opportunity_cost_rate=r,
+            asset_cash_flow_rate=d,
+        )
+    except Exception as ex:
+        print(f"\nError: Search-and-Bargaining Illiquidity evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    frz_str = "YES (SEVERE OTC SEARCH FREEZE)" if receipt.is_severe_search_freeze else "NO"
+    cen_str = "YES (HIGH-LIQUIDITY CENTRALIZED MATCHING)" if receipt.is_centralized_high_liquidity else "NO"
+    elev_str = "YES (ELEVATED SEARCH FRICTION)" if receipt.is_elevated_search_friction else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Duffie-Gârleanu-Pedersen (2005) OTC Search & Bargaining Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:            {receipt.ticker}")
+    print(f"  Latest Price (P_t):           ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Search & Bargaining Parameters:")
+    print(f"    Search Arrival Intensity (λ):   {receipt.search_intensity_lambda:>10.2f} contacts / yr")
+    print(f"    Investor Bargaining Power (q):  {receipt.investor_bargaining_power:>10.2%}")
+    print(f"    Dealer Inventory Cost (χ):      {receipt.dealer_inventory_cost:>10.2%}")
+    print(f"    Opportunity Discount Rate (r):  {receipt.opportunity_cost_rate:>10.2%}")
+    print(f"    Cash Flow / Yield Rate (D):     {receipt.asset_cash_flow_rate:>10.2%}")
+    print("-" * 80)
+    print("  DGP Search Valuation & Spread Inferences:")
+    print(f"    Search Illiquidity Discount:    {receipt.search_illiquidity_discount_pct:>10.2f}% (S_DGP)")
+    print(f"    Endogenous Bid-Ask Spread:      {receipt.endogenous_bid_ask_spread_pct:>10.2f}% (ΔP)")
+    print(f"    Frictionless Walrasian Price:  ${receipt.walrasian_frictionless_price:>10.2f} (P*)")
+    print(f"    OTC Effective Market Price:    ${receipt.otc_effective_price:>10.2f} (P_OTC)")
+    print(f"    Search Fragility Impulse:       {receipt.dgp_illiquidity_impulse:>+10.4f} [-2.5..+2.5]")
+    print("-" * 80)
+    print("  Search Regime & Alpha Projections:")
+    print(f"    Search-and-Bargaining Regime:   {receipt.regime}")
+    print(f"    Severe Search Freeze:           {frz_str}")
+    print(f"    Centralized Matching:           {cen_str}")
+    print(f"    Elevated Search Friction:       {elev_str}")
+    print(f"    Expected Search Alpha:          {receipt.expected_search_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):          {receipt.signature[:16]}... (Verified: {receipt.verify_integrity()})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -9779,6 +9861,53 @@ def main() -> None:
         help="Output Adaptive Markets receipt as JSON",
     )
 
+    search_bargaining_parser = subparsers.add_parser(
+        "search-bargaining",
+        aliases=["duffie-garleanu-pedersen", "dgp", "otc-illiquidity", "bargaining-spread"],
+        help="Run Duffie-Gârleanu-Pedersen (2005) OTC Search & Bargaining Illiquidity Engine",
+    )
+    search_bargaining_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    search_bargaining_parser.add_argument(
+        "--search-intensity",
+        type=float,
+        default=None,
+        help="Counterparty Poisson contact rate lambda in [0.10, 50.0] (optional)",
+    )
+    search_bargaining_parser.add_argument(
+        "--bargaining-power",
+        type=float,
+        default=None,
+        help="Investor Nash bargaining power q in [0.05, 0.95] (optional)",
+    )
+    search_bargaining_parser.add_argument(
+        "--inventory-cost",
+        type=float,
+        default=None,
+        help="Dealer inventory holding cost chi in [0.00, 0.25] (optional)",
+    )
+    search_bargaining_parser.add_argument(
+        "--discount-rate",
+        type=float,
+        default=None,
+        help="Risk-free opportunity discount rate r in [0.01, 0.15] (optional)",
+    )
+    search_bargaining_parser.add_argument(
+        "--cash-flow-rate",
+        type=float,
+        default=None,
+        help="Asset cash flow / dividend yield rate D in [0.005, 0.20] (optional)",
+    )
+    search_bargaining_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Search & Bargaining receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -9993,6 +10122,8 @@ def main() -> None:
         covar_command(args)
     elif args.command in ("amh", "adaptive-markets", "andrew-lo", "market-efficiency", "punctuated-equilibrium"):
         amh_command(args)
+    elif args.command in ("search-bargaining", "duffie-garleanu-pedersen", "dgp", "otc-illiquidity", "bargaining-spread"):
+        search_bargaining_command(args)
 
 
 if __name__ == "__main__":

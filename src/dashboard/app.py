@@ -5054,6 +5054,82 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Adaptive Markets profile.")
 
+                st.divider()
+                st.markdown("#### 🤝 Duffie-Gârleanu-Pedersen (2005) OTC Search-and-Bargaining Illiquidity Engine")
+                st.caption(
+                    "Evaluates counterparty search arrival intensity ($\\lambda$), investor Nash bargaining power ($q$), "
+                    "endogenous bid-ask spread ($\\Delta P$), and the Search Illiquidity Discount ($S_{\\text{DGP}}$) relative to frictionless Walrasian benchmarks."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.search_bargaining_illiquidity import (
+                            evaluate_search_bargaining_profile,
+                        )
+
+                        with st.expander("⚙️ Customize Counterparty Search & Nash Bargaining Parameters (Optional)", expanded=False):
+                            dgp_c1, dgp_c2, dgp_c3, dgp_c4 = st.columns(4)
+                            dgp_lam_in = dgp_c1.number_input("Search Intensity lambda [0.1..50.0]", value=0.0, min_value=0.0, max_value=50.0, step=1.0, key="dgp_lam_in")
+                            dgp_q_in = dgp_c2.number_input("Bargaining Power q [0.05..0.95]", value=0.0, min_value=0.0, max_value=0.95, step=0.05, key="dgp_q_in")
+                            dgp_chi_in = dgp_c3.number_input("Dealer Inventory Cost chi [0.0..0.25]", value=0.0, min_value=0.0, max_value=0.25, step=0.01, key="dgp_chi_in")
+                            dgp_d_in = dgp_c4.number_input("Asset Cash Flow Rate D [0.005..0.20]", value=0.0, min_value=0.0, max_value=0.20, step=0.01, key="dgp_d_in")
+
+                        dgp_rec = evaluate_search_bargaining_profile(
+                            ticker=selected_ticker,
+                            search_intensity_lambda=dgp_lam_in if dgp_lam_in > 0.0 else None,
+                            investor_bargaining_power=dgp_q_in if dgp_q_in > 0.0 else None,
+                            dealer_inventory_cost=dgp_chi_in if dgp_chi_in > 0.0 else None,
+                            asset_cash_flow_rate=dgp_d_in if dgp_d_in > 0.0 else None,
+                        )
+
+                        dgp1, dgp2, dgp3, dgp4 = st.columns(4)
+                        dgp_badge = (
+                            "🔴 SEVERE SEARCH FREEZE"
+                            if dgp_rec.is_severe_search_freeze
+                            else (
+                                "🟢 CENTRALIZED MATCHING"
+                                if dgp_rec.is_centralized_high_liquidity
+                                else (
+                                    "⚡ ELEVATED FRICTION"
+                                    if dgp_rec.is_elevated_search_friction
+                                    else f"Regime: {dgp_rec.regime}"
+                                )
+                            )
+                        )
+                        dgp1.metric(
+                            "Search Intensity (λ)",
+                            f"{dgp_rec.search_intensity_lambda:.1f} / yr",
+                            delta=f"Power q: {dgp_rec.investor_bargaining_power:.0%}",
+                            delta_color="normal" if dgp_rec.search_intensity_lambda >= 15.0 else "inverse",
+                            help="Duffie-Gârleanu-Pedersen (2005) Poisson contact arrival rate lambda for counterparty matching",
+                        )
+                        dgp2.metric(
+                            "Search Discount (S_DGP)",
+                            f"{dgp_rec.search_illiquidity_discount_pct:.2f}%",
+                            delta=dgp_badge,
+                            delta_color="inverse" if dgp_rec.is_severe_search_freeze else ("normal" if dgp_rec.is_centralized_high_liquidity else "off"),
+                            help="Percentage price markdown relative to frictionless Walrasian benchmark price: S_DGP = ((r + lambda*(1-q))/(r+lambda)) * (chi/D)",
+                        )
+                        dgp3.metric(
+                            "Endogenous Spread (ΔP)",
+                            f"{dgp_rec.endogenous_bid_ask_spread_pct:.2f}%",
+                            delta=f"Holding Cost χ: {dgp_rec.dealer_inventory_cost:.1%}",
+                            delta_color="inverse" if dgp_rec.endogenous_bid_ask_spread_pct > 1.2 else "normal",
+                            help="Equilibrium bid-ask spread emerging from sequential search delays and dealer inventory holding costs",
+                        )
+                        dgp4.metric(
+                            "Expected Search Alpha",
+                            f"{dgp_rec.expected_search_alpha_pct:+.2f}% Ann",
+                            delta=f"Walrasian: ${dgp_rec.walrasian_frictionless_price:.2f}",
+                            help="Projected annualized abnormal return reflecting illiquidity recovery and dealer search premia",
+                        )
+
+                        st.caption(f"🧾 **Search Illiquidity Summary:** {dgp_rec.summary}")
+                        st.caption(f"🛡️ **Search Audit Digest:** `{dgp_rec.signature[:16]}...` (Verified: `{dgp_rec.verify_integrity()}`)")
+                    except Exception as dgp_ex:
+                        st.info(f"Duffie-Gârleanu-Pedersen Search Illiquidity evaluation deferred: {dgp_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Search-and-Bargaining profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
