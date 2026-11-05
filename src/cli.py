@@ -6657,6 +6657,90 @@ def information_risk_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def admati_pfleiderer_command(args: argparse.Namespace) -> None:
+    """CLI handler for Admati & Pfleiderer (1988) Volume Clustering & Execution Timing Engine."""
+    import json
+    from src.analytics.admati_pfleiderer_clustering import (
+        evaluate_admati_pfleiderer_profile,
+        calculate_admati_pfleiderer_clustering,
+        verify_admati_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    disc_ratio = getattr(args, "discretionary_ratio", None)
+    if disc_ratio is not None:
+        disc_ratio = float(disc_ratio)
+
+    informed_count = getattr(args, "informed_count", None)
+    if informed_count is None:
+        informed_count = 3
+    else:
+        informed_count = int(informed_count)
+
+    spread_bps = getattr(args, "spread_bps", None)
+    if spread_bps is not None:
+        spread_bps = float(spread_bps)
+
+    try:
+        if disc_ratio is not None and spread_bps is not None:
+            receipt = calculate_admati_pfleiderer_clustering(
+                ticker=ticker,
+                discretionary_liquidity_ratio=disc_ratio,
+                informed_trader_count=informed_count,
+                baseline_spread_bps=spread_bps,
+            )
+        else:
+            receipt = evaluate_admati_pfleiderer_profile(
+                ticker=ticker,
+                discretionary_ratio_override=disc_ratio,
+            )
+    except Exception as ex:
+        print(f"\nError: Admati-Pfleiderer evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    conc_str = "YES (OPTIMAL HIGH-DEPTH EXECUTION)" if receipt.is_concentrated_cluster else "NO"
+    bal_str = "YES (BALANCED CONTINUOUS LIQUIDITY)" if receipt.is_balanced_equilibrium else "NO"
+    drought_str = "YES (AVOID MIDDAY EXECUTION DROUGHT)" if receipt.is_midday_drought else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Admati-Pfleiderer (1988) Volume Clustering Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Price (P_t):             ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Microstructure & Coordination Parameters:")
+    print(f"    Discretionary Liquidity Ratio:     {receipt.discretionary_liquidity_ratio:>10.2%}")
+    print(f"    Non-Discretionary Variance:        {receipt.non_discretionary_variance:>10.4f}")
+    print(f"    Informed Trader Count (k):         {receipt.informed_trader_count:>10d}")
+    print(f"    Admati-Pfleiderer Clumping Index:  {receipt.clumping_index:>10.2%} (C_AP)")
+    print("-" * 80)
+    print("  Concentrated Trading Equilibrium Inferences:")
+    print(f"    Market Depth Multiplier:           {receipt.market_depth_multiplier:>10.2f}x (D_AP)")
+    print(f"    Kyle Lambda Impact Reduction:      {receipt.kyle_lambda_reduction_pct:>10.2f}%")
+    print(f"    Execution Slippage Savings:        {receipt.execution_slippage_discount_bps:>10.1f} bps")
+    print(f"    Recommended Execution Window:      {receipt.recommended_execution_window}")
+    print("-" * 80)
+    print("  Intraday Liquidity Regime & Execution Flags:")
+    print(f"    Intraday Liquidity Regime:         {receipt.regime}")
+    print(f"    Concentrated Liquidity Cluster:    {conc_str}")
+    print(f"    Balanced Continuous Liquidity:     {bal_str}")
+    print(f"    Midday High-Slippage Drought:      {drought_str}")
+    print(f"    Optimal Execution Strategy:        {receipt.optimal_execution_timing}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_admati_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -10349,6 +10433,41 @@ def main() -> None:
         help="Output Information Risk receipt as JSON",
     )
 
+    admati_parser = subparsers.add_parser(
+        "admati-pfleiderer",
+        aliases=["volume-clustering", "concentrated-trading", "intraday-liquidity", "ap-clustering"],
+        help="Run Admati & Pfleiderer (1988) Volume Clustering & Execution Timing Engine",
+    )
+    admati_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    admati_parser.add_argument(
+        "--discretionary-ratio",
+        type=float,
+        default=None,
+        help="Ratio of discretionary liquidity trading in [0.02, 0.98] (optional)",
+    )
+    admati_parser.add_argument(
+        "--informed-count",
+        type=int,
+        default=3,
+        help="Number of informed traders k entering the cluster (default: 3)",
+    )
+    admati_parser.add_argument(
+        "--spread-bps",
+        type=float,
+        default=None,
+        help="Baseline execution spread in basis points (optional)",
+    )
+    admati_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Admati-Pfleiderer receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -10571,6 +10690,8 @@ def main() -> None:
         grossman_stiglitz_command(args)
     elif args.command in ("information-risk", "eho-risk", "cost-of-capital", "info-beta", "easley-ohara"):
         information_risk_command(args)
+    elif args.command in ("admati-pfleiderer", "volume-clustering", "concentrated-trading", "intraday-liquidity", "ap-clustering"):
+        admati_pfleiderer_command(args)
 
 
 if __name__ == "__main__":

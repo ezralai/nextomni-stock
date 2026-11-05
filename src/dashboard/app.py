@@ -5355,6 +5355,78 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Information Risk profile.")
 
+                st.divider()
+                st.markdown("#### ⏳ Admati-Pfleiderer (1988) Volume Clustering & Execution Timing Engine")
+                st.caption(
+                    "Evaluates intraday concentrated trading equilibria under Admati & Pfleiderer (1988), "
+                    "measuring liquidity coordination, clumping index ($\\mathcal{C}_{\\text{AP}}$), effective market depth multiplier ($\\mathcal{D}_{\\text{AP}}$), and optimal execution windows."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.admati_pfleiderer_clustering import (
+                            evaluate_admati_pfleiderer_profile,
+                            verify_admati_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Admati-Pfleiderer Parameters (Optional)", expanded=False):
+                            ap_c1, ap_c2 = st.columns(2)
+                            ap_disc_ratio = ap_c1.slider("Discretionary Liquidity Ratio (%) [0 = Auto]", min_value=0.0, max_value=95.0, value=0.0, step=5.0, key="ap_disc_ratio")
+                            ap_k_informed = ap_c2.slider("Informed Traders Count (k)", min_value=1, max_value=10, value=3, step=1, key="ap_k_informed")
+
+                        ap_rec = evaluate_admati_pfleiderer_profile(
+                            ticker=selected_ticker,
+                            discretionary_ratio_override=float(ap_disc_ratio / 100.0) if ap_disc_ratio > 0.0 else None,
+                        )
+
+                        ap1, ap2, ap3, ap4 = st.columns(4)
+                        ap_badge = (
+                            "🟢 CONCENTRATED CLUSTER"
+                            if ap_rec.is_concentrated_cluster
+                            else (
+                                "⚡ BALANCED EQUILIBRIUM"
+                                if ap_rec.is_balanced_equilibrium
+                                else (
+                                    "🔴 MIDDAY DROUGHT"
+                                    if ap_rec.is_midday_drought
+                                    else f"{ap_rec.regime}"
+                                )
+                            )
+                        )
+
+                        ap1.metric(
+                            "Market Depth Multiplier",
+                            f"{ap_rec.market_depth_multiplier:.2f}x",
+                            delta=ap_badge,
+                            delta_color="normal" if ap_rec.is_concentrated_cluster else ("off" if ap_rec.is_balanced_equilibrium else "inverse"),
+                            help="Admati-Pfleiderer equilibrium market depth multiplier relative to dispersed trading; higher depth substantially compresses execution slippage",
+                        )
+                        ap2.metric(
+                            "Clumping Index (C_AP)",
+                            f"{ap_rec.clumping_index:.1%}",
+                            delta=f"Discretionary: {ap_rec.discretionary_liquidity_ratio:.1%}",
+                            help="Ratio of discretionary liquidity traders coordinating execution timing in peak market depth windows",
+                        )
+                        ap3.metric(
+                            "Price Impact Reduction",
+                            f"{ap_rec.kyle_lambda_reduction_pct:.1f}%",
+                            delta=f"-{ap_rec.execution_slippage_discount_bps:.1f} bps slippage",
+                            delta_color="normal" if ap_rec.kyle_lambda_reduction_pct >= 20.0 else "off",
+                            help="Expected reduction in Kyle lambda price impact parameter and execution slippage during concentrated liquidity clusters",
+                        )
+                        ap4.metric(
+                            "Execution Timing",
+                            f"{ap_rec.recommended_execution_window}",
+                            delta="Optimal Window",
+                            help="Recommended algorithmic execution timing window based on intraday depth equilibrium",
+                        )
+
+                        st.caption(f"🧾 **Admati-Pfleiderer Summary:** {ap_rec.summary}")
+                        st.caption(f"🛡️ **Admati Audit Digest:** `{ap_rec.audit_digest[:16]}...` (Verified: `{verify_admati_audit_digest(ap_rec)}`)")
+                    except Exception as ap_ex:
+                        st.info(f"Admati-Pfleiderer Volume Clustering evaluation deferred: {ap_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Admati-Pfleiderer profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
