@@ -6460,6 +6460,109 @@ def chs_distress_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def grossman_stiglitz_command(args: argparse.Namespace) -> None:
+    """CLI handler for Grossman & Stiglitz (1980) Informational Equilibrium Engine."""
+    import json
+    from src.analytics.grossman_stiglitz_equilibrium import (
+        evaluate_grossman_stiglitz_profile,
+        calculate_grossman_stiglitz_equilibrium,
+        verify_grossman_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    cost = getattr(args, "cost", None)
+    if cost is None:
+        cost = 0.0020
+    else:
+        cost = float(cost)
+
+    risk_aversion = getattr(args, "risk_aversion", None)
+    if risk_aversion is None:
+        risk_aversion = 2.50
+    else:
+        risk_aversion = float(risk_aversion)
+
+    fund_var = getattr(args, "fundamental_var", None)
+    if fund_var is not None:
+        fund_var = float(fund_var)
+
+    noise_var = getattr(args, "noise_var", None)
+    if noise_var is not None:
+        noise_var = float(noise_var)
+
+    lam_override = getattr(args, "informed_fraction", None)
+    if lam_override is not None:
+        lam_override = float(lam_override)
+
+    try:
+        if fund_var is not None and noise_var is not None:
+            receipt = calculate_grossman_stiglitz_equilibrium(
+                ticker=ticker,
+                latest_price=100.0,
+                fundamental_variance=fund_var,
+                signal_noise_variance=0.30 * fund_var,
+                noise_trader_variance=noise_var,
+                risk_aversion=risk_aversion,
+                information_cost=cost,
+                observed_lambda_override=lam_override,
+            )
+        else:
+            receipt = evaluate_grossman_stiglitz_profile(
+                ticker=ticker,
+                risk_aversion=risk_aversion,
+                information_cost=cost,
+            )
+    except Exception as ex:
+        print(f"\nError: Grossman-Stiglitz evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    eff_str = "YES (COMPETITIVE SATURATION)" if receipt.is_efficient_saturated else "NO"
+    opp_str = "YES (INFORMATIONAL RENT OPPORTUNITY)" if receipt.is_noisy_opportunity else "NO"
+    herd_str = "YES (UNINFORMED HERD DOMINATED)" if receipt.is_uninformed_herd else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Grossman & Stiglitz (1980) Informational Equilibrium Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Price (P_t):             ${receipt.latest_price:.2f}")
+    print("-" * 80)
+    print("  Microstructure & Information Parameters:")
+    print(f"    Fundamental Variance (sigma_u^2):   {receipt.fundamental_variance:>10.6f}")
+    print(f"    Signal Noise Var (sigma_eps^2):    {receipt.signal_noise_variance:>10.6f}")
+    print(f"    Noise Trader Var (sigma_x^2):      {receipt.noise_trader_variance:>10.6f}")
+    print(f"    Noise-to-Signal Ratio:             {receipt.noise_to_signal_ratio:>10.4f}")
+    print(f"    Investor CARA Risk Aversion:       {receipt.risk_aversion:>10.2f}")
+    print(f"    Info Acquisition Cost (c):         {receipt.information_cost * 10000.0:>10.1f} bps ({receipt.information_cost:.4%})")
+    print("-" * 80)
+    print("  Grossman-Stiglitz Equilibrium Inferences:")
+    print(f"    Equilibrium Informed Fraction:     {receipt.equilibrium_informed_fraction:>10.2%} (Lambda*)")
+    print(f"    Price Informativeness Index:       {receipt.price_informativeness:>10.2%} (I_GS)")
+    print(f"    Uninformed Posterior Var (Var_P):  {receipt.uninformed_posterior_variance:>10.6f}")
+    print(f"    Informed Posterior Var (Var_th):   {receipt.informed_posterior_variance:>10.6f}")
+    print(f"    Gross Informational Value:         {receipt.gross_informational_value * 10000.0:>10.1f} bps/session")
+    print(f"    Net Informational Alpha:           {receipt.net_informational_alpha * 10000.0:>+10.1f} bps/session")
+    print("-" * 80)
+    print("  Informational Regime & Alpha Projections:")
+    print(f"    Informational Regime:              {receipt.informational_regime}")
+    print(f"    Informationally Efficient:         {eff_str}")
+    print(f"    Noisy Equilibrium Opportunity:     {opp_str}")
+    print(f"    Uninformed Herd Dominated:         {herd_str}")
+    print(f"    Expected Annual Alpha Boost:       {receipt.expected_alpha_boost_bps:>+10.1f} bps / year")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_grossman_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -10058,6 +10161,53 @@ def main() -> None:
         help="Output Campbell Distress receipt as JSON",
     )
 
+    gs_parser = subparsers.add_parser(
+        "grossman-stiglitz",
+        aliases=["gs-equilibrium", "informational-efficiency", "info-rent", "grossman"],
+        help="Run Grossman & Stiglitz (1980) Informational Equilibrium & Rent Engine",
+    )
+    gs_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target stock ticker symbol (e.g., AAPL)",
+    )
+    gs_parser.add_argument(
+        "--cost",
+        type=float,
+        default=0.0020,
+        help="Information acquisition / analysis cost c in return terms (default: 0.0020 = 20 bps)",
+    )
+    gs_parser.add_argument(
+        "--risk-aversion",
+        type=float,
+        default=2.50,
+        help="Investor CARA absolute risk aversion gamma (default: 2.50)",
+    )
+    gs_parser.add_argument(
+        "--fundamental-var",
+        type=float,
+        default=None,
+        help="Fundamental payoff variance sigma_u^2 (optional)",
+    )
+    gs_parser.add_argument(
+        "--noise-var",
+        type=float,
+        default=None,
+        help="Noise trader / supply shock variance sigma_x^2 (optional)",
+    )
+    gs_parser.add_argument(
+        "--informed-fraction",
+        type=float,
+        default=None,
+        help="Observed or hypothetical informed fraction lambda in [0.01, 0.99] (optional)",
+    )
+    gs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Grossman-Stiglitz receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -10276,6 +10426,8 @@ def main() -> None:
         search_bargaining_command(args)
     elif args.command in ("chs-distress", "campbell-hilscher-szilagyi", "distress-puzzle", "failure-probability", "chs"):
         chs_distress_command(args)
+    elif args.command in ("grossman-stiglitz", "gs-equilibrium", "informational-efficiency", "info-rent", "grossman"):
+        grossman_stiglitz_command(args)
 
 
 if __name__ == "__main__":

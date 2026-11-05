@@ -5206,6 +5206,79 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Campbell Distress profile.")
 
+                st.divider()
+                st.markdown("#### ⚖️ Grossman-Stiglitz (1980) Informational Equilibrium & Rent Engine")
+                st.caption(
+                    "Evaluates the Grossman-Stiglitz (1980) paradox, equilibrium informed trader fraction ($\\lambda^*$), "
+                    "price informativeness index ($\\mathcal{I}_{\\text{GS}}$), and net informational alpha available to quantitative intelligence."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.grossman_stiglitz_equilibrium import (
+                            evaluate_grossman_stiglitz_profile,
+                            verify_grossman_audit_digest,
+                        )
+
+                        with st.expander("⚙️ Customize Grossman-Stiglitz Parameters (Optional)", expanded=False):
+                            gs_c1, gs_c2 = st.columns(2)
+                            gs_cost_bps = gs_c1.slider("Information Analysis Cost c (bps)", min_value=1.0, max_value=100.0, value=20.0, step=1.0, key="gs_cost_bps")
+                            gs_gamma = gs_c2.slider("Investor CARA Risk Aversion (gamma)", min_value=0.5, max_value=10.0, value=2.5, step=0.25, key="gs_gamma")
+
+                        gs_rec = evaluate_grossman_stiglitz_profile(
+                            ticker=selected_ticker,
+                            risk_aversion=float(gs_gamma),
+                            information_cost=float(gs_cost_bps / 10000.0),
+                        )
+
+                        gs1, gs2, gs3, gs4 = st.columns(4)
+                        gs_badge = (
+                            "🟢 SATURATED EFFICIENCY"
+                            if gs_rec.is_efficient_saturated
+                            else (
+                                "⚡ NOISY OPPORTUNITY"
+                                if gs_rec.is_noisy_opportunity
+                                else (
+                                    "👥 UNINFORMED HERD"
+                                    if gs_rec.is_uninformed_herd
+                                    else f"{gs_rec.informational_regime}"
+                                )
+                            )
+                        )
+
+                        gs1.metric(
+                            "Price Informativeness (I_GS)",
+                            f"{gs_rec.price_informativeness:.1%}",
+                            delta=gs_badge,
+                            delta_color="normal" if gs_rec.is_efficient_saturated else ("off" if gs_rec.is_noisy_opportunity else "inverse"),
+                            help="Grossman-Stiglitz equilibrium price informativeness index measuring the fraction of private signal precision revealed in market prices",
+                        )
+                        gs2.metric(
+                            "Informed Fraction (Lambda*)",
+                            f"{gs_rec.equilibrium_informed_fraction:.1%}",
+                            delta="Competitive Equilibrium",
+                            help="Endogenous equilibrium fraction of active informed market participants balancing analytical discovery costs against gross informational value",
+                        )
+                        gs3.metric(
+                            "Net Informational Alpha",
+                            f"{gs_rec.net_informational_alpha * 10000.0:+.1f} bps/d",
+                            delta=f"Cost: {gs_rec.information_cost * 10000.0:.1f} bps",
+                            delta_color="normal" if gs_rec.net_informational_alpha >= 0 else "inverse",
+                            help="Expected daily informational rent per session after deducting analytical cost c",
+                        )
+                        gs4.metric(
+                            "Expected Annual Boost",
+                            f"{gs_rec.expected_alpha_boost_bps:+.1f} bps",
+                            delta=f"Noise/Signal: {gs_rec.noise_to_signal_ratio:.2f}",
+                            help="Annualized portfolio alpha boost from disciplined quantitative research in partially noisy market equilibrium",
+                        )
+
+                        st.caption(f"🧾 **Informational Equilibrium Summary:** {gs_rec.summary}")
+                        st.caption(f"🛡️ **Grossman Audit Digest:** `{gs_rec.audit_digest[:16]}...` (Verified: `{verify_grossman_audit_digest(gs_rec)}`)")
+                    except Exception as gs_ex:
+                        st.info(f"Grossman-Stiglitz Informational Equilibrium evaluation deferred: {gs_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Grossman-Stiglitz profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
