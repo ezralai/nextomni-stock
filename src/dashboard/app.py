@@ -6336,6 +6336,90 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 5 price sessions to evaluate Diamond & Dybvig Run profile.")
 
+                st.markdown("---")
+                st.subheader("🌐 Robert C. Merton (1973) Intertemporal CAPM & State Variable Hedging Engine")
+                st.caption(
+                    "Evaluates the Merton (1973) continuous-time multi-beta equilibrium framework, isolating sensitivity to "
+                    "market excess return ($\\beta_M$), term structure shifts ($\\beta_r$), and market volatility innovations ($\\beta_{\\sigma}$), "
+                    "quantifying state-variable hedging premiums and ICAPM intertemporal alpha."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.merton_icapm import (
+                            evaluate_merton_icapm_profile,
+                            verify_merton_icapm_audit_digest,
+                        )
+
+                        ic_col1, ic_col2, ic_col3 = st.columns(3)
+                        with ic_col1:
+                            mkt_prem_input = st.slider(
+                                "Market Risk Premium (lambda_M %)",
+                                min_value=2.0,
+                                max_value=10.0,
+                                value=5.5,
+                                step=0.25,
+                                format="%.2f%%",
+                                help="Expected annual market equity risk premium",
+                            )
+                        with ic_col2:
+                            rate_prem_input = st.slider(
+                                "Interest Rate Risk Price (lambda_r %)",
+                                min_value=-5.0,
+                                max_value=2.0,
+                                value=-2.0,
+                                step=0.25,
+                                format="%.2f%%",
+                                help="Price of unexpected term structure / interest rate shocks",
+                            )
+                        with ic_col3:
+                            vol_prem_input = st.slider(
+                                "Volatility Risk Price (lambda_sigma %)",
+                                min_value=-8.0,
+                                max_value=0.0,
+                                value=-3.5,
+                                step=0.25,
+                                format="%.2f%%",
+                                help="Price of market volatility / uncertainty innovations",
+                            )
+
+                        ic_rec = evaluate_merton_icapm_profile(
+                            ticker=selected_ticker,
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            lambda_market=mkt_prem_input / 100.0,
+                            lambda_rate=rate_prem_input / 100.0,
+                            lambda_vol=vol_prem_input / 100.0,
+                        )
+
+                        ic_m1, ic_m2, ic_m3, ic_m4 = st.columns(4)
+                        ic_m1.metric(
+                            "Market Beta (beta_M)",
+                            f"{ic_rec.market_beta:.3f}",
+                            delta=f"Contrib: {ic_rec.market_risk_contribution_pct:+.2f}%",
+                        )
+                        ic_m2.metric(
+                            "State Hedging Premium",
+                            f"{ic_rec.total_state_hedging_premium_pct:+.2f}%",
+                            delta=f"Vol: {ic_rec.vol_hedging_contribution_pct:+.2f}% | Rate: {ic_rec.rate_hedging_contribution_pct:+.2f}%",
+                        )
+                        ic_m3.metric(
+                            "ICAPM Hurdle Rate",
+                            f"{ic_rec.icapm_hurdle_rate_pct:.2f}%",
+                            delta=f"Rf: {ic_rec.risk_free_rate_pct:.2f}%",
+                        )
+                        ic_m4.metric(
+                            "ICAPM Alpha",
+                            f"{ic_rec.icapm_alpha_pct:+.2f}%",
+                            delta=f"Regime: {ic_rec.regime}",
+                            delta_color="normal" if ic_rec.icapm_alpha_pct >= 0 else "inverse",
+                        )
+
+                        st.caption(f"🧾 **Merton ICAPM Summary:** {ic_rec.summary}")
+                        st.caption(f"🛡️ **Merton ICAPM Audit Digest:** `{ic_rec.audit_digest[:16]}...` (Verified: `{verify_merton_icapm_audit_digest(ic_rec)}`)")
+                    except Exception as ic_ex:
+                        st.info(f"Merton ICAPM evaluation deferred: {ic_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Merton ICAPM profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

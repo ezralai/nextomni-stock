@@ -7787,6 +7787,98 @@ def diamond_dybvig_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def merton_icapm_command(args: argparse.Namespace) -> None:
+    """CLI handler for Robert C. Merton (1973) Intertemporal CAPM & State Variable Hedging Engine."""
+    import json
+    from src.analytics.merton_icapm import (
+        evaluate_merton_icapm_profile,
+        verify_merton_icapm_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    mkt_prem = getattr(args, "market_premium", None)
+    if mkt_prem is not None:
+        mkt_prem = float(mkt_prem)
+
+    rate_prem = getattr(args, "rate_premium", None)
+    if rate_prem is not None:
+        rate_prem = float(rate_prem)
+
+    vol_prem = getattr(args, "vol_premium", None)
+    if vol_prem is not None:
+        vol_prem = float(vol_prem)
+
+    rf_val = getattr(args, "rf", None)
+    if rf_val is not None:
+        rf_val = float(rf_val)
+
+    try:
+        kwargs = {"ticker": ticker}
+        if mkt_prem is not None:
+            kwargs["lambda_market"] = mkt_prem
+        if rate_prem is not None:
+            kwargs["lambda_rate"] = rate_prem
+        if vol_prem is not None:
+            kwargs["lambda_vol"] = vol_prem
+        if rf_val is not None:
+            kwargs["risk_free_rate"] = rf_val
+
+        receipt = evaluate_merton_icapm_profile(**kwargs)
+    except Exception as ex:
+        print(f"\nError: Merton ICAPM evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    vol_str = "YES (VOLATILITY HEDGE DEFENSE)" if receipt.is_volatility_hedge_defense else "NO"
+    dur_str = "YES (DURATION / INTEREST RATE STRESS)" if receipt.is_duration_stress else "NO"
+    exp_str = "YES (AGGRESSIVE OPPORTUNITY EXPANSION)" if receipt.is_aggressive_expansion else "NO"
+    bal_str = "YES (STEADY STATE BALANCED)" if receipt.is_steady_state else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Merton (1973) Intertemporal CAPM & State Variable Hedging")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Latest Market Price:            ${receipt.latest_price:.2f}")
+    print(f"  Historical Realized Return:     {receipt.annualized_asset_return:>+10.2f}% / year")
+    print(f"  Risk-Free Rate (R_f):           {receipt.risk_free_rate_pct:>10.2f}% / year")
+    print("-" * 80)
+    print("  Intertemporal Multi-Beta Factor Exposures:")
+    print(f"    Market Beta (beta_M):              {receipt.market_beta:>10.4f} (Risk Price: {receipt.market_premium_pct:>+.2f}%)")
+    print(f"    Term Structure Beta (beta_r):      {receipt.interest_rate_beta:>10.4f} (Risk Price: {receipt.interest_rate_premium_pct:>+.2f}%)")
+    print(f"    Volatility Hedge Beta (beta_vol):  {receipt.volatility_beta:>10.4f} (Risk Price: {receipt.volatility_premium_pct:>+.2f}%)")
+    print(f"    Multi-Factor Regression R^2:       {receipt.r_squared:>10.2%}")
+    print("-" * 80)
+    print("  Intertemporal Hedging & Hurdle Decomposition:")
+    print(f"    Market Risk Contribution:          {receipt.market_risk_contribution_pct:>+10.2f}% / year")
+    print(f"    Interest Rate Hedging Premium:     {receipt.rate_hedging_contribution_pct:>+10.2f}% / year")
+    print(f"    Volatility Hedging Premium:        {receipt.vol_hedging_contribution_pct:>+10.2f}% / year")
+    print(f"    Total State Hedging Premium:       {receipt.total_state_hedging_premium_pct:>+10.2f}% / year")
+    print(f"    ICAPM Expected Excess Return:      {receipt.icapm_expected_excess_return_pct:>+10.2f}% / year")
+    print(f"    ICAPM Required Hurdle Rate:        {receipt.icapm_hurdle_rate_pct:>10.2f}% / year")
+    print(f"    ICAPM Intertemporal Alpha:         {receipt.icapm_alpha_pct:>+10.2f}% / year")
+    print("-" * 80)
+    print("  Hedging Properties & Regime Classification:")
+    print(f"    Volatility Hedge Asset:            {receipt.is_volatility_hedge}")
+    print(f"    Interest Rate Hedge Asset:         {receipt.is_interest_rate_hedge}")
+    print(f"    Active ICAPM Regime:               {receipt.regime}")
+    print(f"    Volatility Hedge Defense:          {vol_str}")
+    print(f"    Duration Stress:                   {dur_str}")
+    print(f"    Aggressive Expansion:              {exp_str}")
+    print(f"    Steady State Balanced:             {bal_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_merton_icapm_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -11948,6 +12040,48 @@ def main() -> None:
         help="Output Diamond & Dybvig Run receipt as JSON",
     )
 
+    # Subparser: merton-icapm (Robert C. Merton 1973 Intertemporal CAPM Engine)
+    merton_parser = subparsers.add_parser(
+        "merton-icapm",
+        aliases=["icapm", "intertemporal-capm", "state-hedging", "merton-1973"],
+        help="Robert C. Merton (1973) Intertemporal Capital Asset Pricing Model & State Hedging Engine",
+    )
+    merton_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    merton_parser.add_argument(
+        "--market-premium",
+        type=float,
+        default=None,
+        help="Expected annual market risk premium lambda_M (e.g. 0.055)",
+    )
+    merton_parser.add_argument(
+        "--rate-premium",
+        type=float,
+        default=None,
+        help="Price of interest rate shock risk lambda_r (e.g. -0.020)",
+    )
+    merton_parser.add_argument(
+        "--vol-premium",
+        type=float,
+        default=None,
+        help="Price of market volatility innovation risk lambda_sigma (e.g. -0.035)",
+    )
+    merton_parser.add_argument(
+        "--rf",
+        type=float,
+        default=None,
+        help="Annualized benchmark risk-free rate (e.g. 0.0425)",
+    )
+    merton_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Merton ICAPM receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -12196,6 +12330,8 @@ def main() -> None:
         leverage_cycle_command(args)
     elif args.command in ("diamond-dybvig", "bank-run", "liquidity-transformation", "sequential-service", "redemption-panic"):
         diamond_dybvig_command(args)
+    elif args.command in ("merton-icapm", "icapm", "intertemporal-capm", "state-hedging", "merton-1973"):
+        merton_icapm_command(args)
 
 
 if __name__ == "__main__":
