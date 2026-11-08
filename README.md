@@ -46,7 +46,7 @@ A portfolio-quality, production-ready quantitative financial intelligence system
 
 ---
 
-## Key Methodological Principles
+## Key Methodological Principle
 
 ### 1. Dual-Exchange Calendar Science
 - Powered by `exchange_calendars` to handle exchange-specific holiday schedules, timezones, and trading hours.
