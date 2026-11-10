@@ -8640,6 +8640,84 @@ def breeden_litzenberger_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def aghion_bolton_command(args: argparse.Namespace) -> None:
+    """CLI handler for Aghion & Bolton (1992) / Hart & Moore (1994) Control Rights Engine."""
+    import json
+    from src.analytics.aghion_bolton_control_rights import (
+        calculate_aghion_bolton_equilibrium,
+        evaluate_aghion_bolton_profile,
+        persist_aghion_bolton_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    cash_flow = getattr(args, "cash_flow", None)
+    debt = getattr(args, "debt", None)
+    liquidation = getattr(args, "liquidation", None)
+    private_benefit = getattr(args, "private_benefit", None)
+    creditor_power = getattr(args, "creditor_power", None)
+
+    pb_val = float(private_benefit) if private_benefit is not None else 15.0
+    cp_val = float(creditor_power) if creditor_power is not None else 0.50
+
+    try:
+        if cash_flow is not None and debt is not None:
+            liq_val = float(liquidation) if liquidation is not None else 50.0
+            receipt = calculate_aghion_bolton_equilibrium(
+                cash_flow=float(cash_flow),
+                debt_face_value=float(debt),
+                liquidation_value=liq_val,
+                private_benefit=pb_val,
+                creditor_bargaining_power=cp_val,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_aghion_bolton_profile(
+                prices=[],
+                ticker=ticker,
+                creditor_power=cp_val,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_aghion_bolton_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Aghion-Bolton evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Aghion & Bolton (1992) / Hart & Moore (1994) Control Rights Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Realized Cash Flow (y):         ${receipt.realized_cash_flow:.2f}")
+    print(f"  Contractual Debt Face Value (D):${receipt.debt_face_value:.2f}")
+    print(f"  Liquidation Threat Value (L):   ${receipt.liquidation_value:.2f} | Private Benefit (B): ${receipt.private_benefit:.2f}")
+    print(f"  Creditor Bargaining Power (a):  {receipt.creditor_bargaining_power * 100:.1f}%")
+    print("-" * 80)
+    print("  State-Contingent Control & Debt Renegotiation:")
+    print(f"    Residual Control Holder:      {receipt.contractual_control_holder}")
+    print(f"    Strategic Default Triggered:  {'YES (HARTS-MOORE RENEGOTIATION)' if receipt.strategic_default_triggered else 'NO'}")
+    print(f"    Efficient Liquidation:        {'YES (FORECLOSURE)' if receipt.liquidation_triggered else 'NO (CONTINUATION)'}")
+    print(f"    Renegotiated Debt Service D*: ${receipt.renegotiated_debt_service:.2f} (Haircut: {receipt.debt_haircut_pct * 100:.2f}%)")
+    print("-" * 80)
+    print("  Surplus Allocation:")
+    print(f"    Creditor Recovery Payoff:     ${receipt.creditor_payoff:.2f}")
+    print(f"    Entrepreneur / Equity Payoff: ${receipt.entrepreneur_payoff:.2f}")
+    print(f"    Total Realized Surplus:       ${receipt.total_surplus_realized:.2f} (First-Best: ${receipt.first_best_surplus:.2f})")
+    print("-" * 80)
+    print(f"  Governance Regime:              {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -13239,6 +13317,54 @@ def main() -> None:
         help="Output Breeden-Litzenberger state-price receipt as JSON",
     )
 
+    # Subparser: aghion-bolton (Aghion & Bolton 1992 / Hart & Moore 1994 Control Rights & Strategic Default Engine)
+    ab_parser = subparsers.add_parser(
+        "aghion-bolton",
+        aliases=["control-rights", "incomplete-contracts", "hart-moore", "strategic-default", "ab-1992"],
+        help="Aghion & Bolton (1992) / Hart & Moore (1994) Control Rights & Strategic Default Engine",
+    )
+    ab_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. GOV, AAPL, JPM)",
+    )
+    ab_parser.add_argument(
+        "--cash-flow",
+        type=float,
+        default=None,
+        help="Realized verifiable cash flow y (e.g. 100.0)",
+    )
+    ab_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Contractual debt face value D (e.g. 90.0)",
+    )
+    ab_parser.add_argument(
+        "--liquidation",
+        type=float,
+        default=None,
+        help="Asset liquidation threat value L (default: 50.0)",
+    )
+    ab_parser.add_argument(
+        "--private-benefit",
+        type=float,
+        default=None,
+        help="Entrepreneur non-monetary private benefit B (default: 15.0)",
+    )
+    ab_parser.add_argument(
+        "--creditor-power",
+        type=float,
+        default=None,
+        help="Creditor Nash bargaining power alpha in [0, 1] (default: 0.50)",
+    )
+    ab_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Aghion-Bolton control rights receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -13507,6 +13633,8 @@ def main() -> None:
         myers_majluf_command(args)
     elif args.command in ("breeden-litzenberger", "rnd-density", "arrow-debreu", "state-prices", "bl-1978"):
         breeden_litzenberger_command(args)
+    elif args.command in ("aghion-bolton", "control-rights", "incomplete-contracts", "hart-moore", "strategic-default", "ab-1992"):
+        aghion_bolton_command(args)
 
 
 if __name__ == "__main__":

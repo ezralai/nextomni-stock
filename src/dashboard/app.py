@@ -7174,6 +7174,94 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Breeden-Litzenberger profile.")
 
+                st.markdown("---")
+                st.subheader("⚖️ Aghion & Bolton (1992) / Hart & Moore (1994) Control Rights & Strategic Default")
+                st.markdown(
+                    "Incomplete contracts analysis of state-contingent control shifts and inalienable human capital, "
+                    "modeling strategic debt renegotiation ($D^* = \\min(D, \\alpha y + (1-\\alpha) L)$), creditor liquidation vs. continuation, "
+                    "and residual control allocation between equity and debt."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.aghion_bolton_control_rights import (
+                            evaluate_aghion_bolton_profile,
+                            verify_hmac_signature,
+                        )
+
+                        ab_col1, ab_col2 = st.columns(2)
+                        with ab_col1:
+                            ab_power_input = st.slider(
+                                "Creditor Bargaining Power (α)",
+                                min_value=0.00,
+                                max_value=1.00,
+                                value=0.50,
+                                step=0.05,
+                                format="%.2f",
+                                help="Nash bargaining share captured by creditors in debt renegotiation",
+                            )
+                        with ab_col2:
+                            ab_liq_input = st.slider(
+                                "Collateral Liquidation Ratio (L / V)",
+                                min_value=0.10,
+                                max_value=0.90,
+                                value=0.40,
+                                step=0.05,
+                                format="%.2f",
+                                help="Tangible collateral recovery floor available to creditors upon liquidation",
+                            )
+
+                        ab_rec = evaluate_aghion_bolton_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            debt_ratio=0.45,
+                            liquidation_ratio=ab_liq_input,
+                            creditor_power=ab_power_input,
+                        )
+
+                        ab_m1, ab_m2, ab_m3, ab_m4 = st.columns(4)
+                        with ab_m1:
+                            st.metric(
+                                "Control Holder",
+                                ab_rec.contractual_control_holder.replace("_", " "),
+                                delta=f"Cash Flow: ${ab_rec.realized_cash_flow:.2f}",
+                                help="Residual control right owner given realized cash flow state",
+                            )
+                        with ab_m2:
+                            st.metric(
+                                "Creditor Recovery D*",
+                                f"${ab_rec.renegotiated_debt_service:.2f}",
+                                delta=f"-{ab_rec.debt_haircut_pct * 100:.1f}% haircut",
+                                delta_color="normal" if ab_rec.debt_haircut_pct == 0 else "inverse",
+                                help="Credible debt service after Hart-Moore renegotiation",
+                            )
+                        with ab_m3:
+                            st.metric(
+                                "Strategic Default",
+                                "YES (RENEGOTIATED)" if ab_rec.strategic_default_triggered else "NO (ENFORCED)",
+                                delta=f"L: ${ab_rec.liquidation_value:.2f}",
+                                delta_color="normal" if not ab_rec.strategic_default_triggered else "inverse",
+                                help="Whether inalienable human capital induces strategic debt reduction",
+                            )
+                        with ab_m4:
+                            st.metric(
+                                "Entrepreneur Payoff",
+                                f"${ab_rec.entrepreneur_payoff:.2f}",
+                                delta=f"Surplus: ${ab_rec.total_surplus_realized:.2f}",
+                                help="Equity residual cash flow plus non-monetary control benefit B",
+                            )
+
+                        sig_payload = (
+                            f"{ab_rec.ticker}:{ab_rec.realized_cash_flow:.4f}:{ab_rec.debt_face_value:.4f}:"
+                            f"{ab_rec.liquidation_value:.4f}:{ab_rec.private_benefit:.4f}:{ab_rec.creditor_bargaining_power:.4f}:"
+                            f"{ab_rec.renegotiated_debt_service:.4f}:{ab_rec.creditor_payoff:.4f}:"
+                            f"{ab_rec.entrepreneur_payoff:.4f}:{ab_rec.regime}:{ab_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Aghion-Bolton HMAC Signature:** `{ab_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, ab_rec.hmac_signature)}`)")
+                    except Exception as ab_ex:
+                        st.info(f"Aghion-Bolton control rights evaluation deferred: {ab_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Aghion-Bolton profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
