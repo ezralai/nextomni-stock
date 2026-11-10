@@ -6589,6 +6589,91 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate DSSW Noise Trader Risk profile.")
 
+                st.markdown("---")
+                st.subheader("📉 Fischer Black (1976) & Campbell-Hentschel (1992) Leverage Effect & Volatility Asymmetry Engine")
+                st.caption(
+                    "Evaluates the Black (1976) financial leverage hypothesis and Campbell & Hentschel (1992) volatility feedback framework, "
+                    "analyzing how debt-to-equity mechanics ($D/P$) amplify equity volatility ($\\sigma_E(P) = \\sigma_A(1 + D/P)$), induce negative price sensitivity, "
+                    "drive the Volatility Asymmetry Ratio (VAR: $\\sigma^- / \\sigma^+$), and generate volatility feedback markdown discounts."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.black_leverage_effect import (
+                            evaluate_black_leverage_profile,
+                            verify_black_leverage_audit_digest,
+                        )
+
+                        blev_col1, blev_col2, blev_col3 = st.columns(3)
+                        with blev_col1:
+                            blev_debt_input = st.slider(
+                                "Debt per Share ($ D)",
+                                min_value=0.0,
+                                max_value=float(max(10.0, df_eda["close"].iloc[-1] * 1.5)),
+                                value=float(min(50.0, df_eda["close"].iloc[-1] * 0.35)),
+                                step=1.0,
+                                format="$%.1f",
+                                help="Fixed nominal debt obligations per share",
+                            )
+                        with blev_col2:
+                            blev_vol_input = st.slider(
+                                "Asset Volatility (sigma_A %)",
+                                min_value=5.0,
+                                max_value=50.0,
+                                value=18.0,
+                                step=0.5,
+                                format="%.1f%%",
+                                help="Unlevered enterprise asset volatility",
+                            )
+                        with blev_col3:
+                            blev_feedback_input = st.slider(
+                                "Feedback Elasticity (theta)",
+                                min_value=0.05,
+                                max_value=0.60,
+                                value=0.25,
+                                step=0.05,
+                                format="%.2f",
+                                help="Campbell-Hentschel volatility feedback discount elasticity",
+                            )
+
+                        blev_rec = evaluate_black_leverage_profile(
+                            ticker=selected_ticker,
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            debt_per_share_override=blev_debt_input,
+                            asset_volatility_override=blev_vol_input / 100.0,
+                            feedback_elasticity=blev_feedback_input,
+                        )
+
+                        blev_m1, blev_m2, blev_m3, blev_m4 = st.columns(4)
+                        blev_m1.metric(
+                            "Equity Volatility \\sigma_E(P)",
+                            f"{blev_rec.equity_volatility_pct:.1f}%",
+                            delta=f"Multiplier: {blev_rec.leverage_volatility_multiplier:.2f}x (Asset: {blev_rec.asset_volatility_pct:.1f}%)",
+                            delta_color="inverse" if blev_rec.leverage_volatility_multiplier > 1.5 else "normal",
+                        )
+                        blev_m2.metric(
+                            "Debt-to-Equity (D/E)",
+                            f"{blev_rec.debt_to_equity_ratio:.2f}x",
+                            delta=f"Debt: ${blev_rec.debt_per_share:.2f}",
+                        )
+                        blev_m3.metric(
+                            "Volatility Asymmetry (VAR)",
+                            f"{blev_rec.volatility_asymmetry_ratio:.2f}x",
+                            delta=f"Down: {blev_rec.realized_downside_volatility_pct:.1f}% | Up: {blev_rec.realized_upside_volatility_pct:.1f}%",
+                        )
+                        blev_m4.metric(
+                            "Feedback Adjusted Price",
+                            f"${blev_rec.feedback_adjusted_price:.2f}",
+                            delta=f"-${blev_rec.volatility_feedback_discount_dollar:.2f} (-{blev_rec.volatility_feedback_discount_pct:.1f}%)",
+                            delta_color="inverse",
+                        )
+
+                        st.caption(f"🧾 **Black Leverage Summary:** {blev_rec.summary}")
+                        st.caption(f"🛡️ **Black Leverage Audit Digest:** `{blev_rec.audit_digest[:16]}...` (Verified: `{verify_black_leverage_audit_digest(blev_rec)}`)")
+                    except Exception as blev_ex:
+                        st.info(f"Black Leverage Effect evaluation deferred: {blev_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Black Leverage Effect profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

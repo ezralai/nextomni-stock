@@ -8074,6 +8074,88 @@ def dssw_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def black_leverage_command(args: argparse.Namespace) -> None:
+    """CLI handler for Fischer Black (1976) & Campbell-Hentschel (1992) Leverage Effect Engine."""
+    import json
+    from src.analytics.black_leverage_effect import (
+        evaluate_black_leverage_profile,
+        verify_black_leverage_audit_digest,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    debt_val = getattr(args, "debt", None)
+    if debt_val is not None:
+        debt_val = float(debt_val)
+
+    vol_val = getattr(args, "asset_vol", None)
+    if vol_val is not None:
+        vol_val = float(vol_val)
+
+    feedback_val = getattr(args, "feedback", None)
+    if feedback_val is not None:
+        feedback_val = float(feedback_val)
+
+    try:
+        kwargs = {"ticker": ticker}
+        if debt_val is not None:
+            kwargs["debt_per_share_override"] = debt_val
+        if vol_val is not None:
+            kwargs["asset_volatility_override"] = vol_val
+        if feedback_val is not None:
+            kwargs["feedback_elasticity"] = feedback_val
+
+        receipt = evaluate_black_leverage_profile(**kwargs)
+    except Exception as ex:
+        print(f"\nError: Black Leverage Effect evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    acute_str = "YES (ACUTE LEVERAGE AMPLIFICATION)" if receipt.is_acute_leverage_amplification else "NO"
+    feed_str = "YES (VOLATILITY FEEDBACK CASCADE)" if receipt.is_volatility_feedback_cascade else "NO"
+    unlev_str = "YES (UNLEVERED INSULATION)" if receipt.is_unlevered_insulation else "NO"
+    mild_str = "YES (MILD ASYMMETRY STABILITY)" if receipt.is_mild_asymmetry_stability else "NO"
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Black (1976) & Campbell-Hentschel (1992) Leverage Effect")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Current Stock Price:            ${receipt.market_price:.2f}")
+    print(f"  Debt per Share:                 ${receipt.debt_per_share:.2f}")
+    print(f"  Debt-to-Equity Ratio (D/E):      {receipt.debt_to_equity_ratio:>10.2f}x")
+    print("-" * 80)
+    print("  Capital Structure & Volatility Amplification:")
+    print(f"    Intrinsic Asset Volatility:        {receipt.asset_volatility_pct:>10.2f}% / year")
+    print(f"    Equity Volatility \\sigma_E(P):      {receipt.equity_volatility_pct:>10.2f}% / year")
+    print(f"    Leverage Volatility Multiplier:    {receipt.leverage_volatility_multiplier:>10.2f}x (1 + D/P)")
+    print(f"    Price Sensitivity (d\\sigma_E/dP):   {receipt.volatility_price_sensitivity:>10.6f}")
+    print("-" * 80)
+    print("  Empirical Asymmetry & Volatility Feedback:")
+    print(f"    Upside Return Volatility:          {receipt.realized_upside_volatility_pct:>10.2f}% / year")
+    print(f"    Downside Return Volatility:        {receipt.realized_downside_volatility_pct:>10.2f}% / year")
+    print(f"    Volatility Asymmetry Ratio (VAR):  {receipt.volatility_asymmetry_ratio:>10.2f}x")
+    print(f"    Volatility Feedback Markdown:     -${receipt.volatility_feedback_discount_dollar:>9.2f} (-{receipt.volatility_feedback_discount_pct:.1f}%)")
+    print(f"    Feedback Adjusted Price:          ${receipt.feedback_adjusted_price:>9.2f}")
+    print("-" * 80)
+    print("  Leverage & Asymmetry Regime:")
+    print(f"    Active Regime:                     {receipt.regime}")
+    print(f"    Acute Leverage Amplification:      {acute_str}")
+    print(f"    Volatility Feedback Cascade:       {feed_str}")
+    print(f"    Unlevered Insulation:              {unlev_str}")
+    print(f"    Mild Asymmetry Stability:          {mild_str}")
+    print("-" * 80)
+    print(f"  Audit Digest (HMAC):            {receipt.audit_digest[:16]}... (Verified: {verify_black_leverage_audit_digest(receipt)})")
+    print(f"  Summary: {receipt.summary}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -12373,6 +12455,42 @@ def main() -> None:
         help="Output DSSW Noise Trader Risk receipt as JSON",
     )
 
+    # Subparser: black-leverage (Fischer Black 1976 Leverage Effect & Volatility Asymmetry Engine)
+    black_parser = subparsers.add_parser(
+        "black-leverage",
+        aliases=["leverage-effect", "asymmetric-volatility", "volatility-feedback", "black-1976"],
+        help="Fischer Black (1976) & Campbell-Hentschel (1992) Leverage Effect & Volatility Asymmetry Engine",
+    )
+    black_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, NVDA, MSFT)",
+    )
+    black_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Financial debt per share D in dollars (optional)",
+    )
+    black_parser.add_argument(
+        "--asset-vol",
+        type=float,
+        default=None,
+        help="Unlevered enterprise asset volatility sigma_A (optional, e.g. 0.18)",
+    )
+    black_parser.add_argument(
+        "--feedback",
+        type=float,
+        default=None,
+        help="Volatility feedback elasticity theta (optional, e.g. 0.25)",
+    )
+    black_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Black Leverage Effect receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -12627,6 +12745,8 @@ def main() -> None:
         ross_apt_command(args)
     elif args.command in ("dssw-noise", "noise-trader-risk", "limits-of-arbitrage", "resale-price-risk", "dssw-1990"):
         dssw_command(args)
+    elif args.command in ("black-leverage", "leverage-effect", "asymmetric-volatility", "volatility-feedback", "black-1976"):
+        black_leverage_command(args)
 
 
 if __name__ == "__main__":
