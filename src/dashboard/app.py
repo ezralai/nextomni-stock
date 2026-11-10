@@ -7702,6 +7702,94 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Myers (1977) Debt Overhang.")
 
+                st.markdown("---")
+                st.subheader("🏦 Holmström & Tirole (1997) Pledgeable Income & Credit Rationing")
+                st.markdown(
+                    "Moral hazard & financial intermediation equilibrium via **Holmström & Tirole (1997, *QJE*)**, "
+                    "computing incentive-compatible **pledgeable income** ($\\mathcal{P} = p_H(R - B/\\Delta p)$), "
+                    "minimum balance-sheet net worth requirements ($\\bar{A}_{\\text{direct}}, \\bar{A}_{\\text{bank}}$), "
+                    "and credit crunch rationing tiers."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.holmstrom_tirole_pledgeable import (
+                            evaluate_holmstrom_tirole_profile,
+                            verify_hmac_signature,
+                        )
+
+                        ht_col1, ht_col2 = st.columns(2)
+                        with ht_col1:
+                            ht_nw_input = st.slider(
+                                "Corporate Net Worth / Collateral (A / I)",
+                                min_value=0.00,
+                                max_value=0.80,
+                                value=0.25,
+                                step=0.05,
+                                format="%.2f",
+                                help="Internal equity collateral as fraction of capital outlay",
+                            )
+                        with ht_col2:
+                            ht_priv_input = st.slider(
+                                "Unmonitored Private Benefit (B / I)",
+                                min_value=0.05,
+                                max_value=0.45,
+                                value=0.28,
+                                step=0.03,
+                                format="%.2f",
+                                help="Managerial shirking private rent reducing pledgeable income",
+                            )
+
+                        ht_rec = evaluate_holmstrom_tirole_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            net_worth_ratio=ht_nw_input,
+                            private_benefit_pct=ht_priv_input,
+                        )
+
+                        ht_m1, ht_m2, ht_m3, ht_m4 = st.columns(4)
+                        with ht_m1:
+                            st.metric(
+                                "Financing Access Tier",
+                                ht_rec.financing_tier.replace("_", " "),
+                                delta="RATIONED" if ht_rec.credit_rationed else "FUNDABLE",
+                                delta_color="inverse" if ht_rec.credit_rationed else "normal",
+                                help="Direct public market vs bank monitoring vs credit crunch rationing",
+                            )
+                        with ht_m2:
+                            st.metric(
+                                "Pledgeable Income Share",
+                                f"{ht_rec.pledgeable_share_of_payoff * 100:.1f}%",
+                                delta=f"P_dir: ${ht_rec.direct_pledgeable_income:.1f}",
+                                help="Maximum fraction of expected project output credibly pledgeable to outside investors",
+                            )
+                        with ht_m3:
+                            st.metric(
+                                "Min Net Worth Floor A*",
+                                f"${ht_rec.min_net_worth_bank:.2f}",
+                                delta=f"Direct Floor: ${ht_rec.min_net_worth_direct:.2f}",
+                                help="Minimum collateral required to unlock bank or direct market credit",
+                            )
+                        with ht_m4:
+                            st.metric(
+                                "Credit Multiplier",
+                                f"{ht_rec.credit_multiplier:.2f}x",
+                                delta=f"Expected NPV: ${ht_rec.expected_project_npv:+.2f}",
+                                help="Holmstrom-Tirole balance sheet amplification multiplier",
+                            )
+
+                        sig_payload = (
+                            f"{ht_rec.ticker}:{ht_rec.investment_outlay:.4f}:{ht_rec.corporate_net_worth:.4f}:"
+                            f"{ht_rec.success_payoff:.4f}:{ht_rec.prob_diligence:.4f}:{ht_rec.prob_shirk:.4f}:"
+                            f"{ht_rec.private_benefit_unmonitored:.4f}:{ht_rec.direct_pledgeable_income:.4f}:"
+                            f"{ht_rec.monitored_pledgeable_income:.4f}:{ht_rec.financing_tier}:"
+                            f"{ht_rec.regime}:{ht_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Holmström-Tirole HMAC:** `{ht_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, ht_rec.hmac_signature)}`)")
+                    except Exception as ht_ex:
+                        st.info(f"Holmstrom-Tirole credit rationing evaluation deferred: {ht_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Holmstrom-Tirole profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

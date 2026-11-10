@@ -9089,6 +9089,78 @@ def myers_overhang_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def holmstrom_tirole_command(args: argparse.Namespace) -> None:
+    """CLI handler for Holmstrom & Tirole (1997) Pledgeable Income & Credit Rationing Engine."""
+    import json
+    from src.analytics.holmstrom_tirole_pledgeable import (
+        calculate_holmstrom_tirole_equilibrium,
+        evaluate_holmstrom_tirole_profile,
+        persist_holmstrom_tirole_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    outlay = getattr(args, "outlay", None)
+    net_worth = getattr(args, "net_worth", None)
+    payoff = float(getattr(args, "payoff", 160.0) if getattr(args, "payoff", None) is not None else 160.0)
+    b_priv = float(getattr(args, "private_benefit", 28.0) if getattr(args, "private_benefit", None) is not None else 28.0)
+
+    try:
+        if outlay is not None or net_worth is not None:
+            i_val = float(outlay) if outlay is not None else 100.0
+            a_val = float(net_worth) if net_worth is not None else 35.0
+            receipt = calculate_holmstrom_tirole_equilibrium(
+                investment_outlay=i_val,
+                corporate_net_worth=a_val,
+                success_payoff=payoff,
+                private_benefit_unmonitored=b_priv,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_holmstrom_tirole_profile(
+                prices=[],
+                ticker=ticker,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_holmstrom_tirole_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Holmstrom-Tirole evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Holmstrom & Tirole (1997) Pledgeable Income & Credit Rationing Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Investment Outlay (I) / Cash (A):${receipt.investment_outlay:.2f} | ${receipt.corporate_net_worth:.2f}")
+    print(f"  Success Payoff (R) / NPV:       ${receipt.success_payoff:.2f} | ${receipt.expected_project_npv:+.2f}")
+    print(f"  Private Benefit (B vs b):       ${receipt.private_benefit_unmonitored:.2f} vs ${receipt.private_benefit_monitored:.2f} (Cost c=${receipt.monitoring_cost:.2f})")
+    print("-" * 80)
+    print("  Moral Hazard & Pledgeable Income Thresholds:")
+    print(f"    Direct Pledgeable Income:     ${receipt.direct_pledgeable_income:.2f} ({receipt.pledgeable_share_of_payoff * 100:.1f}% pledgeable)")
+    print(f"    Monitored Pledgeable Income:  ${receipt.monitored_pledgeable_income:.2f}")
+    print(f"    Min Net Worth (Direct Market):${receipt.min_net_worth_direct:.2f}")
+    print(f"    Min Net Worth (Bank Monitored):${receipt.min_net_worth_bank:.2f}")
+    print("-" * 80)
+    print("  Capital Access & Credit Crunch Diagnostics:")
+    print(f"    Financing Tier:               {receipt.financing_tier}")
+    print(f"    Credit Rationed:              {'YES (FUNDING SHORTFALL: $' + f'{receipt.funding_gap:.2f})' if receipt.credit_rationed else 'NO (FUNDABLE)'}")
+    print(f"    Balance-Sheet Credit Mult:    {receipt.credit_multiplier:.2f}x")
+    print("-" * 80)
+    print(f"  Holmstrom-Tirole Regime:        {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -13994,6 +14066,48 @@ def main() -> None:
         help="Output Myers (1977) debt overhang receipt as JSON",
     )
 
+    # Subparser: holmstrom-tirole (Holmstrom & Tirole 1997 Pledgeable Income & Credit Rationing Engine)
+    ht_parser = subparsers.add_parser(
+        "holmstrom-tirole",
+        aliases=["pledgeable-income", "credit-rationing", "ht-1997", "moral-hazard"],
+        help="Holmstrom & Tirole (1997) Pledgeable Income & Credit Rationing Engine",
+    )
+    ht_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. BANK, GS, JPM)",
+    )
+    ht_parser.add_argument(
+        "--outlay",
+        type=float,
+        default=None,
+        help="Required capital outlay I (e.g. 100.0)",
+    )
+    ht_parser.add_argument(
+        "--net-worth",
+        type=float,
+        default=None,
+        help="Corporate net worth / collateral A (e.g. 20.0)",
+    )
+    ht_parser.add_argument(
+        "--payoff",
+        type=float,
+        default=160.0,
+        help="Project gross payoff R on success (default: 160.0)",
+    )
+    ht_parser.add_argument(
+        "--private-benefit",
+        type=float,
+        default=28.0,
+        help="Unmonitored shirking private benefit B (default: 28.0)",
+    )
+    ht_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Holmstrom-Tirole credit rationing receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -14274,6 +14388,8 @@ def main() -> None:
         heston_vol_command(args)
     elif args.command in ("debt-overhang", "myers-1977", "growth-option", "real-option", "overhang-loss"):
         myers_overhang_command(args)
+    elif args.command in ("holmstrom-tirole", "pledgeable-income", "credit-rationing", "ht-1997", "moral-hazard"):
+        holmstrom_tirole_command(args)
 
 
 if __name__ == "__main__":
