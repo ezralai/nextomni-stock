@@ -7439,6 +7439,95 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Hansen-Jagannathan SDF bounds.")
 
+                st.markdown("---")
+                st.subheader("🏢 Jensen & Meckling (1976) Agency Costs & Debt Asset Substitution")
+                st.markdown(
+                    "Corporate governance & capital structure agency conflict engine via **Jensen & Meckling (1976, *JFE*)**, "
+                    "quantifying deadweight outside-equity perk overconsumption as insider ownership ($\\alpha$) declines "
+                    "and equity risk-shifting (option-convexity creditor expropriation) into volatile negative-NPV gambles."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.jensen_meckling_agency import (
+                            evaluate_jensen_meckling_profile,
+                            verify_hmac_signature,
+                        )
+
+                        jm_col1, jm_col2 = st.columns(2)
+                        with jm_col1:
+                            jm_alpha_input = st.slider(
+                                "Insider Ownership Stake (α)",
+                                min_value=0.10,
+                                max_value=1.00,
+                                value=0.40,
+                                step=0.05,
+                                format="%.2f",
+                                help="Fraction of equity owned by management (1.0 = aligned owner-manager)",
+                            )
+                        with jm_col2:
+                            jm_risky_vol_input = st.slider(
+                                "Risky Gamble Volatility (σ_H)",
+                                min_value=0.25,
+                                max_value=0.95,
+                                value=0.60,
+                                step=0.05,
+                                format="%.2f",
+                                help="Asset volatility of speculative high-variance substitute project",
+                            )
+
+                        jm_rec = evaluate_jensen_meckling_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            insider_alpha=jm_alpha_input,
+                            risky_volatility=jm_risky_vol_input,
+                        )
+
+                        jm_m1, jm_m2, jm_m3, jm_m4 = st.columns(4)
+                        with jm_m1:
+                            st.metric(
+                                "Outside Equity Agency Loss",
+                                f"${jm_rec.equity_agency_loss:.2f}",
+                                delta=f"Perks: ${jm_rec.actual_perk_consumption:.2f}",
+                                delta_color="normal" if jm_rec.equity_agency_loss < 1.0 else "inverse",
+                                help="Deadweight firm value loss from diluted insider ownership alpha",
+                            )
+                        with jm_m2:
+                            st.metric(
+                                "Risk-Shifting Status",
+                                "YES (SHIFTING)" if jm_rec.risk_shifting_triggered else "NO (PRUDENT)",
+                                delta=f"Eq Gain: +${jm_rec.equity_risk_shifting_gain:.2f}",
+                                delta_color="normal" if not jm_rec.risk_shifting_triggered else "inverse",
+                                help="Whether option convexity entices equity to swap into risky negative-NPV gamble",
+                            )
+                        with jm_m3:
+                            st.metric(
+                                "Creditor Wealth Expropriated",
+                                f"${jm_rec.creditor_wealth_expropriation:.2f}",
+                                delta=f"NPV Destroyed: ${jm_rec.asset_substitution_loss:.2f}",
+                                delta_color="normal" if jm_rec.creditor_wealth_expropriation == 0 else "inverse",
+                                help="Wealth transferred from bondholders to stockholders via volatility expansion",
+                            )
+                        with jm_m4:
+                            st.metric(
+                                "Total Agency Cost",
+                                f"${jm_rec.total_agency_cost:.2f}",
+                                delta=f"{jm_rec.agency_cost_pct_of_value * 100:.1f}% of V_0",
+                                delta_color="normal" if jm_rec.agency_cost_pct_of_value < 0.05 else "inverse",
+                                help="Combined deadweight loss from outside equity and asset substitution",
+                            )
+
+                        sig_payload = (
+                            f"{jm_rec.ticker}:{jm_rec.firm_potential_value:.4f}:{jm_rec.insider_ownership_alpha:.4f}:"
+                            f"{jm_rec.debt_face_value:.4f}:{jm_rec.safe_volatility:.4f}:{jm_rec.risky_volatility:.4f}:"
+                            f"{jm_rec.equity_agency_loss:.4f}:{jm_rec.asset_substitution_loss:.4f}:"
+                            f"{jm_rec.total_agency_cost:.4f}:{jm_rec.regime}:{jm_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Jensen-Meckling HMAC Signature:** `{jm_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, jm_rec.hmac_signature)}`)")
+                    except Exception as jm_ex:
+                        st.info(f"Jensen-Meckling agency evaluation deferred: {jm_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Jensen-Meckling profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

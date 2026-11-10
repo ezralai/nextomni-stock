@@ -8857,6 +8857,85 @@ def hansen_jagannathan_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def jensen_meckling_command(args: argparse.Namespace) -> None:
+    """CLI handler for Jensen & Meckling (1976) Agency Costs & Asset Substitution Engine."""
+    import json
+    from src.analytics.jensen_meckling_agency import (
+        calculate_jensen_meckling_equilibrium,
+        evaluate_jensen_meckling_profile,
+        persist_jensen_meckling_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    firm_value = getattr(args, "firm_value", None)
+    alpha = float(getattr(args, "alpha", 0.40) if getattr(args, "alpha", None) is not None else 0.40)
+    debt = getattr(args, "debt", None)
+    safe_vol = float(getattr(args, "safe_vol", 0.20) if getattr(args, "safe_vol", None) is not None else 0.20)
+    risky_vol = float(getattr(args, "risky_vol", 0.55) if getattr(args, "risky_vol", None) is not None else 0.55)
+    npv_disc = float(getattr(args, "npv_discount", 0.06) if getattr(args, "npv_discount", None) is not None else 0.06)
+
+    try:
+        if firm_value is not None or debt is not None:
+            v0 = float(firm_value) if firm_value is not None else 100.0
+            d_val = float(debt) if debt is not None else 75.0
+            receipt = calculate_jensen_meckling_equilibrium(
+                firm_potential_value=v0,
+                insider_ownership_alpha=alpha,
+                debt_face_value=d_val,
+                safe_volatility=safe_vol,
+                risky_volatility=risky_vol,
+                risky_npv_discount_pct=npv_disc,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_jensen_meckling_profile(
+                prices=[],
+                ticker=ticker,
+                insider_alpha=alpha,
+                risky_volatility=risky_vol,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_jensen_meckling_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Jensen-Meckling evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Jensen & Meckling (1976) Agency Costs & Asset Substitution Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Firm Value Potential (V_0):     ${receipt.firm_potential_value:.2f} | Debt Face (D): ${receipt.debt_face_value:.2f}")
+    print(f"  Insider Equity Stake (alpha):   {receipt.insider_ownership_alpha * 100:.1f}%")
+    print(f"  Safe vs Risky Volatility:       {receipt.safe_volatility * 100:.1f}% vs {receipt.risky_volatility * 100:.1f}%")
+    print("-" * 80)
+    print("  Agency Costs of Outside Equity (Perk Consumption):")
+    print(f"    First-Best Perks F*(1):       ${receipt.optimal_perk_consumption:.2f}")
+    print(f"    Induced Perks F*(alpha):      ${receipt.actual_perk_consumption:.2f}")
+    print(f"    Deadweight Equity Agency Loss:${receipt.equity_agency_loss:.2f}")
+    print("-" * 80)
+    print("  Agency Costs of Debt (Asset Substitution / Risk-Shifting):")
+    print(f"    Safe Equity vs Risky Equity:  ${receipt.safe_equity_value:.2f} vs ${receipt.risky_equity_value:.2f}")
+    print(f"    Risk-Shifting Triggered:      {'YES (CREDITOR EXPROPRIATION)' if receipt.risk_shifting_triggered else 'NO (PRUDENT OPERATING CHOICE)'}")
+    print(f"    Creditor Wealth Expropriated: ${receipt.creditor_wealth_expropriation:.2f}")
+    print(f"    Asset Substitution Loss:      ${receipt.asset_substitution_loss:.2f}")
+    print(f"    Total Agency Cost:            ${receipt.total_agency_cost:.2f} ({receipt.agency_cost_pct_of_value * 100:.2f}% of V_0)")
+    print("-" * 80)
+    print(f"  Jensen-Meckling Regime:         {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -13594,6 +13673,60 @@ def main() -> None:
         help="Output Hansen-Jagannathan SDF diagnostics receipt as JSON",
     )
 
+    # Subparser: jensen-meckling (Jensen & Meckling 1976 Agency Costs & Asset Substitution Engine)
+    jm_parser = subparsers.add_parser(
+        "jensen-meckling",
+        aliases=["asset-substitution", "risk-shifting", "agency-cost", "jm-1976"],
+        help="Jensen & Meckling (1976) Agency Costs of Equity & Debt Asset Substitution Engine",
+    )
+    jm_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. FIRM, ORCL, META)",
+    )
+    jm_parser.add_argument(
+        "--firm-value",
+        type=float,
+        default=None,
+        help="Unconstrained firm asset potential V_0 (e.g. 100.0)",
+    )
+    jm_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.40,
+        help="Insider managerial equity stake alpha in (0.05, 1.0] (default: 0.40)",
+    )
+    jm_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Debt obligation face value D (e.g. 80.0)",
+    )
+    jm_parser.add_argument(
+        "--safe-vol",
+        type=float,
+        default=0.20,
+        help="Safe core project asset volatility sigma_L (default: 0.20)",
+    )
+    jm_parser.add_argument(
+        "--risky-vol",
+        type=float,
+        default=0.55,
+        help="Risky gamble project volatility sigma_H (default: 0.55)",
+    )
+    jm_parser.add_argument(
+        "--npv-discount",
+        type=float,
+        default=0.06,
+        help="Fractional asset value lost by undertaking risky gamble (default: 0.06)",
+    )
+    jm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Jensen-Meckling agency cost receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -13868,6 +14001,8 @@ def main() -> None:
         leland_command(args)
     elif args.command in ("hansen-jagannathan", "hj-bound", "hj-distance", "sdf-bound", "hj-1991"):
         hansen_jagannathan_command(args)
+    elif args.command in ("jensen-meckling", "asset-substitution", "risk-shifting", "agency-cost", "jm-1976"):
+        jensen_meckling_command(args)
 
 
 if __name__ == "__main__":
