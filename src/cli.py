@@ -8936,6 +8936,88 @@ def jensen_meckling_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def heston_vol_command(args: argparse.Namespace) -> None:
+    """CLI handler for Steven L. Heston (1993) Stochastic Volatility Option Pricing Engine."""
+    import json
+    from src.analytics.heston_stochastic_vol import (
+        calculate_heston_pricing,
+        evaluate_heston_profile,
+        persist_heston_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    spot = getattr(args, "spot", None)
+    strike = getattr(args, "strike", None)
+    xi = float(getattr(args, "xi", 0.35) if getattr(args, "xi", None) is not None else 0.35)
+    rho = float(getattr(args, "rho", -0.65) if getattr(args, "rho", None) is not None else -0.65)
+    kappa = float(getattr(args, "kappa", 2.0) if getattr(args, "kappa", None) is not None else 2.0)
+    theta = float(getattr(args, "theta", 0.04) if getattr(args, "theta", None) is not None else 0.04)
+    v0 = float(getattr(args, "v0", 0.04) if getattr(args, "v0", None) is not None else 0.04)
+    rate = float(getattr(args, "rate", 0.04) if getattr(args, "rate", None) is not None else 0.04)
+    expiry = float(getattr(args, "expiry", 0.50) if getattr(args, "expiry", None) is not None else 0.50)
+
+    try:
+        if spot is not None:
+            s0 = float(spot)
+            k_val = float(strike) if strike is not None else s0
+            receipt = calculate_heston_pricing(
+                spot_price=s0,
+                strike_price=k_val,
+                risk_free_rate=rate,
+                time_to_expiry=expiry,
+                initial_variance=v0,
+                long_run_variance=theta,
+                mean_reversion_kappa=kappa,
+                vol_of_vol_xi=xi,
+                spot_vol_corr_rho=rho,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_heston_profile(
+                prices=[],
+                ticker=ticker,
+                vol_of_vol_xi=xi,
+                spot_vol_corr_rho=rho,
+                time_to_expiry=expiry,
+                risk_free_rate=rate,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_heston_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Heston stochastic vol evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Heston (1993) Stochastic Volatility Option Pricing Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Spot / Strike / Expiry:         ${receipt.spot_price:.2f} / ${receipt.strike_price:.2f} / {receipt.time_to_expiry:.2f} yrs")
+    print(f"  Variance Dynamics (v0, th, kap):{receipt.initial_variance:.4f} | {receipt.long_run_variance:.4f} | {receipt.mean_reversion_kappa:.2f}")
+    print(f"  Vol-of-Vol (xi) / Corr (rho):   {receipt.vol_of_vol_xi:.2f} | {receipt.spot_vol_corr_rho:+.2f}")
+    print("-" * 80)
+    print("  Semi-Closed-Form Option Valuations & Surface:")
+    print(f"    Heston Call / Put Price:      ${receipt.heston_call_price:.4f} / ${receipt.heston_put_price:.4f}")
+    print(f"    Black-Scholes Benchmark Call: ${receipt.bs_benchmark_call_price:.4f}")
+    print(f"    Implied Vol (85%/ATM/115%):   {receipt.otm_put_implied_vol * 100:.2f}% | {receipt.atm_implied_vol * 100:.2f}% | {receipt.otm_call_implied_vol * 100:.2f}%")
+    print(f"    Put-Call Skew Spread:         {receipt.volatility_skew_spread * 100:+.2f}% (Wings: {receipt.butterfly_wing_spread * 100:+.2f}%)")
+    print(f"    Feller Stability (2k*th>xi2): {receipt.feller_ratio:.2f} ({'SATISFIED' if receipt.feller_condition_satisfied else 'VIOLATED'})")
+    print("-" * 80)
+    print(f"  Heston Regime:                  {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -13727,6 +13809,78 @@ def main() -> None:
         help="Output Jensen-Meckling agency cost receipt as JSON",
     )
 
+    # Subparser: heston-vol (Steven L. Heston 1993 Stochastic Volatility Option Pricing Engine)
+    hes_parser = subparsers.add_parser(
+        "heston-vol",
+        aliases=["heston-1993", "stochastic-vol", "heston-pricing", "feller-vol"],
+        help="Heston (1993) Stochastic Volatility Option Pricing & Characteristic Function Engine",
+    )
+    hes_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. VOL, SPY, NVDA)",
+    )
+    hes_parser.add_argument(
+        "--spot",
+        type=float,
+        default=None,
+        help="Current underlying spot price S_0 (e.g. 100.0)",
+    )
+    hes_parser.add_argument(
+        "--strike",
+        type=float,
+        default=None,
+        help="Option strike price K (default: ATM = spot)",
+    )
+    hes_parser.add_argument(
+        "--v0",
+        type=float,
+        default=0.04,
+        help="Initial instantaneous variance v_0 (default: 0.04)",
+    )
+    hes_parser.add_argument(
+        "--theta",
+        type=float,
+        default=0.04,
+        help="Long-run variance attractor theta (default: 0.04)",
+    )
+    hes_parser.add_argument(
+        "--kappa",
+        type=float,
+        default=2.0,
+        help="Mean-reversion speed kappa (default: 2.0)",
+    )
+    hes_parser.add_argument(
+        "--xi",
+        type=float,
+        default=0.35,
+        help="Volatility of variance xi (default: 0.35)",
+    )
+    hes_parser.add_argument(
+        "--rho",
+        type=float,
+        default=-0.65,
+        help="Spot-variance correlation rho in [-0.99, 0.99] (default: -0.65)",
+    )
+    hes_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.04,
+        help="Risk-free interest rate r (default: 0.04)",
+    )
+    hes_parser.add_argument(
+        "--expiry",
+        type=float,
+        default=0.50,
+        help="Time to option expiry T in years (default: 0.50)",
+    )
+    hes_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Heston stochastic vol pricing receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -14003,6 +14157,8 @@ def main() -> None:
         hansen_jagannathan_command(args)
     elif args.command in ("jensen-meckling", "asset-substitution", "risk-shifting", "agency-cost", "jm-1976"):
         jensen_meckling_command(args)
+    elif args.command in ("heston-vol", "heston-1993", "stochastic-vol", "heston-pricing", "feller-vol"):
+        heston_vol_command(args)
 
 
 if __name__ == "__main__":

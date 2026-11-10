@@ -7528,6 +7528,93 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Jensen-Meckling profile.")
 
+                st.markdown("---")
+                st.subheader("🌪️ Heston (1993) Stochastic Volatility Option Pricing & Smile Engine")
+                st.markdown(
+                    "Semi-closed-form Fourier characteristic function pricing via **Steven L. Heston (1993, *RFS*)** "
+                    "with Little Heston Trap branch-cut stability, evaluating mean-reverting variance ($\\kappa, \\theta$), "
+                    "vol-of-vol wing convexity ($\\xi$), leverage correlation crash skew ($\\rho$), and Feller boundary stability."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.heston_stochastic_vol import (
+                            evaluate_heston_profile,
+                            verify_hmac_signature,
+                        )
+
+                        hes_col1, hes_col2 = st.columns(2)
+                        with hes_col1:
+                            hes_rho_input = st.slider(
+                                "Spot-Variance Correlation (ρ)",
+                                min_value=-0.95,
+                                max_value=0.95,
+                                value=-0.65,
+                                step=0.05,
+                                format="%.2f",
+                                help="Negative correlation generates equity leverage put skew",
+                            )
+                        with hes_col2:
+                            hes_xi_input = st.slider(
+                                "Volatility of Variance (ξ)",
+                                min_value=0.00,
+                                max_value=0.90,
+                                value=0.35,
+                                step=0.05,
+                                format="%.2f",
+                                help="Vol-of-vol amplifying kurtosis and OTM wing premia",
+                            )
+
+                        hes_rec = evaluate_heston_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            vol_of_vol_xi=hes_xi_input,
+                            spot_vol_corr_rho=hes_rho_input,
+                        )
+
+                        hes_m1, hes_m2, hes_m3, hes_m4 = st.columns(4)
+                        with hes_m1:
+                            st.metric(
+                                "Heston ATM Call Price",
+                                f"${hes_rec.heston_call_price:.2f}",
+                                delta=f"BS Bench: ${hes_rec.bs_benchmark_call_price:.2f}",
+                                help="6-month ATM European call via Heston characteristic function quadrature",
+                            )
+                        with hes_m2:
+                            st.metric(
+                                "Equity Put-Call Skew",
+                                f"{hes_rec.volatility_skew_spread * 100:+.2f}%",
+                                delta=f"85% Put IV: {hes_rec.otm_put_implied_vol * 100:.1f}%",
+                                delta_color="normal" if hes_rec.volatility_skew_spread < 0.04 else "inverse",
+                                help="85% OTM Put IV minus 115% OTM Call IV",
+                            )
+                        with hes_m3:
+                            st.metric(
+                                "Vol Smile Wing Spread",
+                                f"{hes_rec.butterfly_wing_spread * 100:+.2f}%",
+                                delta=f"ATM IV: {hes_rec.atm_implied_vol * 100:.1f}%",
+                                help="Tail convexity curvature driven by stochastic variance",
+                            )
+                        with hes_m4:
+                            st.metric(
+                                "Feller Condition Ratio",
+                                f"{hes_rec.feller_ratio:.2f}",
+                                delta="SATISFIED" if hes_rec.feller_condition_satisfied else "VIOLATED (v->0)",
+                                delta_color="normal" if hes_rec.feller_condition_satisfied else "inverse",
+                                help="Whether 2 * kappa * theta > xi^2 ensures strictly positive variance",
+                            )
+
+                        sig_payload = (
+                            f"{hes_rec.ticker}:{hes_rec.spot_price:.4f}:{hes_rec.strike_price:.4f}:"
+                            f"{hes_rec.time_to_expiry:.4f}:{hes_rec.initial_variance:.4f}:{hes_rec.long_run_variance:.4f}:"
+                            f"{hes_rec.mean_reversion_kappa:.4f}:{hes_rec.vol_of_vol_xi:.4f}:{hes_rec.spot_vol_corr_rho:.4f}:"
+                            f"{hes_rec.heston_call_price:.6f}:{hes_rec.heston_put_price:.6f}:{hes_rec.regime}:{hes_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Heston HMAC Signature:** `{hes_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, hes_rec.hmac_signature)}`)")
+                    except Exception as hes_ex:
+                        st.info(f"Heston stochastic vol evaluation deferred: {hes_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Heston profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
