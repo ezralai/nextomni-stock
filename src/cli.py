@@ -8797,6 +8797,66 @@ def leland_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def hansen_jagannathan_command(args: argparse.Namespace) -> None:
+    """CLI handler for Hansen & Jagannathan (1991, 1997) SDF Volatility Bounds Engine."""
+    import json
+    from src.analytics.hansen_jagannathan_bounds import (
+        evaluate_hansen_jagannathan_profile,
+        persist_hansen_jagannathan_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    risk_aversion = float(getattr(args, "risk_aversion", 5.0) if getattr(args, "risk_aversion", None) is not None else 5.0)
+    beta = float(getattr(args, "beta", 0.99) if getattr(args, "beta", None) is not None else 0.99)
+    rf = float(getattr(args, "rate", 0.04) if getattr(args, "rate", None) is not None else 0.04)
+
+    try:
+        receipt = evaluate_hansen_jagannathan_profile(
+            prices=[],
+            ticker=ticker,
+            risk_aversion=risk_aversion,
+            discount_beta=beta,
+            risk_free_annual=rf,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_hansen_jagannathan_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Hansen-Jagannathan evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Hansen & Jagannathan (1991, 1997) SDF Volatility Bounds Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Test Assets / Sessions:         {receipt.num_assets} basis assets | {receipt.num_observations} observations")
+    print(f"  Max Tangency Sharpe Ratio (Ann):{receipt.max_sharpe_annualized:.3f} (Period: {receipt.max_sharpe_period:.4f})")
+    print("-" * 80)
+    print("  Stochastic Discount Factor (SDF) Admissibility:")
+    print(f"    Candidate SDF Mean E[m]:      {receipt.candidate_sdf_mean:.6f}")
+    print(f"    Candidate SDF Std sigma(m):   {receipt.candidate_sdf_std:.6f}")
+    print(f"    HJ Volatility Lower Bound:    {receipt.hj_volatility_bound:.6f} (sigma(m)/E[m]: {receipt.hj_dispersion_ratio:.4f})")
+    print(f"    HJ Bound Satisfied:           {'PASS (ADMISSIBLE)' if receipt.hj_bound_satisfied else 'FAIL (EQUITY PREMIUM PUZZLE)'}")
+    print("-" * 80)
+    print("  Pricing Kernel Misspecification (HJ-Distance):")
+    print(f"    HJ-Distance (delta_HJ):       {receipt.hj_distance:.6f}")
+    print(f"    Mean Abs Pricing Error:       {receipt.mean_abs_pricing_error:.6f}")
+    print(f"    Implied Min CRRA Gamma:       {receipt.implied_min_risk_aversion:.2f}")
+    print("-" * 80)
+    print(f"  Hansen-Jagannathan Regime:      {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -13498,6 +13558,42 @@ def main() -> None:
         help="Output Leland (1994) capital structure receipt as JSON",
     )
 
+    # Subparser: hansen-jagannathan (Hansen & Jagannathan 1991, 1997 SDF Volatility Bounds Engine)
+    hj_parser = subparsers.add_parser(
+        "hansen-jagannathan",
+        aliases=["hj-bound", "hj-distance", "sdf-bound", "hj-1991"],
+        help="Hansen & Jagannathan (1991, 1997) SDF Volatility Bounds & HJ-Distance Engine",
+    )
+    hj_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. SDF, SPY, QQQ)",
+    )
+    hj_parser.add_argument(
+        "--risk-aversion",
+        type=float,
+        default=5.0,
+        help="CRRA Relative Risk Aversion gamma (default: 5.0)",
+    )
+    hj_parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.99,
+        help="Subjective annual time discount factor beta (default: 0.99)",
+    )
+    hj_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.04,
+        help="Annual risk-free interest rate r (default: 0.04)",
+    )
+    hj_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Hansen-Jagannathan SDF diagnostics receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -13770,6 +13866,8 @@ def main() -> None:
         aghion_bolton_command(args)
     elif args.command in ("leland-default", "leland-1994", "endogenous-default", "optimal-leverage", "tax-shield"):
         leland_command(args)
+    elif args.command in ("hansen-jagannathan", "hj-bound", "hj-distance", "sdf-bound", "hj-1991"):
+        hansen_jagannathan_command(args)
 
 
 if __name__ == "__main__":

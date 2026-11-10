@@ -7351,6 +7351,94 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Leland capital structure profile.")
 
+                st.markdown("---")
+                st.subheader("📐 Hansen & Jagannathan (1991, 1997) SDF Volatility Bounds & HJ-Distance")
+                st.markdown(
+                    "Non-parametric Stochastic Discount Factor diagnostics via **Hansen & Jagannathan (1991, *JPE*; 1997, *JF*)**, "
+                    "evaluating the duality lower bound $\\frac{\\sigma(m)}{E[m]} \\ge \\text{SR}_{\\max}$, CRRA Equity Premium Puzzle threshold, "
+                    "and specification distance $\\delta_{\\text{HJ}} = \\sqrt{g^\\top E[R R^\\top]^{-1} g}$."
+                )
+                if len(df_eda) >= 20:
+                    try:
+                        from src.analytics.hansen_jagannathan_bounds import (
+                            evaluate_hansen_jagannathan_profile,
+                            verify_hmac_signature,
+                        )
+
+                        hj_col1, hj_col2 = st.columns(2)
+                        with hj_col1:
+                            hj_gamma_input = st.slider(
+                                "CRRA Relative Risk Aversion (γ)",
+                                min_value=1.0,
+                                max_value=50.0,
+                                value=8.0,
+                                step=1.0,
+                                format="%.0f",
+                                help="Representative investor risk aversion coefficient driving SDF volatility",
+                            )
+                        with hj_col2:
+                            hj_beta_input = st.slider(
+                                "Annual Time Discount Factor (β)",
+                                min_value=0.90,
+                                max_value=0.999,
+                                value=0.99,
+                                step=0.005,
+                                format="%.3f",
+                                help="Subjective patience discount factor",
+                            )
+
+                        hj_rec = evaluate_hansen_jagannathan_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            risk_aversion=hj_gamma_input,
+                            discount_beta=hj_beta_input,
+                        )
+
+                        hj_m1, hj_m2, hj_m3, hj_m4 = st.columns(4)
+                        with hj_m1:
+                            st.metric(
+                                "Max Frontier Sharpe",
+                                f"{hj_rec.max_sharpe_annualized:.2f}",
+                                delta=f"Period SR: {hj_rec.max_sharpe_period:.4f}",
+                                help="Maximum attainable Sharpe ratio across basis factor portfolios",
+                            )
+                        with hj_m2:
+                            st.metric(
+                                "SDF Std vs HJ Bound",
+                                f"{hj_rec.candidate_sdf_std:.5f}",
+                                delta=f"Bound: {hj_rec.hj_volatility_bound:.5f}",
+                                delta_color="normal" if hj_rec.hj_bound_satisfied else "inverse",
+                                help="Whether candidate CRRA SDF volatility exceeds the Hansen-Jagannathan lower bound",
+                            )
+                        with hj_m3:
+                            st.metric(
+                                "HJ-Distance (δ_HJ)",
+                                f"{hj_rec.hj_distance:.4f}",
+                                delta=f"Mean |g|: {hj_rec.mean_abs_pricing_error:.4f}",
+                                delta_color="normal" if hj_rec.hj_distance <= 0.05 else "inverse",
+                                help="L^2 projection distance to arbitrage-free pricing kernels",
+                            )
+                        with hj_m4:
+                            st.metric(
+                                "Implied Min Risk Aversion",
+                                f"{hj_rec.implied_min_risk_aversion:.1f}",
+                                delta=f"Model γ: {hj_gamma_input:.0f} ({'PASS' if hj_rec.hj_bound_satisfied else 'FAIL'})",
+                                delta_color="normal" if hj_rec.hj_bound_satisfied else "inverse",
+                                help="Minimum CRRA gamma required to rationalize observed Sharpe ratio",
+                            )
+
+                        sig_payload = (
+                            f"{hj_rec.ticker}:{hj_rec.num_observations}:{hj_rec.num_assets}:"
+                            f"{hj_rec.max_sharpe_period:.6f}:{hj_rec.candidate_sdf_mean:.6f}:"
+                            f"{hj_rec.candidate_sdf_std:.6f}:{hj_rec.hj_volatility_bound:.6f}:"
+                            f"{hj_rec.hj_distance:.6f}:{hj_rec.regime}:{hj_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Hansen-Jagannathan HMAC Signature:** `{hj_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, hj_rec.hmac_signature)}`)")
+                    except Exception as hj_ex:
+                        st.info(f"Hansen-Jagannathan SDF evaluation deferred: {hj_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Hansen-Jagannathan SDF bounds.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
