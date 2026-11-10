@@ -8136,6 +8136,92 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Ross debt signaling.")
 
+                st.markdown("---")
+                st.subheader("🏛️ Diamond (1984) Financial Intermediation & Delegated Monitoring")
+                st.markdown(
+                    "Costly state verification & bank diversification equilibrium via **Douglas W. Diamond (1984, *REStud*)**, "
+                    "demonstrating how pooling $N$ borrowers reduces monitoring costs from $m K$ to $K + d_N$ "
+                    "while shrinking delegation default penalties via Law of Large Numbers diversification."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.diamond_delegated_monitoring import (
+                            evaluate_diamond_monitoring_profile,
+                            verify_hmac_signature,
+                        )
+
+                        dm_col1, dm_col2 = st.columns(2)
+                        with dm_col1:
+                            dm_n_input = st.slider(
+                                "Pooled Loan Borrowers (N)",
+                                min_value=1,
+                                max_value=200,
+                                value=50,
+                                step=5,
+                                help="Number of distinct firm loans pooled by intermediary (N=1 breaks viability)",
+                            )
+                        with dm_col2:
+                            dm_rho_input = st.slider(
+                                "Systemic Loan Correlation (ρ)",
+                                min_value=0.00,
+                                max_value=0.95,
+                                value=0.05,
+                                step=0.05,
+                                format="%.2f",
+                                help="Pairwise default cash flow correlation degrading diversification",
+                            )
+
+                        dm_rec = evaluate_diamond_monitoring_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            num_borrowers_n=dm_n_input,
+                            loan_correlation_rho=dm_rho_input,
+                        )
+
+                        dm_m1, dm_m2, dm_m3, dm_m4 = st.columns(4)
+                        with dm_m1:
+                            st.metric(
+                                "Intermediation Viable",
+                                "YES (DOMINATES)" if dm_rec.delegated_intermediation_viable else "NO (DIRECT WINS)",
+                                delta=f"Surplus: ${dm_rec.net_intermediation_surplus:+.2f}",
+                                delta_color="normal" if dm_rec.delegated_intermediation_viable else "inverse",
+                                help="Whether K + d_N < min(m*K, D_direct)",
+                            )
+                        with dm_m2:
+                            st.metric(
+                                "Delegation Cost d_N",
+                                f"${dm_rec.delegation_cost_d_n:.2f}",
+                                delta=f"Bank Total: ${dm_rec.delegated_total_cost:.2f}",
+                                help="Expected non-pecuniary delegation default penalty per loan",
+                            )
+                        with dm_m3:
+                            st.metric(
+                                "Best Direct Benchmark",
+                                f"${dm_rec.best_direct_cost:.2f}",
+                                delta=f"Dup mK: ${dm_rec.direct_duplicative_cost:.1f}",
+                                help="Minimum of duplicative monitoring mK and unmonitored debt loss",
+                            )
+                        with dm_m4:
+                            st.metric(
+                                "Diversification Gain",
+                                f"{dm_rec.diversification_efficiency_pct * 100:.1f}%",
+                                delta=f"Port Vol: ${dm_rec.portfolio_volatility:.2f}",
+                                help="Fractional portfolio risk compression from pooling N borrowers",
+                            )
+
+                        sig_payload = (
+                            f"{dm_rec.ticker}:{dm_rec.num_borrowers_n}:{dm_rec.depositors_per_firm_m}:"
+                            f"{dm_rec.monitoring_cost_k:.4f}:{dm_rec.project_mean_payoff:.4f}:"
+                            f"{dm_rec.project_volatility:.4f}:{dm_rec.loan_correlation_rho:.4f}:"
+                            f"{dm_rec.delegation_cost_d_n:.4f}:{dm_rec.delegated_total_cost:.4f}:"
+                            f"{dm_rec.net_intermediation_surplus:.4f}:{dm_rec.regime}:{dm_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Diamond (1984) HMAC:** `{dm_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, dm_rec.hmac_signature)}`)")
+                    except Exception as dm_ex:
+                        st.info(f"Diamond delegated monitoring evaluation deferred: {dm_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Diamond monitoring profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

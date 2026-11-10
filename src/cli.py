@@ -9434,6 +9434,72 @@ def ross_signaling_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def diamond_monitoring_command(args: argparse.Namespace) -> None:
+    """CLI handler for Douglas W. Diamond (1984) Financial Intermediation & Delegated Monitoring Engine."""
+    import json
+    from src.analytics.diamond_delegated_monitoring import (
+        calculate_diamond_delegated_monitoring,
+        evaluate_diamond_monitoring_profile,
+        persist_diamond_monitoring_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    borrowers = getattr(args, "borrowers", None)
+    corr = float(getattr(args, "correlation", 0.05) if getattr(args, "correlation", None) is not None else 0.05)
+    depositors = int(getattr(args, "depositors", 10) if getattr(args, "depositors", None) is not None else 10)
+    k_cost = float(getattr(args, "monitoring_cost", 2.0) if getattr(args, "monitoring_cost", None) is not None else 2.0)
+
+    try:
+        if borrowers is not None:
+            receipt = calculate_diamond_delegated_monitoring(
+                num_borrowers_n=int(borrowers),
+                depositors_per_firm_m=depositors,
+                monitoring_cost_k=k_cost,
+                loan_correlation_rho=corr,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_diamond_monitoring_profile(
+                prices=[],
+                ticker=ticker,
+                loan_correlation_rho=corr,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_diamond_monitoring_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Diamond delegated monitoring evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Diamond (1984) Financial Intermediation & Delegated Monitoring Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Pooled Borrowers (N) / Lenders: {receipt.num_borrowers_n} firms | {receipt.depositors_per_firm_m} depositors/firm")
+    print(f"  Monitoring Cost (K) / Loan Corr:{receipt.monitoring_cost_k:.2f} | rho={receipt.loan_correlation_rho:.2f} (Div Eff: {receipt.diversification_efficiency_pct * 100:.1f}%)")
+    print("-" * 80)
+    print("  Delegation vs Direct Lending Benchmarks:")
+    print(f"    Duplicative Direct Cost (mK): ${receipt.direct_duplicative_cost:.2f}")
+    print(f"    Unmonitored Debt Loss (D_dir):${receipt.direct_unmonitored_cost:.2f}")
+    print(f"    Delegation Cost d_N:          ${receipt.delegation_cost_d_n:.2f} (Promised Deposit H*: ${receipt.optimal_deposit_face_value:.2f})")
+    print(f"    Delegated Bank Total (K+d_N): ${receipt.delegated_total_cost:.2f}")
+    print(f"    Net Intermediation Surplus:   ${receipt.net_intermediation_surplus:+.2f} ({'VIABLE' if receipt.delegated_intermediation_viable else 'UNVIABLE'})")
+    print("-" * 80)
+    print(f"  Intermediation Regime:          {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -14561,6 +14627,48 @@ def main() -> None:
         help="Output Ross debt-signaling receipt as JSON",
     )
 
+    # Subparser: delegated-monitoring (Douglas W. Diamond 1984 Delegated Monitoring Engine)
+    dm_parser = subparsers.add_parser(
+        "delegated-monitoring",
+        aliases=["diamond-1984", "bank-monitoring", "delegation-cost"],
+        help="Diamond (1984) Financial Intermediation & Delegated Monitoring Engine",
+    )
+    dm_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Intermediary ticker symbol (e.g. BANK, JPM, C)",
+    )
+    dm_parser.add_argument(
+        "--borrowers",
+        type=int,
+        default=None,
+        help="Number of firms N pooled in intermediary portfolio (e.g. 50)",
+    )
+    dm_parser.add_argument(
+        "--depositors",
+        type=int,
+        default=10,
+        help="Atomistic depositors m per borrower under direct lending (default: 10)",
+    )
+    dm_parser.add_argument(
+        "--monitoring-cost",
+        type=float,
+        default=2.0,
+        help="Verification cost K per monitored borrower (default: 2.0)",
+    )
+    dm_parser.add_argument(
+        "--correlation",
+        type=float,
+        default=0.05,
+        help="Systemic pairwise loan correlation rho in [0, 1] (default: 0.05)",
+    )
+    dm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Diamond delegated monitoring receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -14851,6 +14959,8 @@ def main() -> None:
         leland_pyle_command(args)
     elif args.command in ("debt-signaling", "ross-1977", "ross-signal", "bankruptcy-penalty"):
         ross_signaling_command(args)
+    elif args.command in ("delegated-monitoring", "diamond-1984", "bank-monitoring", "delegation-cost"):
+        diamond_monitoring_command(args)
 
 
 if __name__ == "__main__":
