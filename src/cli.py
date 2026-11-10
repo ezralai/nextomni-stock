@@ -9018,6 +9018,77 @@ def heston_vol_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def myers_overhang_command(args: argparse.Namespace) -> None:
+    """CLI handler for Stewart C. Myers (1977) Debt Overhang & Real Growth Option Engine."""
+    import json
+    from src.analytics.myers_debt_overhang import (
+        calculate_myers_debt_overhang,
+        evaluate_myers_overhang_profile,
+        persist_myers_overhang_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    assets = getattr(args, "assets", None)
+    growth_pv = float(getattr(args, "growth_pv", 60.0) if getattr(args, "growth_pv", None) is not None else 60.0)
+    outlay = float(getattr(args, "outlay", 40.0) if getattr(args, "outlay", None) is not None else 40.0)
+    debt = getattr(args, "debt", None)
+
+    try:
+        if assets is not None or debt is not None:
+            a0 = float(assets) if assets is not None else 100.0
+            d_val = float(debt) if debt is not None else 95.0
+            receipt = calculate_myers_debt_overhang(
+                assets_in_place_pv=a0,
+                growth_option_gross_pv=growth_pv,
+                investment_outlay=outlay,
+                debt_face_value=d_val,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_myers_overhang_profile(
+                prices=[],
+                ticker=ticker,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_myers_overhang_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Myers (1977) Debt Overhang evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Myers (1977) Debt Overhang & Real Growth Option Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Assets in Place (A_0):          ${receipt.assets_in_place_pv:.2f} | Debt Face (D): ${receipt.debt_face_value:.2f}")
+    print(f"  Growth Option Gross PV (G_0):   ${receipt.growth_option_gross_pv:.2f} | Capex Outlay (I): ${receipt.investment_outlay:.2f}")
+    print("-" * 80)
+    print("  Growth Option Forfeiture & Underinvestment:")
+    print(f"    First-Best Growth Value:      ${receipt.first_best_growth_value:.2f}")
+    print(f"    Levered Growth Captured:      ${receipt.levered_growth_captured:.2f}")
+    print(f"    Overhang Agency Loss:         ${receipt.overhang_agency_loss:.2f} ({receipt.overhang_severity_pct * 100:.1f}% destroyed)")
+    print(f"    Overhang State Probability:   {receipt.overhang_probability * 100:.1f}% ({'TRIGGERED' if receipt.debt_overhang_triggered else 'OVERHANG-FREE'})")
+    print("-" * 80)
+    print("  Enterprise Value Conservation:")
+    print(f"    Levered Equity Value E_0:     ${receipt.levered_equity_value:.2f}")
+    print(f"    Levered Debt Value D_0:       ${receipt.levered_debt_value:.2f}")
+    print(f"    Total Levered Firm Value:     ${receipt.levered_firm_value:.2f} (First-Best: ${receipt.first_best_firm_value:.2f})")
+    print("-" * 80)
+    print(f"  Debt Overhang Regime:           {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -13881,6 +13952,48 @@ def main() -> None:
         help="Output Heston stochastic vol pricing receipt as JSON",
     )
 
+    # Subparser: debt-overhang (Stewart C. Myers 1977 Debt Overhang & Real Growth Option Engine)
+    mo_parser = subparsers.add_parser(
+        "debt-overhang",
+        aliases=["myers-1977", "growth-option", "real-option", "overhang-loss"],
+        help="Myers (1977) Debt Overhang & Real Growth Option Underinvestment Engine",
+    )
+    mo_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. GROWTH, BA, AMZN)",
+    )
+    mo_parser.add_argument(
+        "--assets",
+        type=float,
+        default=None,
+        help="Current PV of existing assets in place A_0 (e.g. 100.0)",
+    )
+    mo_parser.add_argument(
+        "--growth-pv",
+        type=float,
+        default=60.0,
+        help="Expected gross PV of discretionary growth option G_0 (default: 60.0)",
+    )
+    mo_parser.add_argument(
+        "--outlay",
+        type=float,
+        default=40.0,
+        help="Capex outlay I required to exercise growth option (default: 40.0)",
+    )
+    mo_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Senior debt face value D due at maturity (default: 95.0)",
+    )
+    mo_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Myers (1977) debt overhang receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -14159,6 +14272,8 @@ def main() -> None:
         jensen_meckling_command(args)
     elif args.command in ("heston-vol", "heston-1993", "stochastic-vol", "heston-pricing", "feller-vol"):
         heston_vol_command(args)
+    elif args.command in ("debt-overhang", "myers-1977", "growth-option", "real-option", "overhang-loss"):
+        myers_overhang_command(args)
 
 
 if __name__ == "__main__":

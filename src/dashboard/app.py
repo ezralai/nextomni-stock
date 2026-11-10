@@ -7615,6 +7615,93 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Heston profile.")
 
+                st.markdown("---")
+                st.subheader("🏗️ Myers (1977) Debt Overhang & Real Growth Option Underinvestment")
+                st.markdown(
+                    "Corporate borrowing & real-option interaction engine via **Stewart C. Myers (1977, *JFE*)**, "
+                    "quantifying how senior risky debt ($D$) absorbs upside cash flows and forces equity holders to forfeit "
+                    "positive-NPV real growth opportunities ($G(s) > I$), destroying enterprise value via symmetric debt overhang."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.myers_debt_overhang import (
+                            evaluate_myers_overhang_profile,
+                            verify_hmac_signature,
+                        )
+
+                        mo_col1, mo_col2 = st.columns(2)
+                        with mo_col1:
+                            mo_debt_ratio = st.slider(
+                                "Senior Debt Face Ratio (D / A_0)",
+                                min_value=0.00,
+                                max_value=1.60,
+                                value=0.85,
+                                step=0.05,
+                                format="%.2f",
+                                help="Face value of senior risky debt maturing after growth option exercise",
+                            )
+                        with mo_col2:
+                            mo_capex_ratio = st.slider(
+                                "Growth Option Outlay Ratio (I / A_0)",
+                                min_value=0.10,
+                                max_value=0.80,
+                                value=0.35,
+                                step=0.05,
+                                format="%.2f",
+                                help="Capital expenditure required to exercise discretionary real growth option",
+                            )
+
+                        mo_rec = evaluate_myers_overhang_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            debt_to_assets_ratio=mo_debt_ratio,
+                            capex_to_assets_ratio=mo_capex_ratio,
+                        )
+
+                        mo_m1, mo_m2, mo_m3, mo_m4 = st.columns(4)
+                        with mo_m1:
+                            st.metric(
+                                "First-Best Growth Value",
+                                f"${mo_rec.first_best_growth_value:.2f}",
+                                delta=f"Captured: ${mo_rec.levered_growth_captured:.2f}",
+                                help="All-equity real growth option value vs actual exercised value under debt",
+                            )
+                        with mo_m2:
+                            st.metric(
+                                "Overhang Agency Loss",
+                                f"${mo_rec.overhang_agency_loss:.2f}",
+                                delta=f"-{mo_rec.overhang_severity_pct * 100:.1f}% option destroyed",
+                                delta_color="normal" if not mo_rec.debt_overhang_triggered else "inverse",
+                                help="Deadweight enterprise value destroyed by senior debt subsidy",
+                            )
+                        with mo_m3:
+                            st.metric(
+                                "Overhang Probability",
+                                f"{mo_rec.overhang_probability * 100:.1f}%",
+                                delta="TRIGGERED" if mo_rec.debt_overhang_triggered else "OVERHANG-FREE",
+                                delta_color="normal" if not mo_rec.debt_overhang_triggered else "inverse",
+                                help="Probability of states where positive-NPV capex is bypassed",
+                            )
+                        with mo_m4:
+                            st.metric(
+                                "Levered Firm Value",
+                                f"${mo_rec.levered_firm_value:.2f}",
+                                delta=f"Eq: ${mo_rec.levered_equity_value:.1f} / Debt: ${mo_rec.levered_debt_value:.1f}",
+                                help="Market value of equity plus debt net of overhang deadweight loss",
+                            )
+
+                        sig_payload = (
+                            f"{mo_rec.ticker}:{mo_rec.assets_in_place_pv:.4f}:{mo_rec.growth_option_gross_pv:.4f}:"
+                            f"{mo_rec.investment_outlay:.4f}:{mo_rec.debt_face_value:.4f}:{mo_rec.asset_volatility:.4f}:"
+                            f"{mo_rec.growth_volatility:.4f}:{mo_rec.first_best_firm_value:.4f}:{mo_rec.levered_firm_value:.4f}:"
+                            f"{mo_rec.overhang_agency_loss:.4f}:{mo_rec.regime}:{mo_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Myers (1977) Overhang HMAC:** `{mo_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, mo_rec.hmac_signature)}`)")
+                    except Exception as mo_ex:
+                        st.info(f"Myers (1977) Debt Overhang evaluation deferred: {mo_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Myers (1977) Debt Overhang.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
