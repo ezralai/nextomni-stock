@@ -9161,6 +9161,75 @@ def holmstrom_tirole_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def grossman_hart_command(args: argparse.Namespace) -> None:
+    """CLI handler for Grossman & Hart (1980) Takeover Bids & Free-Rider Engine."""
+    import json
+    from src.analytics.grossman_hart_takeover import (
+        calculate_grossman_hart_takeover,
+        evaluate_grossman_hart_profile,
+        persist_grossman_hart_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    status_quo = getattr(args, "status_quo", None)
+    synergy = float(getattr(args, "synergy", 30.0) if getattr(args, "synergy", None) is not None else 30.0)
+    cost = float(getattr(args, "bidding_cost", 10.0) if getattr(args, "bidding_cost", None) is not None else 10.0)
+    dilution = float(getattr(args, "dilution", 14.0) if getattr(args, "dilution", None) is not None else 14.0)
+    toehold = float(getattr(args, "toehold", 0.05) if getattr(args, "toehold", None) is not None else 0.05)
+
+    try:
+        if status_quo is not None:
+            receipt = calculate_grossman_hart_takeover(
+                status_quo_value=float(status_quo),
+                restructuring_synergy=synergy,
+                bidding_cost=cost,
+                dilution_cap_phi=dilution,
+                pre_bid_toehold_alpha=toehold,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_grossman_hart_profile(
+                prices=[],
+                ticker=ticker,
+                dilution_pct=dilution / 100.0 if dilution > 1.0 else dilution,
+                toehold_alpha=toehold,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_grossman_hart_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Grossman-Hart takeover evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Grossman & Hart (1980) Takeover Bids & Free-Rider Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Status Quo (q) / Post-Bid (v):  ${receipt.status_quo_value:.2f} -> ${receipt.post_takeover_value:.2f} (+${receipt.restructuring_synergy:.2f} synergy)")
+    print(f"  Dilution Cap (phi) / Toehold:   ${receipt.dilution_cap_phi:.2f} | {receipt.pre_bid_toehold_alpha * 100:.1f}%")
+    print(f"  Bidding Execution Cost (c):     ${receipt.bidding_cost:.2f}")
+    print("-" * 80)
+    print("  Free-Rider Tender Equilibrium:")
+    print(f"    Free-Rider Equilibrium Bid:   ${receipt.equilibrium_tender_price:.2f} (Premium: +${receipt.target_bid_premium:.2f}, +{receipt.target_bid_premium_pct * 100:.1f}%)")
+    print(f"    Bidder Net Profit:            ${receipt.bidder_net_profit:+.2f} ({'TAKEOVER SUCCEEDS' if receipt.takeover_succeeds else 'FAILED (FREE-RIDER PARALYSIS)'})")
+    print(f"    Optimal Min Dilution Floor:   ${receipt.optimal_min_dilution:.2f} (0-Dilution Toehold: {receipt.breakeven_toehold_zero_phi * 100:.1f}%)")
+    print(f"    Missed Social Synergy Loss:   ${receipt.missed_synergy_loss:.2f}")
+    print("-" * 80)
+    print(f"  Takeover Control Regime:        {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -14108,6 +14177,54 @@ def main() -> None:
         help="Output Holmstrom-Tirole credit rationing receipt as JSON",
     )
 
+    # Subparser: takeover-bid (Grossman & Hart 1980 Takeover Bids & Free-Rider Engine)
+    ght_parser = subparsers.add_parser(
+        "takeover-bid",
+        aliases=["free-rider", "grossman-hart", "gh-1980", "tender-offer"],
+        help="Grossman & Hart (1980) Takeover Bids & Free-Rider Engine",
+    )
+    ght_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Target security ticker symbol (e.g. TARGET, SAVE, VMW)",
+    )
+    ght_parser.add_argument(
+        "--status-quo",
+        type=float,
+        default=None,
+        help="Target firm status-quo enterprise/share value q (e.g. 100.0)",
+    )
+    ght_parser.add_argument(
+        "--synergy",
+        type=float,
+        default=30.0,
+        help="Post-takeover restructuring synergy Delta_v (default: 30.0)",
+    )
+    ght_parser.add_argument(
+        "--bidding-cost",
+        type=float,
+        default=10.0,
+        help="Takeover research & execution cost c (default: 10.0)",
+    )
+    ght_parser.add_argument(
+        "--dilution",
+        type=float,
+        default=14.0,
+        help="Minority freeze-out dilution allowance phi (default: 14.0)",
+    )
+    ght_parser.add_argument(
+        "--toehold",
+        type=float,
+        default=0.05,
+        help="Pre-bid activist toehold equity stake alpha in [0, 0.49] (default: 0.05)",
+    )
+    ght_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Grossman-Hart takeover equilibrium receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -14390,6 +14507,8 @@ def main() -> None:
         myers_overhang_command(args)
     elif args.command in ("holmstrom-tirole", "pledgeable-income", "credit-rationing", "ht-1997", "moral-hazard"):
         holmstrom_tirole_command(args)
+    elif args.command in ("takeover-bid", "free-rider", "grossman-hart", "gh-1980", "tender-offer"):
+        grossman_hart_command(args)
 
 
 if __name__ == "__main__":

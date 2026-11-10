@@ -7790,6 +7790,93 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Holmstrom-Tirole profile.")
 
+                st.markdown("---")
+                st.subheader("🤝 Grossman & Hart (1980) Takeover Bids, Free-Rider Problem & Toeholds")
+                st.markdown(
+                    "Corporate control & M&A tender-offer equilibrium via **Grossman & Hart (1980, *Bell J. Econ.*)** "
+                    "and **Shleifer & Vishny (1986, *JPE*)**, evaluating atomistic holdout free-riding ($p^* = v - \\phi$), "
+                    "freeze-out dilution caps ($\\phi$), activist pre-bid toeholds ($\\alpha$), and missed synergy deadweight loss."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.grossman_hart_takeover import (
+                            evaluate_grossman_hart_profile,
+                            verify_hmac_signature,
+                        )
+
+                        ght_col1, ght_col2 = st.columns(2)
+                        with ght_col1:
+                            ght_dil_input = st.slider(
+                                "Charter Minority Dilution Cap (φ / q)",
+                                min_value=0.00,
+                                max_value=0.35,
+                                value=0.14,
+                                step=0.02,
+                                format="%.2f",
+                                help="Post-takeover value dilution allowed against holdout shares",
+                            )
+                        with ght_col2:
+                            ght_toe_input = st.slider(
+                                "Activist Pre-Bid Toehold Stake (α)",
+                                min_value=0.00,
+                                max_value=0.45,
+                                value=0.05,
+                                step=0.05,
+                                format="%.2f",
+                                help="Shares acquired quietly at status-quo price before tender announcement",
+                            )
+
+                        ght_rec = evaluate_grossman_hart_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            dilution_pct=ght_dil_input,
+                            toehold_alpha=ght_toe_input,
+                        )
+
+                        ght_m1, ght_m2, ght_m3, ght_m4 = st.columns(4)
+                        with ght_m1:
+                            st.metric(
+                                "Free-Rider Tender Bid p*",
+                                f"${ght_rec.equilibrium_tender_price:.2f}",
+                                delta=f"Premium: +{ght_rec.target_bid_premium_pct * 100:.1f}%",
+                                help="Minimum bid required to overcome atomistic holdout free-riding",
+                            )
+                        with ght_m2:
+                            st.metric(
+                                "Takeover Outcome",
+                                "SUCCEEDS" if ght_rec.takeover_succeeds else "BLOCKED (FREE-RIDE)",
+                                delta=f"Profit: ${ght_rec.bidder_net_profit:+.2f}",
+                                delta_color="normal" if ght_rec.takeover_succeeds else "inverse",
+                                help="Whether bidder profits after bidding cost",
+                            )
+                        with ght_m3:
+                            st.metric(
+                                "Optimal Min Dilution φ*",
+                                f"${ght_rec.optimal_min_dilution:.2f}",
+                                delta=f"0-Dilution Toehold: {ght_rec.breakeven_toehold_zero_phi * 100:.1f}%",
+                                help="Minimum dilution allowance or pre-bid toehold eliminating free-rider paralysis",
+                            )
+                        with ght_m4:
+                            st.metric(
+                                "Missed Synergy Loss",
+                                f"${ght_rec.missed_synergy_loss:.2f}",
+                                delta=f"Potential: +${ght_rec.restructuring_synergy:.2f}",
+                                delta_color="normal" if ght_rec.missed_synergy_loss == 0 else "inverse",
+                                help="Social restructuring surplus lost if free-riding blocks the bid",
+                            )
+
+                        sig_payload = (
+                            f"{ght_rec.ticker}:{ght_rec.status_quo_value:.4f}:{ght_rec.restructuring_synergy:.4f}:"
+                            f"{ght_rec.bidding_cost:.4f}:{ght_rec.dilution_cap_phi:.4f}:{ght_rec.pre_bid_toehold_alpha:.4f}:"
+                            f"{ght_rec.equilibrium_tender_price:.4f}:{ght_rec.bidder_net_profit:.4f}:"
+                            f"{ght_rec.takeover_succeeds}:{ght_rec.regime}:{ght_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Grossman-Hart Takeover HMAC:** `{ght_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, ght_rec.hmac_signature)}`)")
+                    except Exception as ght_ex:
+                        st.info(f"Grossman-Hart takeover evaluation deferred: {ght_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Grossman-Hart profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
