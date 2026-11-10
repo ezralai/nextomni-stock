@@ -7964,6 +7964,92 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Glosten-Milgrom spread.")
 
+                st.markdown("---")
+                st.subheader("📡 Leland & Pyle (1977) Insider Equity Retention Signaling")
+                st.markdown(
+                    "Informational asymmetry & costly diversification signaling via **Leland & Pyle (1977, *J. Finance*)**, "
+                    "modeling how risk-averse entrepreneurs signal private intrinsic quality through undiversified equity retention "
+                    "($V(\\alpha) = \\mu_{\\min} - K[\\alpha + \\ln(1-\\alpha)]$) while creating a rationale for financial intermediation."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.leland_pyle_signaling import (
+                            evaluate_leland_pyle_profile,
+                            verify_hmac_signature,
+                        )
+
+                        lp_col1, lp_col2 = st.columns(2)
+                        with lp_col1:
+                            lp_alpha_input = st.slider(
+                                "Insider Equity Retention (α)",
+                                min_value=0.05,
+                                max_value=0.90,
+                                value=0.55,
+                                step=0.05,
+                                format="%.2f",
+                                help="Fraction of equity retained by founders/insiders to credibly signal project value",
+                            )
+                        with lp_col2:
+                            lp_gamma_input = st.slider(
+                                "Founder Risk Aversion (γ)",
+                                min_value=1.0,
+                                max_value=6.0,
+                                value=3.0,
+                                step=0.5,
+                                format="%.1f",
+                                help="Relative risk aversion scaling marginal cost of undiversified equity exposure",
+                            )
+
+                        lp_rec = evaluate_leland_pyle_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            insider_retention_alpha=lp_alpha_input,
+                            relative_risk_aversion=lp_gamma_input,
+                        )
+
+                        lp_m1, lp_m2, lp_m3, lp_m4 = st.columns(4)
+                        with lp_m1:
+                            st.metric(
+                                "Signaled Market Valuation",
+                                f"${lp_rec.signaled_market_value:.2f}",
+                                delta=f"+{lp_rec.signaling_premium_pct * 100:.1f}% above floor",
+                                help="Outside investor equilibrium valuation inferred from insider equity stake alpha",
+                            )
+                        with lp_m2:
+                            st.metric(
+                                "Marginal Signal Sensitivity",
+                                f"${lp_rec.marginal_value_sensitivity:.2f}",
+                                delta=f"Slope K: ${lp_rec.signaling_scale_k:.1f}",
+                                help="Marginal market value uplift dV/dalpha per unit additional insider ownership",
+                            )
+                        with lp_m3:
+                            st.metric(
+                                "Diversification Risk Cost",
+                                f"${lp_rec.diversification_risk_cost:.2f}",
+                                delta=f"Intermediary Threshold",
+                                help="Deadweight cost of bearing idiosyncratic variance instead of diversifying",
+                            )
+                        with lp_m4:
+                            st.metric(
+                                "Quality-Implied Retention α*",
+                                f"{lp_rec.quality_implied_alpha * 100:.1f}%",
+                                delta=f"Mispricing: ${lp_rec.market_mispricing_wedge:+.2f}",
+                                delta_color="normal" if lp_rec.market_mispricing_wedge >= -1.0 else "inverse",
+                                help="Theoretical separating retention stake matching intrinsic asset quality",
+                            )
+
+                        sig_payload = (
+                            f"{lp_rec.ticker}:{lp_rec.floor_value_mu_min:.4f}:{lp_rec.true_project_value:.4f}:"
+                            f"{lp_rec.annual_volatility:.4f}:{lp_rec.relative_risk_aversion:.4f}:"
+                            f"{lp_rec.insider_retention_alpha:.4f}:{lp_rec.signaled_market_value:.4f}:"
+                            f"{lp_rec.diversification_risk_cost:.4f}:{lp_rec.regime}:{lp_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Leland-Pyle HMAC:** `{lp_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, lp_rec.hmac_signature)}`)")
+                    except Exception as lp_ex:
+                        st.info(f"Leland-Pyle ownership signaling evaluation deferred: {lp_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Leland-Pyle profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

@@ -9297,6 +9297,76 @@ def glosten_milgrom_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def leland_pyle_command(args: argparse.Namespace) -> None:
+    """CLI handler for Leland & Pyle (1977) Insider Ownership Signaling Engine."""
+    import json
+    from src.analytics.leland_pyle_signaling import (
+        calculate_leland_pyle_equilibrium,
+        evaluate_leland_pyle_profile,
+        persist_leland_pyle_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    floor_val = getattr(args, "floor_value", None)
+    alpha = float(getattr(args, "alpha", 0.55) if getattr(args, "alpha", None) is not None else 0.55)
+    vol = float(getattr(args, "volatility", 0.40) if getattr(args, "volatility", None) is not None else 0.40)
+    gamma = float(getattr(args, "gamma", 3.0) if getattr(args, "gamma", None) is not None else 3.0)
+    true_val = getattr(args, "true_value", None)
+
+    try:
+        if floor_val is not None:
+            fv = float(floor_val)
+            tv = float(true_val) if true_val is not None else fv * 1.15
+            receipt = calculate_leland_pyle_equilibrium(
+                floor_value_mu_min=fv,
+                true_project_value=tv,
+                annual_volatility=vol,
+                relative_risk_aversion=gamma,
+                insider_retention_alpha=alpha,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_leland_pyle_profile(
+                prices=[],
+                ticker=ticker,
+                insider_retention_alpha=alpha,
+                relative_risk_aversion=gamma,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_leland_pyle_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Leland-Pyle signaling evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Leland & Pyle (1977) Insider Ownership Signaling Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Lemon Floor (mu_min) / True Val:${receipt.floor_value_mu_min:.2f} / ${receipt.true_project_value:.2f}")
+    print(f"  Insider Equity Stake (alpha):   {receipt.insider_retention_alpha * 100:.1f}% (Volatility: {receipt.annual_volatility * 100:.1f}%)")
+    print("-" * 80)
+    print("  Separating Signaling Equilibrium:")
+    print(f"    Signaled Market Valuation:    ${receipt.signaled_market_value:.2f} (+${receipt.signaling_premium_dollar:.2f}, +{receipt.signaling_premium_pct * 100:.1f}%)")
+    print(f"    Marginal Sensitivity dV/da:   ${receipt.marginal_value_sensitivity:.2f} (Scale K: ${receipt.signaling_scale_k:.2f})")
+    print(f"    Diversification Risk Cost:    ${receipt.diversification_risk_cost:.2f} (Intermediary Threshold)")
+    print(f"    Quality-Implied Alpha*:       {receipt.quality_implied_alpha * 100:.1f}% (Mispricing: ${receipt.market_mispricing_wedge:+.2f})")
+    print("-" * 80)
+    print(f"  Leland-Pyle Regime:             {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -14334,6 +14404,54 @@ def main() -> None:
         help="Output Glosten-Milgrom adverse selection receipt as JSON",
     )
 
+    # Subparser: leland-pyle (Leland & Pyle 1977 Insider Equity Retention Signaling Engine)
+    lp_parser = subparsers.add_parser(
+        "leland-pyle",
+        aliases=["insider-signal", "ownership-signal", "lp-1977"],
+        help="Leland & Pyle (1977) Insider Ownership Signaling & Costly Diversification Engine",
+    )
+    lp_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. SIGNAL, IPO, PLTR)",
+    )
+    lp_parser.add_argument(
+        "--floor-value",
+        type=float,
+        default=None,
+        help="Baseline lemon floor project valuation mu_min (e.g. 100.0)",
+    )
+    lp_parser.add_argument(
+        "--true-value",
+        type=float,
+        default=None,
+        help="True intrinsic expected valuation mu_true (default: 1.15 * floor)",
+    )
+    lp_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.55,
+        help="Insider retained equity fraction alpha in [0, 0.98] (default: 0.55)",
+    )
+    lp_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=0.40,
+        help="Annual idiosyncratic/project return volatility sigma (default: 0.40)",
+    )
+    lp_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=3.0,
+        help="Founder relative risk aversion coefficient (default: 3.0)",
+    )
+    lp_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Leland-Pyle signaling receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -14620,6 +14738,8 @@ def main() -> None:
         grossman_hart_command(args)
     elif args.command in ("glosten-milgrom", "adverse-spread", "gm-1985", "specialist-spread", "bayesian-spread"):
         glosten_milgrom_command(args)
+    elif args.command in ("leland-pyle", "insider-signal", "ownership-signal", "lp-1977"):
+        leland_pyle_command(args)
 
 
 if __name__ == "__main__":
