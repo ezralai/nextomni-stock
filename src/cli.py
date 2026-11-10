@@ -8156,6 +8156,91 @@ def black_leverage_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def lucas_tree_command(args: argparse.Namespace) -> None:
+    """CLI handler for Robert E. Lucas Jr. (1978) Pure Exchange Tree Equilibrium Engine."""
+    import json
+    from src.analytics.lucas_tree_equilibrium import (
+        calculate_lucas_tree_equilibrium,
+        evaluate_lucas_tree_profile,
+        persist_lucas_tree_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    beta = getattr(args, "beta", None)
+    beta_val = float(beta) if beta is not None else 0.96
+
+    gamma = getattr(args, "gamma", None)
+    gamma_val = float(gamma) if gamma is not None else 2.50
+
+    growth_mean = getattr(args, "growth_mean", None)
+    growth_vol = getattr(args, "growth_vol", None)
+    dividend = getattr(args, "current_dividend", None)
+
+    try:
+        if growth_mean is not None and growth_vol is not None:
+            div_val = float(dividend) if dividend is not None else 2.0
+            receipt = calculate_lucas_tree_equilibrium(
+                current_dividend=div_val,
+                subjective_discount_factor=beta_val,
+                relative_risk_aversion=gamma_val,
+                dividend_growth_mean=float(growth_mean),
+                dividend_growth_vol=float(growth_vol),
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_lucas_tree_profile(
+                prices=[],
+                ticker=ticker,
+                beta=beta_val,
+                gamma=gamma_val,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_lucas_tree_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Lucas Tree Equilibrium evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Robert E. Lucas Jr. (1978) Pure Exchange Tree Equilibrium")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Current Dividend Payout (D_t):  ${receipt.current_dividend:.2f}")
+    print(f"  Subjective Discount Factor (beta): {receipt.subjective_discount_factor:.4f}")
+    print(f"  Relative Risk Aversion (gamma): {receipt.relative_risk_aversion:.2f}")
+    print("-" * 80)
+    print("  Dividend Growth Process ln(g) ~ N(mu, sigma^2):")
+    print(f"    Expected Dividend Growth (mu):  {receipt.dividend_growth_mean * 100:.2f}% / period")
+    print(f"    Dividend Growth Volatility (sigma): {receipt.dividend_growth_vol * 100:.2f}%")
+    print(f"    Expected Gross Growth E[g]:    {receipt.expected_dividend_growth:.4f}x")
+    print("-" * 80)
+    print("  Equilibrium Asset Pricing & Transversality:")
+    print(f"    Transversality Ratio (kappa):   {receipt.transversality_ratio:.4f} (< 1.0 required)")
+    print(f"    Transversality Satisfied:       {'YES' if receipt.transversality_satisfied else 'NO (BUBBLE)'}")
+    print(f"    Price-Dividend Ratio (P/D):     {receipt.price_dividend_ratio:.2f}x")
+    print(f"    Theoretical Equilibrium Price:  ${receipt.equilibrium_price:.2f}")
+    print("-" * 80)
+    print("  Return Dynamics & Hansen-Jagannathan Bounds:")
+    print(f"    Risk-Free Gross Rate (R_f):     {receipt.risk_free_gross_rate:.4f} ({(receipt.risk_free_gross_rate - 1.0) * 100:.2f}%)")
+    print(f"    Expected Equity Return E[R]:    {receipt.expected_equity_gross_return:.4f} ({(receipt.expected_equity_gross_return - 1.0) * 100:.2f}%)")
+    print(f"    Theoretical Equity Premium:     {receipt.equity_premium * 100:.2f}%")
+    print(f"    Hansen-Jagannathan Bound:       {receipt.hansen_jagannathan_bound:.4f} (Max Sharpe)")
+    print("-" * 80)
+    print(f"  Lucas Regime:                   {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -12491,6 +12576,54 @@ def main() -> None:
         help="Output Black Leverage Effect receipt as JSON",
     )
 
+    # Subparser: lucas-tree (Robert E. Lucas Jr. 1978 Pure Exchange Tree Equilibrium Engine)
+    lucas_parser = subparsers.add_parser(
+        "lucas-tree",
+        aliases=["lucas-1978", "exchange-economy", "pure-exchange", "lucas-sdf"],
+        help="Robert E. Lucas Jr. (1978) Pure Exchange Tree Equilibrium & Stochastic Discount Factor Engine",
+    )
+    lucas_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, SPY, LUCAS)",
+    )
+    lucas_parser.add_argument(
+        "--beta",
+        type=float,
+        default=None,
+        help="Subjective discount factor beta in (0, 1) (default: 0.96)",
+    )
+    lucas_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=None,
+        help="Relative risk aversion coefficient gamma (default: 2.50)",
+    )
+    lucas_parser.add_argument(
+        "--growth-mean",
+        type=float,
+        default=None,
+        help="Log dividend growth mean mu (e.g. 0.02)",
+    )
+    lucas_parser.add_argument(
+        "--growth-vol",
+        type=float,
+        default=None,
+        help="Log dividend growth volatility sigma (e.g. 0.04)",
+    )
+    lucas_parser.add_argument(
+        "--current-dividend",
+        type=float,
+        default=None,
+        help="Current period dividend payout D_t in dollars (e.g. 2.0)",
+    )
+    lucas_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Lucas Tree Equilibrium receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -12747,6 +12880,8 @@ def main() -> None:
         dssw_command(args)
     elif args.command in ("black-leverage", "leverage-effect", "asymmetric-volatility", "volatility-feedback", "black-1976"):
         black_leverage_command(args)
+    elif args.command in ("lucas-tree", "lucas-1978", "exchange-economy", "pure-exchange", "lucas-sdf"):
+        lucas_tree_command(args)
 
 
 if __name__ == "__main__":

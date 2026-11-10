@@ -6674,6 +6674,96 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Black Leverage Effect profile.")
 
+                st.markdown("---")
+                st.subheader("🌲 Robert E. Lucas Jr. (1978) Pure Exchange Tree Equilibrium")
+                st.markdown(
+                    "Quantitative evaluation of the **Lucas (1978, *Econometrica*, 1995 Nobel Prize)** pure exchange tree economy, "
+                    "analyzing consumer intertemporal substitution, endogenous Stochastic Discount Factor ($M_{t+1} = \\beta g_{t+1}^{-\\gamma}$), "
+                    "price-dividend ratio transversality convergence ($V = \\kappa / (1 - \\kappa)$), Mehra-Prescott Equity Premium puzzle dynamics, "
+                    "and Hansen-Jagannathan maximal Sharpe bounds."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.lucas_tree_equilibrium import (
+                            evaluate_lucas_tree_profile,
+                            verify_hmac_signature,
+                        )
+
+                        luc_col1, luc_col2, luc_col3 = st.columns(3)
+                        with luc_col1:
+                            luc_beta_input = st.slider(
+                                "Subjective Discount (β)",
+                                min_value=0.90,
+                                max_value=0.999,
+                                value=0.96,
+                                step=0.005,
+                                format="%.3f",
+                                help="Consumer time preference / patience parameter beta in (0, 1)",
+                            )
+                        with luc_col2:
+                            luc_gamma_input = st.slider(
+                                "Risk Aversion (γ)",
+                                min_value=0.5,
+                                max_value=12.0,
+                                value=2.5,
+                                step=0.5,
+                                format="%.1f",
+                                help="CRRA relative risk aversion coefficient gamma",
+                            )
+                        with luc_col3:
+                            luc_vol_input = st.slider(
+                                "Dividend Volatility (σ %)",
+                                min_value=1.0,
+                                max_value=15.0,
+                                value=4.0,
+                                step=0.5,
+                                format="%.1f%%",
+                                help="Standard deviation of log dividend / consumption growth",
+                            )
+
+                        luc_rec = evaluate_lucas_tree_profile(
+                            ticker=selected_ticker,
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            beta=luc_beta_input,
+                            gamma=luc_gamma_input,
+                        )
+
+                        luc_m1, luc_m2, luc_m3, luc_m4 = st.columns(4)
+                        with luc_m1:
+                            st.metric(
+                                "Price-Dividend Ratio (P/D)",
+                                f"{luc_rec.price_dividend_ratio:.1f}x",
+                                delta=f"κ = {luc_rec.transversality_ratio:.3f}",
+                                help="Equilibrium valuation multiple (transversality satisfied if κ < 1)",
+                            )
+                        with luc_m2:
+                            st.metric(
+                                "Equilibrium Price",
+                                f"${luc_rec.equilibrium_price:.2f}",
+                                delta=f"Div: ${luc_rec.current_dividend:.2f}",
+                            )
+                        with luc_m3:
+                            st.metric(
+                                "Theoretical Equity Premium",
+                                f"{luc_rec.equity_premium * 100:.2f}%",
+                                delta=f"R_f: {(luc_rec.risk_free_gross_rate - 1.0) * 100:.2f}%",
+                                help="Expected equity excess return over risk-free rate",
+                            )
+                        with luc_m4:
+                            st.metric(
+                                "Hansen-Jagannathan Bound",
+                                f"{luc_rec.hansen_jagannathan_bound:.3f}",
+                                delta=luc_rec.regime.replace("_", " "),
+                                help="Maximal Sharpe ratio bound attainable by pricing kernel",
+                            )
+
+                        sig_payload = f"{luc_rec.ticker}:{luc_rec.subjective_discount_factor:.6f}:{luc_rec.relative_risk_aversion:.6f}:{luc_rec.dividend_growth_mean:.6f}:{luc_rec.dividend_growth_vol:.6f}:{luc_rec.price_dividend_ratio:.4f}:{luc_rec.equity_premium:.6f}:{luc_rec.regime}:{luc_rec.timestamp}"
+                        st.caption(f"🛡️ **Lucas Tree HMAC Signature:** `{luc_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, luc_rec.hmac_signature)}`)")
+                    except Exception as luc_ex:
+                        st.info(f"Lucas Tree Equilibrium evaluation deferred: {luc_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Lucas Tree Equilibrium profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
