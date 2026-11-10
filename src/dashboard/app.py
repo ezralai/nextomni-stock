@@ -7004,6 +7004,88 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Shleifer-Vishny profile.")
 
+                st.markdown("---")
+                st.subheader("📑 Myers & Majluf (1984) Pecking Order & Equity Adverse Selection")
+                st.markdown(
+                    "Quantitative evaluation of the **Myers & Majluf (1984, *JFE*)** Pecking Order theory of capital structure, "
+                    "analyzing asymmetric information lemons discounts upon equity issuance, dilution wealth transfer from old to new shareholders, "
+                    "the underinvestment trap (rejection of positive-NPV projects), and the insulation value of internal financial slack ($C$)."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.myers_majluf_pecking_order import (
+                            evaluate_myers_majluf_profile,
+                            verify_hmac_signature,
+                        )
+
+                        mm_col1, mm_col2 = st.columns(2)
+                        with mm_col1:
+                            mm_slack_input = st.slider(
+                                "Cash Slack (% of Share Price)",
+                                min_value=0.0,
+                                max_value=40.0,
+                                value=10.0,
+                                step=2.0,
+                                format="%.1f%%",
+                                help="Available internal cash reserves / debt capacity to finance capex",
+                            )
+                        with mm_col2:
+                            mm_spread_input = st.slider(
+                                "Information Asymmetry Spread (σ_A)",
+                                min_value=0.05,
+                                max_value=0.35,
+                                value=0.15,
+                                step=0.02,
+                                format="%.2f",
+                                help="Information asymmetry gap between management and outside public",
+                            )
+
+                        mm_rec = evaluate_myers_majluf_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            cash_slack=float(df_eda["close"].iloc[-1]) * (mm_slack_input / 100.0),
+                            info_spread=mm_spread_input,
+                        )
+
+                        mm_m1, mm_m2, mm_m3, mm_m4 = st.columns(4)
+                        with mm_m1:
+                            st.metric(
+                                "Financing Source",
+                                mm_rec.financing_source.replace("_", " "),
+                                delta=f"Needed: ${mm_rec.external_financing_needed:.2f}",
+                                help="Internal cash vs external equity issuance",
+                            )
+                        with mm_m2:
+                            st.metric(
+                                "Project Net Present Value",
+                                f"${mm_rec.project_npv:+.2f}",
+                                delta=f"Outlay: ${mm_rec.project_outlay:.2f}",
+                                help="Economic value added of the growth investment",
+                            )
+                        with mm_m3:
+                            st.metric(
+                                "Dilution Wealth Transfer",
+                                f"${mm_rec.dilution_transfer:.2f}",
+                                delta=f"Net Old Gain: ${mm_rec.net_old_shareholder_gain:+.2f}",
+                                delta_color="normal" if mm_rec.net_old_shareholder_gain >= 0 else "inverse",
+                                help="Wealth transferred from existing shareholders to new offering buyers",
+                            )
+                        with mm_m4:
+                            st.metric(
+                                "Underinvestment Trap",
+                                "YES (REJECTED)" if mm_rec.underinvestment_triggered else "NO (INVEST)",
+                                delta=f"-${mm_rec.equity_lemons_discount_dollar:.2f} lemons markdown",
+                                delta_color="normal" if not mm_rec.underinvestment_triggered else "inverse",
+                                help="Whether dilution causes firm to pass up positive-NPV project",
+                            )
+
+                        sig_payload = f"{mm_rec.ticker}:{mm_rec.assets_in_place_true:.4f}:{mm_rec.assets_market_price:.4f}:{mm_rec.project_outlay:.4f}:{mm_rec.project_payoff:.4f}:{mm_rec.cash_slack:.4f}:{mm_rec.dilution_transfer:.4f}:{mm_rec.net_old_shareholder_gain:.4f}:{mm_rec.regime}:{mm_rec.timestamp}"
+                        st.caption(f"🛡️ **Myers-Majluf HMAC Signature:** `{mm_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, mm_rec.hmac_signature)}`)")
+                    except Exception as mm_ex:
+                        st.info(f"Myers-Majluf Pecking Order evaluation deferred: {mm_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Myers-Majluf profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

@@ -8467,6 +8467,88 @@ def shleifer_vishny_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def myers_majluf_command(args: argparse.Namespace) -> None:
+    """CLI handler for Stewart C. Myers & Nicholas S. Majluf (1984) Pecking Order Engine."""
+    import json
+    from src.analytics.myers_majluf_pecking_order import (
+        calculate_myers_majluf_equilibrium,
+        evaluate_myers_majluf_profile,
+        persist_myers_majluf_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    assets = getattr(args, "assets", None)
+    outlay = getattr(args, "outlay", None)
+    payoff = getattr(args, "payoff", None)
+    slack = getattr(args, "cash_slack", None)
+    spread = getattr(args, "info_spread", None)
+    slack_val = float(slack) if slack is not None else 10.0
+    spread_val = float(spread) if spread is not None else 0.15
+
+    try:
+        if assets is not None and outlay is not None and payoff is not None:
+            a_val = float(assets)
+            p_val = a_val / (1.0 + spread_val)
+            receipt = calculate_myers_majluf_equilibrium(
+                assets_in_place_true=a_val,
+                assets_market_price=p_val,
+                project_outlay=float(outlay),
+                project_payoff=float(payoff),
+                cash_slack=slack_val,
+                information_asymmetry_spread=spread_val,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_myers_majluf_profile(
+                prices=[],
+                ticker=ticker,
+                cash_slack=slack_val,
+                capex_outlay=float(outlay) if outlay is not None else None,
+                info_spread=spread_val,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_myers_majluf_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Myers-Majluf evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Myers & Majluf (1984) Pecking Order & Dilution Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Assets in Place (True Value A): ${receipt.assets_in_place_true:.2f}")
+    print(f"  Market Price (P):               ${receipt.assets_market_price:.2f}")
+    print(f"  Information Asymmetry Spread:   {receipt.information_asymmetry_spread * 100:.1f}% (Undervaluation: ${receipt.undervaluation_wedge:.2f})")
+    print("-" * 80)
+    print("  Project Investment & Financial Slack:")
+    print(f"    Project Investment Outlay (I): ${receipt.project_outlay:.2f}")
+    print(f"    Expected Terminal Payoff (B):  ${receipt.project_payoff:.2f}")
+    print(f"    Project Net Present Value:     ${receipt.project_npv:+.2f}")
+    print(f"    Internal Cash Slack (C):       ${receipt.cash_slack:.2f}")
+    print(f"    External Financing Needed:     ${receipt.external_financing_needed:.2f} ({receipt.financing_source})")
+    print("-" * 80)
+    print("  Equity Offering Dilution & Underinvestment Status:")
+    print(f"    Dilution Transfer to New Shs:  ${receipt.dilution_transfer:.2f}")
+    print(f"    Net Old Shareholder Gain:      ${receipt.net_old_shareholder_gain:+.2f}")
+    print(f"    Underinvestment Trap:          {'YES (REJECTED POSITIVE NPV)' if receipt.underinvestment_triggered else 'NO (INVESTMENT PROCEEDS)'}")
+    print(f"    Offering Lemons Markdown:      -${receipt.equity_lemons_discount_dollar:.2f} (-{receipt.equity_lemons_discount_pct * 100:.2f}%)")
+    print("-" * 80)
+    print(f"  Myers-Majluf Regime:            {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -12964,6 +13046,54 @@ def main() -> None:
         help="Output Shleifer-Vishny limits of arbitrage receipt as JSON",
     )
 
+    # Subparser: myers-majluf (Stewart C. Myers & Nicholas S. Majluf 1984 Pecking Order Engine)
+    mm_parser = subparsers.add_parser(
+        "myers-majluf",
+        aliases=["pecking-order", "equity-issuance", "lemons-discount", "myers-1984"],
+        help="Myers & Majluf (1984) Pecking Order, Dilution & Adverse Selection Lemons Engine",
+    )
+    mm_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. CORP, AAPL, TSLA)",
+    )
+    mm_parser.add_argument(
+        "--assets",
+        type=float,
+        default=None,
+        help="True intrinsic value of assets in place A (e.g. 120.0)",
+    )
+    mm_parser.add_argument(
+        "--outlay",
+        type=float,
+        default=None,
+        help="Project investment capital expenditure I (e.g. 30.0)",
+    )
+    mm_parser.add_argument(
+        "--payoff",
+        type=float,
+        default=None,
+        help="Expected terminal project cash flow payoff B (e.g. 36.0)",
+    )
+    mm_parser.add_argument(
+        "--cash-slack",
+        type=float,
+        default=None,
+        help="Internal cash reserves / safe debt slack C (default: 10.0)",
+    )
+    mm_parser.add_argument(
+        "--info-spread",
+        type=float,
+        default=None,
+        help="Information asymmetry spread between insiders and market (default: 0.15)",
+    )
+    mm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Myers-Majluf Pecking Order receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -13228,6 +13358,8 @@ def main() -> None:
         brennan_agency_command(args)
     elif args.command in ("shleifer-vishny", "shleifer-vishny-1997", "pba-arbitrage", "sv-1997", "performance-arbitrage"):
         shleifer_vishny_command(args)
+    elif args.command in ("myers-majluf", "pecking-order", "equity-issuance", "lemons-discount", "myers-1984"):
+        myers_majluf_command(args)
 
 
 if __name__ == "__main__":
