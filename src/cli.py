@@ -8549,6 +8549,97 @@ def myers_majluf_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def breeden_litzenberger_command(args: argparse.Namespace) -> None:
+    """CLI handler for Breeden & Litzenberger (1978) Arrow-Debreu State Price & RND Engine."""
+    import json
+    from src.analytics.breeden_litzenberger_rnd import (
+        calculate_breeden_litzenberger_rnd,
+        evaluate_breeden_litzenberger_profile,
+        generate_skewed_call_surface,
+        persist_breeden_litzenberger_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    spot = getattr(args, "spot", None)
+    vol_skew = float(getattr(args, "vol_skew", 0.22) if getattr(args, "vol_skew", None) is not None else 0.22)
+    vol_smile = float(getattr(args, "vol_smile", 0.04) if getattr(args, "vol_smile", None) is not None else 0.04)
+    rate = float(getattr(args, "rate", 0.04) if getattr(args, "rate", None) is not None else 0.04)
+    expiry = float(getattr(args, "expiry", 0.25) if getattr(args, "expiry", None) is not None else 0.25)
+    num_strikes = int(getattr(args, "num_strikes", 49) if getattr(args, "num_strikes", None) is not None else 49)
+
+    try:
+        if spot is not None:
+            s0 = float(spot)
+            strikes, calls = generate_skewed_call_surface(
+                spot_price=s0,
+                atm_vol=0.25,
+                vol_skew=vol_skew,
+                vol_smile=vol_smile,
+                risk_free_rate=rate,
+                time_to_expiry=expiry,
+                num_strikes=num_strikes,
+            )
+            receipt = calculate_breeden_litzenberger_rnd(
+                spot_price=s0,
+                strikes=strikes,
+                call_prices=calls,
+                risk_free_rate=rate,
+                time_to_expiry=expiry,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_breeden_litzenberger_profile(
+                prices=[],
+                ticker=ticker,
+                vol_skew=vol_skew,
+                vol_smile=vol_smile,
+                risk_free_rate=rate,
+                time_to_expiry=expiry,
+                num_strikes=num_strikes,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_breeden_litzenberger_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Breeden-Litzenberger evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Breeden & Litzenberger (1978) Arrow-Debreu State Prices & RND Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Spot Price (S_0):               ${receipt.spot_price:.2f} (Strikes: {receipt.num_strikes})")
+    print(f"  Risk-Free Rate / Expiry (r, T): {receipt.risk_free_rate * 100:.2f}% | {receipt.time_to_expiry:.2f} yrs")
+    print(f"  Theoretical Forward (F_0):      ${receipt.theoretical_forward:.2f}")
+    print("-" * 80)
+    print("  Recovered Risk-Neutral Density (RND) Moments:")
+    print(f"    Risk-Neutral Mean E^Q[S_T]:   ${receipt.rnd_mean:.2f}")
+    print(f"    Risk-Neutral Std Dev:         ${receipt.rnd_std:.2f} (Implied Vol: {receipt.rnd_implied_vol * 100:.2f}%)")
+    print(f"    Risk-Neutral Skewness:        {receipt.rnd_skewness:+.3f}")
+    print(f"    Risk-Neutral Kurtosis:        {receipt.rnd_kurtosis:.3f}")
+    print("-" * 80)
+    print("  Arrow-Debreu State Prices & Tail Crash Risk:")
+    print(f"    Left Tail Mass (< -10%):      {receipt.left_tail_prob_10pct * 100:.2f}%")
+    print(f"    Right Tail Mass (> +10%):     {receipt.right_tail_prob_10pct * 100:.2f}%")
+    print(f"    Peak State Price p(K*):       ${receipt.peak_state_price:.5f} at Strike ${receipt.peak_state_strike:.2f}")
+    print(f"    Raw Mass / Integral Check:    {receipt.raw_probability_mass:.4f} / {receipt.normalized_integral:.4f}")
+    print(f"    Butterfly Arbitrage Check:    {'DETECTED (' + str(receipt.butterfly_violation_count) + ' violations)' if receipt.butterfly_arbitrage_detected else 'CLEAN (Convex)'}")
+    print("-" * 80)
+    print(f"  Breeden-Litzenberger Regime:    {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -13094,6 +13185,60 @@ def main() -> None:
         help="Output Myers-Majluf Pecking Order receipt as JSON",
     )
 
+    # Subparser: breeden-litzenberger (Douglas T. Breeden & Robert H. Litzenberger 1978 Arrow-Debreu State Prices & RND Engine)
+    bl_parser = subparsers.add_parser(
+        "breeden-litzenberger",
+        aliases=["rnd-density", "arrow-debreu", "state-prices", "bl-1978"],
+        help="Breeden & Litzenberger (1978) Arrow-Debreu State Price Recovery & Risk-Neutral Density Engine",
+    )
+    bl_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. RND, SPY, AAPL)",
+    )
+    bl_parser.add_argument(
+        "--spot",
+        type=float,
+        default=None,
+        help="Underlying spot price S_0 (e.g. 100.0)",
+    )
+    bl_parser.add_argument(
+        "--vol-skew",
+        type=float,
+        default=0.22,
+        help="Implied volatility skew slope coefficient (default: 0.22)",
+    )
+    bl_parser.add_argument(
+        "--vol-smile",
+        type=float,
+        default=0.04,
+        help="Implied volatility smile curvature coefficient (default: 0.04)",
+    )
+    bl_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.04,
+        help="Continuously compounded risk-free interest rate r (default: 0.04)",
+    )
+    bl_parser.add_argument(
+        "--expiry",
+        type=float,
+        default=0.25,
+        help="Time to option expiry T in years (default: 0.25)",
+    )
+    bl_parser.add_argument(
+        "--num-strikes",
+        type=int,
+        default=49,
+        help="Number of discrete strike intervals across surface (default: 49)",
+    )
+    bl_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Breeden-Litzenberger state-price receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -13360,6 +13505,8 @@ def main() -> None:
         shleifer_vishny_command(args)
     elif args.command in ("myers-majluf", "pecking-order", "equity-issuance", "lemons-discount", "myers-1984"):
         myers_majluf_command(args)
+    elif args.command in ("breeden-litzenberger", "rnd-density", "arrow-debreu", "state-prices", "bl-1978"):
+        breeden_litzenberger_command(args)
 
 
 if __name__ == "__main__":

@@ -7086,6 +7086,94 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Myers-Majluf profile.")
 
+                st.markdown("---")
+                st.subheader("🎯 Breeden & Litzenberger (1978) Arrow-Debreu State Prices & Risk-Neutral Density")
+                st.markdown(
+                    "Quantitative recovery of state-contingent claims and model-free **Risk-Neutral Density (RND)** implicit in option curves "
+                    "via the **Breeden & Litzenberger (1978, *Journal of Business*)** second derivative theorem ($p(K) = \\frac{\\partial^2 C}{\\partial K^2}$), "
+                    "evaluating risk-neutral skewness (crash fear), kurtosis, and butterfly arbitrage convexity."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.breeden_litzenberger_rnd import (
+                            evaluate_breeden_litzenberger_profile,
+                            verify_hmac_signature,
+                        )
+
+                        bl_col1, bl_col2 = st.columns(2)
+                        with bl_col1:
+                            bl_skew_input = st.slider(
+                                "Implied Volatility Skew Slope",
+                                min_value=0.00,
+                                max_value=0.45,
+                                value=0.22,
+                                step=0.02,
+                                format="%.2f",
+                                help="Option smile put skew slope (higher = greater downside crash fear)",
+                            )
+                        with bl_col2:
+                            bl_expiry_input = st.slider(
+                                "Option Expiry Horizon (Years)",
+                                min_value=0.05,
+                                max_value=1.00,
+                                value=0.25,
+                                step=0.05,
+                                format="%.2f yrs",
+                                help="Time to expiration T for Arrow-Debreu state claim recovery",
+                            )
+
+                        bl_rec = evaluate_breeden_litzenberger_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            vol_skew=bl_skew_input,
+                            vol_smile=0.04,
+                            risk_free_rate=0.04,
+                            time_to_expiry=bl_expiry_input,
+                        )
+
+                        bl_m1, bl_m2, bl_m3, bl_m4 = st.columns(4)
+                        with bl_m1:
+                            st.metric(
+                                "Risk-Neutral Mean E^Q[S_T]",
+                                f"${bl_rec.rnd_mean:.2f}",
+                                delta=f"F_0: ${bl_rec.theoretical_forward:.2f}",
+                                help="Forward-discounted expected terminal asset value under risk-neutral measure",
+                            )
+                        with bl_m2:
+                            st.metric(
+                                "RND Implied Volatility",
+                                f"{bl_rec.rnd_implied_vol * 100:.1f}%",
+                                delta=f"Std: ${bl_rec.rnd_std:.2f}",
+                                help="Model-free volatility recovered from full strike density",
+                            )
+                        with bl_m3:
+                            st.metric(
+                                "Risk-Neutral Skewness",
+                                f"{bl_rec.rnd_skewness:+.3f}",
+                                delta=f"Left Tail: {bl_rec.left_tail_prob_10pct * 100:.1f}%",
+                                delta_color="normal" if bl_rec.rnd_skewness >= -0.20 else "inverse",
+                                help="Negative skew reflects market crash fear and steep put option pricing",
+                            )
+                        with bl_m4:
+                            st.metric(
+                                "Peak State Price p(K*)",
+                                f"${bl_rec.peak_state_price:.4f}",
+                                delta=f"K*: ${bl_rec.peak_state_strike:.1f} ({'ARBITRAGE' if bl_rec.butterfly_arbitrage_detected else 'CLEAN'})",
+                                delta_color="normal" if not bl_rec.butterfly_arbitrage_detected else "inverse",
+                                help="Maximum Arrow-Debreu state-contingent claim price and butterfly convexity status",
+                            )
+
+                        sig_payload = (
+                            f"{bl_rec.ticker}:{bl_rec.spot_price:.4f}:{bl_rec.risk_free_rate:.4f}:"
+                            f"{bl_rec.time_to_expiry:.4f}:{bl_rec.rnd_mean:.4f}:{bl_rec.rnd_std:.4f}:"
+                            f"{bl_rec.rnd_skewness:.4f}:{bl_rec.rnd_kurtosis:.4f}:{bl_rec.regime}:{bl_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Breeden-Litzenberger HMAC Signature:** `{bl_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, bl_rec.hmac_signature)}`)")
+                    except Exception as bl_ex:
+                        st.info(f"Breeden-Litzenberger RND evaluation deferred: {bl_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Breeden-Litzenberger profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
