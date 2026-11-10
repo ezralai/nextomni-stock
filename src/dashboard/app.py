@@ -6842,6 +6842,86 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Harrison-Kreps profile.")
 
+                st.markdown("---")
+                st.subheader("🏛️ Michael J. Brennan (1998) Delegated Agency & Two-Beta Pricing")
+                st.markdown(
+                    "Quantitative evaluation of the **Brennan (1998, *JFE*)** delegated institutional money management engine, "
+                    "analyzing tracking-error aversion penalties, two-beta general equilibrium ($E[R_i] - R_f = \\lambda_M \\beta_{i,M} + \\lambda_{\\text{agency}}(\\beta_{i,M} - \\beta_{i,B})$), "
+                    "benchmark congestion overpricing, and out-of-benchmark agency alpha premiums."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.brennan_agency_pricing import (
+                            evaluate_brennan_agency_profile,
+                            verify_hmac_signature,
+                        )
+
+                        bren_col1, bren_col2 = st.columns(2)
+                        with bren_col1:
+                            bren_inst_input = st.slider(
+                                "Institutional Share (ω)",
+                                min_value=0.10,
+                                max_value=0.95,
+                                value=0.70,
+                                step=0.05,
+                                format="%.2f",
+                                help="Fraction of market wealth managed by benchmark-constrained institutions",
+                            )
+                        with bren_col2:
+                            bren_aversion_input = st.slider(
+                                "Tracking Penalty (γ_rel)",
+                                min_value=0.5,
+                                max_value=12.0,
+                                value=5.0,
+                                step=0.5,
+                                format="%.1f",
+                                help="Institutional penalty coefficient for benchmark tracking error variance",
+                            )
+
+                        bren_rec = evaluate_brennan_agency_profile(
+                            asset_prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            institutional_share=bren_inst_input,
+                            tracking_aversion=bren_aversion_input,
+                        )
+
+                        bren_m1, bren_m2, bren_m3, bren_m4 = st.columns(4)
+                        with bren_m1:
+                            st.metric(
+                                "Market Beta (β_M)",
+                                f"{bren_rec.beta_market:.2f}",
+                                delta=f"Bench β_B: {bren_rec.beta_benchmark:.2f}",
+                                help="Systematic sensitivity to aggregate market vs benchmark",
+                            )
+                        with bren_m2:
+                            st.metric(
+                                "CAPM vs Agency Return",
+                                f"{bren_rec.expected_return_agency * 100:.2f}%",
+                                delta=f"{bren_rec.agency_distortion_spread * 100:+.2f}% spread",
+                                help="Brennan agency equilibrium return vs standard CAPM",
+                            )
+                        with bren_m3:
+                            st.metric(
+                                "Agency Alpha Premium",
+                                f"{bren_rec.agency_alpha * 100:+.2f}%",
+                                delta=f"Overweight: {bren_rec.benchmark_overweight_ratio:.2f}x",
+                                help="Agency premium compensating non-benchmark tracking risk",
+                            )
+                        with bren_m4:
+                            st.metric(
+                                "Brennan Agency Regime",
+                                bren_rec.regime.replace("_", " "),
+                                delta=f"λ_agency: {bren_rec.agency_risk_intensity * 100:.2f}%",
+                                help="Institutional benchmark congestion regime",
+                            )
+
+                        sig_payload = f"{bren_rec.ticker}:{bren_rec.beta_market:.4f}:{bren_rec.beta_benchmark:.4f}:{bren_rec.institutional_share:.4f}:{bren_rec.agency_risk_intensity:.6f}:{bren_rec.expected_return_agency:.6f}:{bren_rec.agency_distortion_spread:.6f}:{bren_rec.regime}:{bren_rec.timestamp}"
+                        st.caption(f"🛡️ **Brennan Agency HMAC Signature:** `{bren_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, bren_rec.hmac_signature)}`)")
+                    except Exception as bren_ex:
+                        st.info(f"Brennan Agency Pricing evaluation deferred: {bren_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Brennan Agency Pricing profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

@@ -8314,6 +8314,79 @@ def harrison_kreps_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def brennan_agency_command(args: argparse.Namespace) -> None:
+    """CLI handler for Michael J. Brennan (1998) Two-Beta Agency Asset Pricing Engine."""
+    import json
+    from src.analytics.brennan_agency_pricing import (
+        calculate_brennan_agency_pricing,
+        evaluate_brennan_agency_profile,
+        persist_brennan_agency_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    beta_m = getattr(args, "beta_m", None)
+    beta_b = getattr(args, "beta_b", None)
+    inst_share = getattr(args, "inst_share", None)
+    tracking_aversion = getattr(args, "tracking_aversion", None)
+
+    try:
+        if beta_m is not None and beta_b is not None:
+            receipt = calculate_brennan_agency_pricing(
+                beta_market=float(beta_m),
+                beta_benchmark=float(beta_b),
+                institutional_share=float(inst_share) if inst_share is not None else 0.70,
+                tracking_aversion_rel=float(tracking_aversion) if tracking_aversion is not None else 5.0,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_brennan_agency_profile(
+                asset_prices=[],
+                ticker=ticker,
+                institutional_share=float(inst_share) if inst_share is not None else 0.70,
+                tracking_aversion=float(tracking_aversion) if tracking_aversion is not None else 5.0,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_brennan_agency_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Brennan Agency Pricing evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Michael J. Brennan (1998) Two-Beta Agency Asset Pricing")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Market Beta (beta_M):           {receipt.beta_market:.2f}")
+    print(f"  Benchmark Beta (beta_B):        {receipt.beta_benchmark:.2f}")
+    print(f"  Benchmark Overweight Ratio:     {receipt.benchmark_overweight_ratio:.2f}x (beta_B / beta_M)")
+    print("-" * 80)
+    print("  Institutional Delegation & Tracking Penalties:")
+    print(f"    Institutional Wealth Share:    {receipt.institutional_share * 100:.1f}%")
+    print(f"    Absolute Risk Aversion (gamma): {receipt.risk_aversion_abs:.2f}")
+    print(f"    Tracking Error Penalty (gamma): {receipt.tracking_aversion_rel:.2f}")
+    print(f"    Agency Risk Intensity (lambda): {receipt.agency_risk_intensity * 100:.4f}%")
+    print("-" * 80)
+    print("  Asset Pricing & Agency Alpha Decomposition:")
+    print(f"    Standard CAPM Expected Return: {receipt.expected_return_capm * 100:.2f}%")
+    print(f"    Brennan Agency Expected Return: {receipt.expected_return_agency * 100:.2f}%")
+    print(f"    Agency Distortion Spread:      {receipt.agency_distortion_spread * 100:+.2f}%")
+    print(f"    Agency Alpha Premium:          {receipt.agency_alpha * 100:+.2f}%")
+    print("-" * 80)
+    print(f"  Brennan Agency Regime:          {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -12727,6 +12800,48 @@ def main() -> None:
         help="Output Harrison-Kreps Resale Option receipt as JSON",
     )
 
+    # Subparser: brennan-agency (Michael J. Brennan 1998 Two-Beta Agency Asset Pricing Engine)
+    brennan_parser = subparsers.add_parser(
+        "brennan-agency",
+        aliases=["agency-pricing", "brennan-1998", "two-beta-agency", "benchmark-distortion"],
+        help="Michael J. Brennan (1998) Two-Beta Agency & Institutional Benchmark Pricing Engine",
+    )
+    brennan_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. AAPL, MSFT, IWM)",
+    )
+    brennan_parser.add_argument(
+        "--beta-m",
+        type=float,
+        default=None,
+        help="Market portfolio beta beta_{i, M} (optional, e.g. 1.15)",
+    )
+    brennan_parser.add_argument(
+        "--beta-b",
+        type=float,
+        default=None,
+        help="Institutional benchmark beta beta_{i, B} (optional, e.g. 1.35)",
+    )
+    brennan_parser.add_argument(
+        "--inst-share",
+        type=float,
+        default=None,
+        help="Institutional wealth share omega_inst in [0, 1] (default: 0.70)",
+    )
+    brennan_parser.add_argument(
+        "--tracking-aversion",
+        type=float,
+        default=None,
+        help="Institutional tracking error penalty gamma_rel (default: 5.0)",
+    )
+    brennan_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Brennan Agency Pricing receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -12987,6 +13102,8 @@ def main() -> None:
         lucas_tree_command(args)
     elif args.command in ("harrison-kreps", "resale-option", "speculative-bubble", "hk-1979", "investor-disagreement"):
         harrison_kreps_command(args)
+    elif args.command in ("brennan-agency", "agency-pricing", "brennan-1998", "two-beta-agency", "benchmark-distortion"):
+        brennan_agency_command(args)
 
 
 if __name__ == "__main__":
