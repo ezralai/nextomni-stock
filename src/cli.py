@@ -9367,6 +9367,73 @@ def leland_pyle_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def ross_signaling_command(args: argparse.Namespace) -> None:
+    """CLI handler for Stephen A. Ross (1977) Incentive Debt-Signaling Engine."""
+    import json
+    from src.analytics.ross_debt_signaling import (
+        calculate_ross_debt_signaling,
+        evaluate_ross_signaling_profile,
+        persist_ross_signaling_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    floor_t = getattr(args, "floor_t", None)
+    true_t = getattr(args, "true_t", None)
+    debt = getattr(args, "debt", None)
+    penalty = float(getattr(args, "penalty", 60.0) if getattr(args, "penalty", None) is not None else 60.0)
+
+    try:
+        if floor_t is not None or debt is not None:
+            t0 = float(floor_t) if floor_t is not None else 100.0
+            tt = float(true_t) if true_t is not None else t0 * 1.60
+            f_val = float(debt) if debt is not None else 65.0
+            receipt = calculate_ross_debt_signaling(
+                floor_quality_t_min=t0,
+                true_quality_t=tt,
+                debt_face_value=f_val,
+                bankruptcy_penalty_l=penalty,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_ross_signaling_profile(
+                prices=[],
+                ticker=ticker,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_ross_signaling_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Ross debt-signaling evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Ross (1977) Incentive Debt-Signaling Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Quality Ceilings (t_min/t_true):{receipt.floor_quality_t_min:.2f} / {receipt.true_quality_t:.2f}")
+    print(f"  Debt Signal (F) / Penalty (L):  ${receipt.debt_face_value:.2f} | ${receipt.bankruptcy_penalty_l:.2f} (kappa: {receipt.kappa_incentive_coeff:.2f})")
+    print("-" * 80)
+    print("  Separating Debt-Signaling Equilibrium:")
+    print(f"    Signaled Market Valuation:    ${receipt.signaled_market_value:.2f} (+{receipt.signaling_valuation_lift_pct * 100:.1f}% above floor ${receipt.floor_market_value:.2f})")
+    print(f"    Optimal Separating Debt F*:   ${receipt.optimal_separating_debt_f_star:.2f} (dV_0/dF: {receipt.marginal_value_dv_df:.4f})")
+    print(f"    Default Prob (True/Signaled): {receipt.true_default_probability * 100:.1f}% / {receipt.signaled_default_probability * 100:.1f}%")
+    print(f"    Mimicry Deterrence Gap:       ${receipt.mimicry_deterrence_gap:.2f}")
+    print("-" * 80)
+    print(f"  Ross Signaling Regime:          {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -14452,6 +14519,48 @@ def main() -> None:
         help="Output Leland-Pyle signaling receipt as JSON",
     )
 
+    # Subparser: debt-signaling (Stephen A. Ross 1977 Incentive Debt-Signaling Engine)
+    rs_parser = subparsers.add_parser(
+        "debt-signaling",
+        aliases=["ross-1977", "ross-signal", "bankruptcy-penalty"],
+        help="Ross (1977) Incentive Signaling via Debt Structure & Bankruptcy Penalty Engine",
+    )
+    rs_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. ROSS, BA, IBM)",
+    )
+    rs_parser.add_argument(
+        "--floor-t",
+        type=float,
+        default=None,
+        help="Minimum lemon floor quality cash-flow ceiling t_min (e.g. 100.0)",
+    )
+    rs_parser.add_argument(
+        "--true-t",
+        type=float,
+        default=None,
+        help="True private quality cash-flow ceiling t_true (default: 1.6 * floor)",
+    )
+    rs_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Contractual debt face value F (default: 65.0)",
+    )
+    rs_parser.add_argument(
+        "--penalty",
+        type=float,
+        default=60.0,
+        help="Personal managerial bankruptcy penalty L (default: 60.0)",
+    )
+    rs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Ross debt-signaling receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -14740,6 +14849,8 @@ def main() -> None:
         glosten_milgrom_command(args)
     elif args.command in ("leland-pyle", "insider-signal", "ownership-signal", "lp-1977"):
         leland_pyle_command(args)
+    elif args.command in ("debt-signaling", "ross-1977", "ross-signal", "bankruptcy-penalty"):
+        ross_signaling_command(args)
 
 
 if __name__ == "__main__":

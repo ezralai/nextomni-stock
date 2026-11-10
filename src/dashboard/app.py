@@ -8050,6 +8050,92 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Leland-Pyle profile.")
 
+                st.markdown("---")
+                st.subheader("📣 Ross (1977) Debt Incentive-Signaling & Bankruptcy Penalty")
+                st.markdown(
+                    "Asymmetric information debt signaling equilibrium via **Stephen A. Ross (1977, *Bell J. Econ.*)**, "
+                    "quantifying how personal bankruptcy penalties ($L$) empower higher-quality firms to signal intrinsic future "
+                    "cash flows via higher financial leverage ($F$), generating positive valuation responses to debt issuance."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.ross_debt_signaling import (
+                            evaluate_ross_signaling_profile,
+                            verify_hmac_signature,
+                        )
+
+                        rs_col1, rs_col2 = st.columns(2)
+                        with rs_col1:
+                            rs_debt_ratio = st.slider(
+                                "Debt Face Signal Ratio (F / S_0)",
+                                min_value=0.00,
+                                max_value=1.50,
+                                value=0.65,
+                                step=0.05,
+                                format="%.2f",
+                                help="Contractual debt obligation ratio chosen to signal firm quality",
+                            )
+                        with rs_col2:
+                            rs_pen_ratio = st.slider(
+                                "Manager Bankruptcy Penalty (L / S_0)",
+                                min_value=0.10,
+                                max_value=1.20,
+                                value=0.60,
+                                step=0.05,
+                                format="%.2f",
+                                help="Personal managerial career/reputation penalty triggered on default",
+                            )
+
+                        rs_rec = evaluate_ross_signaling_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            debt_to_price_ratio=rs_debt_ratio,
+                            bankruptcy_penalty_ratio=rs_pen_ratio,
+                        )
+
+                        rs_m1, rs_m2, rs_m3, rs_m4 = st.columns(4)
+                        with rs_m1:
+                            st.metric(
+                                "Signaled Market Value",
+                                f"${rs_rec.signaled_market_value:.2f}",
+                                delta=f"+{rs_rec.signaling_valuation_lift_pct * 100:.1f}% vs lemon floor",
+                                help="Equilibrium date-0 valuation inferred from debt face obligation F",
+                            )
+                        with rs_m2:
+                            st.metric(
+                                "Separating Debt Face F*",
+                                f"${rs_rec.optimal_separating_debt_f_star:.2f}",
+                                delta=f"Actual Debt: ${rs_rec.debt_face_value:.2f}",
+                                help="Truthful separating leverage for true quality tier",
+                            )
+                        with rs_m3:
+                            st.metric(
+                                "True Default Probability",
+                                f"{rs_rec.true_default_probability * 100:.1f}%",
+                                delta=f"Signaled: {rs_rec.signaled_default_probability * 100:.1f}%",
+                                delta_color="normal" if rs_rec.true_default_probability < 0.45 else "inverse",
+                                help="Uniform-state probability of cash flow failing to cover debt F",
+                            )
+                        with rs_m4:
+                            st.metric(
+                                "Mimicry Deterrence Gap",
+                                f"${rs_rec.mimicry_deterrence_gap:.2f}",
+                                delta=f"Marginal dV/dF: {rs_rec.marginal_value_dv_df:.3f}",
+                                help="Incentive loss penalizing false over-leveraging mimicry",
+                            )
+
+                        sig_payload = (
+                            f"{rs_rec.ticker}:{rs_rec.floor_quality_t_min:.4f}:{rs_rec.true_quality_t:.4f}:"
+                            f"{rs_rec.debt_face_value:.4f}:{rs_rec.bankruptcy_penalty_l:.4f}:"
+                            f"{rs_rec.signaled_market_value:.4f}:{rs_rec.optimal_separating_debt_f_star:.4f}:"
+                            f"{rs_rec.true_default_probability:.4f}:{rs_rec.regime}:{rs_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Ross (1977) Signaling HMAC:** `{rs_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, rs_rec.hmac_signature)}`)")
+                    except Exception as rs_ex:
+                        st.info(f"Ross debt-signaling evaluation deferred: {rs_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Ross debt signaling.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
