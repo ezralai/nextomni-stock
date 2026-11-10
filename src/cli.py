@@ -9230,6 +9230,73 @@ def grossman_hart_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def glosten_milgrom_command(args: argparse.Namespace) -> None:
+    """CLI handler for Glosten & Milgrom (1985) Sequential Trade Adverse Selection Spread Engine."""
+    import json
+    from src.analytics.glosten_milgrom_spread import (
+        calculate_glosten_milgrom_spread,
+        evaluate_glosten_milgrom_profile,
+        persist_glosten_milgrom_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    v_low = getattr(args, "value_low", None)
+    v_high = getattr(args, "value_high", None)
+    pi = float(getattr(args, "pi", 0.25) if getattr(args, "pi", None) is not None else 0.25)
+    prior = float(getattr(args, "prior", 0.50) if getattr(args, "prior", None) is not None else 0.50)
+
+    try:
+        if v_low is not None and v_high is not None:
+            receipt = calculate_glosten_milgrom_spread(
+                value_low=float(v_low),
+                value_high=float(v_high),
+                informed_fraction_pi=pi,
+                prior_prob_high=prior,
+                order_flow=[1, 1, -1],
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_glosten_milgrom_profile(
+                prices=[],
+                ticker=ticker,
+                informed_fraction_pi=pi,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_glosten_milgrom_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Glosten-Milgrom evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Glosten & Milgrom (1985) Adverse Selection Spread Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  True States (V_L / V_H):        ${receipt.value_low:.2f} / ${receipt.value_high:.2f} (Band: ${receipt.value_uncertainty_band:.2f})")
+    print(f"  Informed Flow Fraction (pi):    {receipt.informed_fraction_pi * 100:.1f}% | Prior High Prob: {receipt.prior_prob_high * 100:.1f}%")
+    print("-" * 80)
+    print("  Specialist Quote Setting & Bayesian Discovery:")
+    print(f"    Initial Bid / Ask Quote:      ${receipt.initial_bid:.2f} / ${receipt.initial_ask:.2f} (Mid: ${receipt.initial_midprice:.2f})")
+    print(f"    Initial Adverse Spread:       ${receipt.initial_spread:.2f} ({receipt.initial_spread_bps:.1f} bps)")
+    print(f"    Posterior High Prob ({receipt.order_flow_steps} trades):{receipt.posterior_prob_high * 100:.1f}%")
+    print(f"    Final Bid / Ask Quote:        ${receipt.final_bid:.2f} / ${receipt.final_ask:.2f} (Spread: ${receipt.final_spread:.2f})")
+    print(f"    Spread Narrowing / Discovery: {receipt.spread_narrowing_pct * 100:.1f}% | Std Reduction: ${receipt.price_discovery_gain:.2f}")
+    print("-" * 80)
+    print(f"  Microstructure Regime:          {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -14225,6 +14292,48 @@ def main() -> None:
         help="Output Grossman-Hart takeover equilibrium receipt as JSON",
     )
 
+    # Subparser: glosten-milgrom (Glosten & Milgrom 1985 Adverse Selection Spread Engine)
+    gm_parser = subparsers.add_parser(
+        "glosten-milgrom",
+        aliases=["adverse-spread", "gm-1985", "specialist-spread", "bayesian-spread"],
+        help="Glosten & Milgrom (1985) Sequential Trade Adverse Selection Spread Engine",
+    )
+    gm_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. BOOK, SPY, NVDA)",
+    )
+    gm_parser.add_argument(
+        "--value-low",
+        type=float,
+        default=None,
+        help="Low asset fundamental state V_L (e.g. 90.0)",
+    )
+    gm_parser.add_argument(
+        "--value-high",
+        type=float,
+        default=None,
+        help="High asset fundamental state V_H (e.g. 110.0)",
+    )
+    gm_parser.add_argument(
+        "--pi",
+        type=float,
+        default=0.25,
+        help="Informed trader arrival fraction pi in [0, 1] (default: 0.25)",
+    )
+    gm_parser.add_argument(
+        "--prior",
+        type=float,
+        default=0.50,
+        help="Initial specialist prior probability of high state V_H (default: 0.50)",
+    )
+    gm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Glosten-Milgrom adverse selection receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -14509,6 +14618,8 @@ def main() -> None:
         holmstrom_tirole_command(args)
     elif args.command in ("takeover-bid", "free-rider", "grossman-hart", "gh-1980", "tender-offer"):
         grossman_hart_command(args)
+    elif args.command in ("glosten-milgrom", "adverse-spread", "gm-1985", "specialist-spread", "bayesian-spread"):
+        glosten_milgrom_command(args)
 
 
 if __name__ == "__main__":

@@ -7877,6 +7877,93 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Grossman-Hart profile.")
 
+                st.markdown("---")
+                st.subheader("📊 Glosten & Milgrom (1985) Sequential Trade Adverse Selection Spread")
+                st.markdown(
+                    "Competitive specialist microstructure equilibrium via **Glosten & Milgrom (1985, *JFE*)**, "
+                    "modeling regret-free zero-profit Bid/Ask quotes ($A = E[V \\mid \\text{Buy}], B = E[V \\mid \\text{Sell}]$) "
+                    "driven by informed order toxicity ($\\pi$) and sequential Bayesian price discovery convergence."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.glosten_milgrom_spread import (
+                            evaluate_glosten_milgrom_profile,
+                            verify_hmac_signature,
+                        )
+
+                        gm_col1, gm_col2 = st.columns(2)
+                        with gm_col1:
+                            gm_pi_input = st.slider(
+                                "Informed Trader Fraction (π)",
+                                min_value=0.00,
+                                max_value=0.80,
+                                value=0.25,
+                                step=0.05,
+                                format="%.2f",
+                                help="Probability that incoming market order originates from informed trader",
+                            )
+                        with gm_col2:
+                            gm_band_input = st.slider(
+                                "Fundamental Value Band (ΔV / S_0)",
+                                min_value=0.04,
+                                max_value=0.50,
+                                value=0.20,
+                                step=0.04,
+                                format="%.2f",
+                                help="Asset fundamental uncertainty range between low and high states",
+                            )
+
+                        gm_rec = evaluate_glosten_milgrom_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            informed_fraction_pi=gm_pi_input,
+                            uncertainty_band_pct=gm_band_input,
+                        )
+
+                        gm_m1, gm_m2, gm_m3, gm_m4 = st.columns(4)
+                        with gm_m1:
+                            st.metric(
+                                "Initial Adverse Spread",
+                                f"${gm_rec.initial_spread:.2f}",
+                                delta=f"{gm_rec.initial_spread_bps:.0f} bps",
+                                delta_color="normal" if gm_rec.initial_spread_bps < 500 else "inverse",
+                                help="Bid-ask spread S = Ask - Bid required to offset informed adverse selection",
+                            )
+                        with gm_m2:
+                            st.metric(
+                                "Specialist Bid / Ask",
+                                f"${gm_rec.final_bid:.2f} / ${gm_rec.final_ask:.2f}",
+                                delta=f"Mid: ${gm_rec.final_midprice:.2f}",
+                                help="Bayesian posterior zero-profit Bid and Ask quotes after recent order flow",
+                            )
+                        with gm_m3:
+                            st.metric(
+                                "Posterior Belief θ_T",
+                                f"{gm_rec.posterior_prob_high * 100:.1f}%",
+                                delta=f"{gm_rec.order_flow_steps} sequential trades",
+                                help="Market maker's Bayesian posterior probability of high state V_H",
+                            )
+                        with gm_m4:
+                            st.metric(
+                                "Spread Narrowing Gain",
+                                f"{gm_rec.spread_narrowing_pct * 100:.1f}%",
+                                delta=f"Final Spread: ${gm_rec.final_spread:.2f}",
+                                help="Percentage spread compression from sequential Bayesian price discovery",
+                            )
+
+                        sig_payload = (
+                            f"{gm_rec.ticker}:{gm_rec.value_low:.4f}:{gm_rec.value_high:.4f}:"
+                            f"{gm_rec.informed_fraction_pi:.4f}:{gm_rec.prior_prob_high:.4f}:"
+                            f"{gm_rec.order_flow_steps}:{gm_rec.posterior_prob_high:.6f}:"
+                            f"{gm_rec.initial_spread:.4f}:{gm_rec.final_spread:.4f}:"
+                            f"{gm_rec.regime}:{gm_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Glosten-Milgrom HMAC:** `{gm_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, gm_rec.hmac_signature)}`)")
+                    except Exception as gm_ex:
+                        st.info(f"Glosten-Milgrom spread evaluation deferred: {gm_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Glosten-Milgrom spread.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
