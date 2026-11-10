@@ -8387,6 +8387,86 @@ def brennan_agency_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def shleifer_vishny_command(args: argparse.Namespace) -> None:
+    """CLI handler for Andrei Shleifer & Robert W. Vishny (1997) Limits of Arbitrage Engine."""
+    import json
+    from src.analytics.shleifer_vishny_arbitrage import (
+        calculate_shleifer_vishny_equilibrium,
+        evaluate_shleifer_vishny_profile,
+        persist_shleifer_vishny_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    fund_val = getattr(args, "fundamental_val", None)
+    shock_sev = getattr(args, "shock_severity", None)
+    flow_sens = getattr(args, "flow_sensitivity", None)
+    capital = getattr(args, "capital", None)
+    cap_val = float(capital) if capital is not None else 1000.0
+    flow_val = float(flow_sens) if flow_sens is not None else 1.20
+
+    try:
+        if fund_val is not None and shock_sev is not None:
+            v_val = float(fund_val)
+            p0_val = v_val * 0.90
+            p1_val = p0_val * (1.0 - float(shock_sev))
+            receipt = calculate_shleifer_vishny_equilibrium(
+                fundamental_value=v_val,
+                initial_price=p0_val,
+                adverse_shock_price=p1_val,
+                flow_sensitivity=flow_val,
+                initial_capital=cap_val,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_shleifer_vishny_profile(
+                prices=[],
+                ticker=ticker,
+                flow_sensitivity=flow_val,
+                initial_capital=cap_val,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_shleifer_vishny_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Shleifer-Vishny evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Shleifer & Vishny (1997) Limits of Arbitrage & PBA Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Fundamental Liquidation Value:  ${receipt.fundamental_value:.2f}")
+    print(f"  Initial Market Price (P_0):     ${receipt.initial_price:.2f}")
+    print(f"  Adverse Shock Price (P_1):      ${receipt.adverse_shock_price:.2f}")
+    print(f"  Initial Mispricing:             ${receipt.initial_mispricing_dollar:.2f} ({receipt.initial_mispricing_pct * 100:.2f}%)")
+    print("-" * 80)
+    print("  Performance-Based Arbitrage & Capital Structure:")
+    print(f"    Initial Arbitrage Capital:     ${receipt.initial_capital:.2f}")
+    print(f"    Optimal Position (x_0*):       {receipt.optimal_initial_position:.2f} units (${receipt.capital_deployed:.2f} deployed)")
+    print(f"    Precautionary Cash Buffer:     ${receipt.cash_buffer:.2f}")
+    print(f"    Investor Flow Sensitivity (a): {receipt.flow_sensitivity:.2f}x")
+    print("-" * 80)
+    print("  Interim Widening & Distress Liquidation Risk:")
+    print(f"    Interim Mark-to-Market Loss:   {receipt.interim_loss_pct * 100:.2f}%")
+    print(f"    Redemption Cash Call:          ${receipt.redemption_amount:.2f}")
+    print(f"    Forced Fire-Sale Liquidation:  {receipt.forced_liquidation_units:.2f} units ({receipt.forced_liquidation_pct * 100:.2f}% of holding)")
+    print(f"    Residual Mispricing Ratio:     {receipt.residual_mispricing_ratio * 100:.2f}%")
+    print("-" * 80)
+    print(f"  Limits-of-Arbitrage Regime:     {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -12842,6 +12922,48 @@ def main() -> None:
         help="Output Brennan Agency Pricing receipt as JSON",
     )
 
+    # Subparser: shleifer-vishny (Shleifer & Vishny 1997 Limits of Arbitrage & PBA Engine)
+    sv_parser = subparsers.add_parser(
+        "shleifer-vishny",
+        aliases=["shleifer-vishny-1997", "pba-arbitrage", "sv-1997", "performance-arbitrage"],
+        help="Andrei Shleifer & Robert W. Vishny (1997) Performance-Based Arbitrage & Limits of Arbitrage Engine",
+    )
+    sv_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. ARB, AAPL, GME)",
+    )
+    sv_parser.add_argument(
+        "--fundamental-val",
+        type=float,
+        default=None,
+        help="Terminal fundamental liquidation value V (e.g. 100.0)",
+    )
+    sv_parser.add_argument(
+        "--shock-severity",
+        type=float,
+        default=None,
+        help="Adverse interim noise shock severity fraction (e.g. 0.15 for 15% further drop)",
+    )
+    sv_parser.add_argument(
+        "--flow-sensitivity",
+        type=float,
+        default=None,
+        help="Investor redemption flow sensitivity a (default: 1.20)",
+    )
+    sv_parser.add_argument(
+        "--capital",
+        type=float,
+        default=None,
+        help="Arbitrageur initial equity capital F_0 (default: 1000.0)",
+    )
+    sv_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Shleifer-Vishny limits of arbitrage receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -13104,6 +13226,8 @@ def main() -> None:
         harrison_kreps_command(args)
     elif args.command in ("brennan-agency", "agency-pricing", "brennan-1998", "two-beta-agency", "benchmark-distortion"):
         brennan_agency_command(args)
+    elif args.command in ("shleifer-vishny", "shleifer-vishny-1997", "pba-arbitrage", "sv-1997", "performance-arbitrage"):
+        shleifer_vishny_command(args)
 
 
 if __name__ == "__main__":

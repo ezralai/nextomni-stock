@@ -6922,6 +6922,88 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Brennan Agency Pricing profile.")
 
+                st.markdown("---")
+                st.subheader("⚖️ Shleifer & Vishny (1997) Limits of Arbitrage & Performance-Based Redemptions")
+                st.markdown(
+                    "Quantitative evaluation of the **Shleifer & Vishny (1997, *JF*)** Performance-Based Arbitrage (PBA) engine, "
+                    "analyzing specialized hedge fund capital constraints, interim mark-to-market loss cascades ($R_1 < 0$), "
+                    "investor flow-performance redemptions ($F_1 = F_0(1 + a R_1)$), involuntary fire-sale liquidations, and persistent equilibrium mispricing."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.shleifer_vishny_arbitrage import (
+                            evaluate_shleifer_vishny_profile,
+                            verify_hmac_signature,
+                        )
+
+                        sv_col1, sv_col2 = st.columns(2)
+                        with sv_col1:
+                            sv_flow_input = st.slider(
+                                "Flow Sensitivity (a)",
+                                min_value=0.0,
+                                max_value=3.0,
+                                value=1.20,
+                                step=0.10,
+                                format="%.2f",
+                                help="Outside investor redemption sensitivity to interim portfolio drawdowns",
+                            )
+                        with sv_col2:
+                            sv_capital_input = st.slider(
+                                "Arbitrage Capital ($)",
+                                min_value=500.0,
+                                max_value=5000.0,
+                                value=1000.0,
+                                step=250.0,
+                                format="$%.0f",
+                                help="Initial fund capital managed by specialized arbitrageur",
+                            )
+
+                        sv_rec = evaluate_shleifer_vishny_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            flow_sensitivity=sv_flow_input,
+                            initial_capital=sv_capital_input,
+                        )
+
+                        sv_m1, sv_m2, sv_m3, sv_m4 = st.columns(4)
+                        with sv_m1:
+                            st.metric(
+                                "Initial Price vs Value",
+                                f"${sv_rec.initial_price:.2f}",
+                                delta=f"-${sv_rec.initial_mispricing_dollar:.2f} ({sv_rec.initial_mispricing_pct * 100:.1f}%)",
+                                delta_color="inverse",
+                                help="Current price vs terminal fundamental liquidation value",
+                            )
+                        with sv_m2:
+                            st.metric(
+                                "Optimal Position (x_0*)",
+                                f"{sv_rec.optimal_initial_position:.1f} shs",
+                                delta=f"Buffer: ${sv_rec.cash_buffer:.1f}",
+                                help="Precautionary cash reserve held back to buffer redemptions",
+                            )
+                        with sv_m3:
+                            st.metric(
+                                "Forced Fire-Sale Risk",
+                                f"{sv_rec.forced_liquidation_pct * 100:.1f}%",
+                                delta=f"-${sv_rec.redemption_amount:.1f} redemptions",
+                                delta_color="inverse",
+                                help="Involuntary position liquidation triggered by interim shock",
+                            )
+                        with sv_m4:
+                            st.metric(
+                                "PBA Arbitrage Regime",
+                                sv_rec.regime.replace("_", " "),
+                                delta=f"a = {sv_rec.flow_sensitivity:.1f}x",
+                                help="Limits of arbitrage market stability regime",
+                            )
+
+                        sig_payload = f"{sv_rec.ticker}:{sv_rec.fundamental_value:.4f}:{sv_rec.initial_price:.4f}:{sv_rec.adverse_shock_price:.4f}:{sv_rec.flow_sensitivity:.4f}:{sv_rec.adverse_shock_prob:.4f}:{sv_rec.optimal_initial_position:.4f}:{sv_rec.forced_liquidation_pct:.4f}:{sv_rec.regime}:{sv_rec.timestamp}"
+                        st.caption(f"🛡️ **Shleifer-Vishny HMAC Signature:** `{sv_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, sv_rec.hmac_signature)}`)")
+                    except Exception as sv_ex:
+                        st.info(f"Shleifer-Vishny PBA evaluation deferred: {sv_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Shleifer-Vishny profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
