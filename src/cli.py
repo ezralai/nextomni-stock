@@ -8241,6 +8241,79 @@ def lucas_tree_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def harrison_kreps_command(args: argparse.Namespace) -> None:
+    """CLI handler for J. Michael Harrison & David M. Kreps (1978) Speculative Disagreement & Resale Engine."""
+    import json
+    from src.analytics.harrison_kreps_resale import (
+        calculate_harrison_kreps_equilibrium,
+        evaluate_harrison_kreps_profile,
+        persist_harrison_kreps_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    beta = getattr(args, "beta", None)
+    beta_val = float(beta) if beta is not None else 0.95
+
+    spread = getattr(args, "belief_spread", None)
+    spread_val = float(spread) if spread is not None else 0.20
+
+    try:
+        receipt = evaluate_harrison_kreps_profile(
+            prices=[],
+            ticker=ticker,
+            discount_factor=beta_val,
+            belief_spread_override=spread_val,
+        )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_harrison_kreps_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Harrison-Kreps evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Harrison & Kreps (1978) Speculative Disagreement & Resale Option")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Discount Factor (beta):         {receipt.discount_factor:.4f}")
+    print(f"  Belief Divergence Spread:       {receipt.belief_divergence * 100:.1f}%")
+    print(f"  Number of Dividend States:      {receipt.states_count}")
+    print("-" * 80)
+    print("  State Pricing & Resale Option Premium Decomposition:")
+    for s in range(receipt.states_count):
+        d_val = receipt.dividend_states[s]
+        p_val = receipt.equilibrium_prices[s]
+        va_val = receipt.fundamental_val_A[s]
+        vb_val = receipt.fundamental_val_B[s]
+        vmax_val = receipt.max_fundamental_val[s]
+        resale_val = receipt.resale_option_premia[s]
+        bubble_val = receipt.speculative_bubble_ratios[s] * 100.0
+        owner = receipt.active_owner_states[s]
+
+        print(f"    State {s} [Dividend D={d_val:.2f}]:")
+        print(f"      Equilibrium Price P*(s):     ${p_val:>8.2f} (Active Owner: {owner})")
+        print(f"      Fundamental Buy-Hold V_A:    ${va_val:>8.2f} | V_B: ${vb_val:>8.2f} (V_max: ${vmax_val:>8.2f})")
+        print(f"      Resale Option Premium:      +${resale_val:>8.2f} ({bubble_val:.1f}% of Price)")
+    print("-" * 80)
+    print("  Aggregate Speculative Dynamics:")
+    print(f"    Mean Resale Option Premium:   ${receipt.mean_resale_premium:.2f}")
+    print(f"    Mean Speculative Bubble Ratio: {receipt.mean_bubble_ratio * 100:.2f}%")
+    print(f"    Active Harrison-Kreps Regime:  {receipt.regime}")
+    print("-" * 80)
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -12624,6 +12697,36 @@ def main() -> None:
         help="Output Lucas Tree Equilibrium receipt as JSON",
     )
 
+    # Subparser: harrison-kreps (Harrison & Kreps 1978 Speculative Disagreement & Resale Option Engine)
+    hk_parser = subparsers.add_parser(
+        "harrison-kreps",
+        aliases=["resale-option", "speculative-bubble", "hk-1979", "investor-disagreement"],
+        help="Harrison & Kreps (1978) Speculative Disagreement & Resale Option Premium Engine",
+    )
+    hk_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. TSLA, NVDA, GME)",
+    )
+    hk_parser.add_argument(
+        "--beta",
+        type=float,
+        default=None,
+        help="Subjective discount factor beta in (0, 1) (default: 0.95)",
+    )
+    hk_parser.add_argument(
+        "--belief-spread",
+        type=float,
+        default=None,
+        help="Belief divergence spread delta in [0.0, 0.45] (default: 0.20)",
+    )
+    hk_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Harrison-Kreps Resale Option receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -12882,6 +12985,8 @@ def main() -> None:
         black_leverage_command(args)
     elif args.command in ("lucas-tree", "lucas-1978", "exchange-economy", "pure-exchange", "lucas-sdf"):
         lucas_tree_command(args)
+    elif args.command in ("harrison-kreps", "resale-option", "speculative-bubble", "hk-1979", "investor-disagreement"):
+        harrison_kreps_command(args)
 
 
 if __name__ == "__main__":

@@ -6764,6 +6764,84 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Lucas Tree Equilibrium profile.")
 
+                st.markdown("---")
+                st.subheader("🔮 Harrison & Kreps (1978) Speculative Disagreement & Resale Option")
+                st.markdown(
+                    "Quantitative evaluation of the **Harrison & Kreps (1978, *QJE*)** speculative bubble engine, "
+                    "analyzing heterogeneous investor subjective beliefs, short-sale friction value capture, "
+                    "dynamic Bellman operator price contraction, and endogenous Resale Option Premia ($P^*(s) = V_{\\max}(s) + \\Delta_{\\text{resale}}(s)$)."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.harrison_kreps_resale import (
+                            evaluate_harrison_kreps_profile,
+                            verify_hmac_signature,
+                        )
+
+                        hk_col1, hk_col2 = st.columns(2)
+                        with hk_col1:
+                            hk_beta_input = st.slider(
+                                "Discount Factor (β)",
+                                min_value=0.80,
+                                max_value=0.99,
+                                value=0.95,
+                                step=0.01,
+                                format="%.2f",
+                                help="Intertemporal subjective time preference parameter",
+                            )
+                        with hk_col2:
+                            hk_spread_input = st.slider(
+                                "Belief Divergence (δ)",
+                                min_value=0.0,
+                                max_value=0.40,
+                                value=0.20,
+                                step=0.02,
+                                format="%.2f",
+                                help="Optimism/pessimism subjective transition probability spread",
+                            )
+
+                        hk_rec = evaluate_harrison_kreps_profile(
+                            ticker=selected_ticker,
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            discount_factor=hk_beta_input,
+                            belief_spread_override=hk_spread_input,
+                        )
+
+                        hk_m1, hk_m2, hk_m3, hk_m4 = st.columns(4)
+                        with hk_m1:
+                            st.metric(
+                                "Equilibrium Price (Low State)",
+                                f"${hk_rec.equilibrium_prices[0]:.2f}",
+                                delta=f"Owner: {hk_rec.active_owner_states[0]}",
+                            )
+                        with hk_m2:
+                            st.metric(
+                                "Equilibrium Price (High State)",
+                                f"${hk_rec.equilibrium_prices[1]:.2f}",
+                                delta=f"Owner: {hk_rec.active_owner_states[1]}",
+                            )
+                        with hk_m3:
+                            st.metric(
+                                "Mean Resale Premium",
+                                f"${hk_rec.mean_resale_premium:.2f}",
+                                delta=f"+{hk_rec.mean_bubble_ratio * 100:.1f}% Bubble",
+                                help="Option to resell to more optimistic future investors",
+                            )
+                        with hk_m4:
+                            st.metric(
+                                "Harrison-Kreps Regime",
+                                hk_rec.regime.replace("_", " "),
+                                delta=f"δ = {hk_rec.belief_divergence:.2f}",
+                                help="Speculative bubble severity regime",
+                            )
+
+                        sig_payload = f"{hk_rec.ticker}:{hk_rec.discount_factor:.6f}:{hk_rec.belief_divergence:.6f}:{hk_rec.mean_resale_premium:.6f}:{hk_rec.mean_bubble_ratio:.6f}:{hk_rec.regime}:{hk_rec.timestamp}"
+                        st.caption(f"🛡️ **Harrison-Kreps HMAC Signature:** `{hk_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, hk_rec.hmac_signature)}`)")
+                    except Exception as hk_ex:
+                        st.info(f"Harrison-Kreps Resale Option evaluation deferred: {hk_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Harrison-Kreps profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
