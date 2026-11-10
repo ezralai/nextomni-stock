@@ -8718,6 +8718,85 @@ def aghion_bolton_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def leland_command(args: argparse.Namespace) -> None:
+    """CLI handler for Hayne E. Leland (1994) Endogenous Default & Optimal Capital Structure Engine."""
+    import json
+    from src.analytics.leland_endogenous_default import (
+        calculate_leland_equilibrium,
+        evaluate_leland_profile,
+        persist_leland_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    asset_value = getattr(args, "asset_value", None)
+    vol = float(getattr(args, "volatility", 0.25) if getattr(args, "volatility", None) is not None else 0.25)
+    rate = float(getattr(args, "rate", 0.05) if getattr(args, "rate", None) is not None else 0.05)
+    tax_rate = float(getattr(args, "tax_rate", 0.25) if getattr(args, "tax_rate", None) is not None else 0.25)
+    b_cost = float(getattr(args, "bankruptcy_cost", 0.35) if getattr(args, "bankruptcy_cost", None) is not None else 0.35)
+    coupon = getattr(args, "coupon", None)
+
+    try:
+        if asset_value is not None:
+            coupon_val = float(coupon) if coupon is not None else 4.0
+            receipt = calculate_leland_equilibrium(
+                asset_value=float(asset_value),
+                asset_volatility=vol,
+                risk_free_rate=rate,
+                corporate_tax_rate=tax_rate,
+                bankruptcy_cost_alpha=b_cost,
+                coupon=coupon_val,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_leland_profile(
+                prices=[],
+                ticker=ticker,
+                corporate_tax_rate=tax_rate,
+                bankruptcy_cost_alpha=b_cost,
+                risk_free_rate=rate,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_leland_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Leland evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Leland (1994) Endogenous Default & Optimal Capital Structure Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Unlevered Asset Value (V):      ${receipt.asset_value:.2f} (sigma: {receipt.asset_volatility * 100:.1f}%, r: {receipt.risk_free_rate * 100:.2f}%)")
+    print(f"  Tax Rate (tau) / Bankr Cost (a):{receipt.corporate_tax_rate * 100:.1f}% | {receipt.bankruptcy_cost_alpha * 100:.1f}%")
+    print(f"  Perpetual Coupon Rate (C):      ${receipt.contractual_coupon:.2f}")
+    print("-" * 80)
+    print("  Endogenous Default & Structural Claims:")
+    print(f"    Endogenous Default Barrier V_B:${receipt.endogenous_default_barrier:.2f} ({'DEFAULT TRIGGERED' if receipt.default_triggered else 'SOLVENT'})")
+    print(f"    Default Claim PV (V/V_B)^(-X):{receipt.default_probability_pv:.4f}")
+    print(f"    Risky Debt Value D(V):        ${receipt.debt_value:.2f} (Credit Spread: {receipt.credit_spread_bps:.1f} bps)")
+    print(f"    Equity Value E(V):            ${receipt.equity_value:.2f}")
+    print(f"    Tax Shield / Bankruptcy Loss: +${receipt.tax_shield_value:.2f} / -${receipt.bankruptcy_cost_value:.2f}")
+    print("-" * 80)
+    print("  Optimal Capital Structure Tradeoff:")
+    print(f"    Levered Firm Value v(V):      ${receipt.levered_firm_value:.2f} (Leverage: {receipt.leverage_ratio * 100:.2f}%)")
+    print(f"    Optimal Coupon (C*):          ${receipt.optimal_coupon:.2f} (Optimal Firm Value v*: ${receipt.optimal_firm_value:.2f})")
+    print(f"    Optimal Target Leverage (L*): {receipt.optimal_leverage_ratio * 100:.2f}%")
+    print("-" * 80)
+    print(f"  Leland Regime:                  {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -13365,6 +13444,60 @@ def main() -> None:
         help="Output Aghion-Bolton control rights receipt as JSON",
     )
 
+    # Subparser: leland-default (Hayne E. Leland 1994 Endogenous Default & Optimal Capital Structure Engine)
+    lel_parser = subparsers.add_parser(
+        "leland-default",
+        aliases=["leland-1994", "endogenous-default", "optimal-leverage", "tax-shield"],
+        help="Leland (1994) Endogenous Default Barrier & Optimal Capital Structure Engine",
+    )
+    lel_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. DEBT, F, IBM)",
+    )
+    lel_parser.add_argument(
+        "--asset-value",
+        type=float,
+        default=None,
+        help="Unlevered firm asset value V (e.g. 100.0)",
+    )
+    lel_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=0.25,
+        help="Annual asset return volatility sigma (default: 0.25)",
+    )
+    lel_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.05,
+        help="Risk-free interest rate r (default: 0.05)",
+    )
+    lel_parser.add_argument(
+        "--tax-rate",
+        type=float,
+        default=0.25,
+        help="Effective corporate tax rate tau (default: 0.25)",
+    )
+    lel_parser.add_argument(
+        "--bankruptcy-cost",
+        type=float,
+        default=0.35,
+        help="Proportional bankruptcy loss fraction alpha (default: 0.35)",
+    )
+    lel_parser.add_argument(
+        "--coupon",
+        type=float,
+        default=None,
+        help="Annual perpetual debt coupon C (default: 4.0)",
+    )
+    lel_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Leland (1994) capital structure receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -13635,6 +13768,8 @@ def main() -> None:
         breeden_litzenberger_command(args)
     elif args.command in ("aghion-bolton", "control-rights", "incomplete-contracts", "hart-moore", "strategic-default", "ab-1992"):
         aghion_bolton_command(args)
+    elif args.command in ("leland-default", "leland-1994", "endogenous-default", "optimal-leverage", "tax-shield"):
+        leland_command(args)
 
 
 if __name__ == "__main__":

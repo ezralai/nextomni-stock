@@ -7262,6 +7262,95 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Aghion-Bolton profile.")
 
+                st.markdown("---")
+                st.subheader("🏛️ Leland (1994) Endogenous Default Barrier & Optimal Capital Structure")
+                st.markdown(
+                    "Continuous-time structural trade-off valuation via **Hayne E. Leland (1994, *Journal of Finance*)**, "
+                    "solving smooth-pasting endogenous default boundaries ($V_B$), perpetual tax shield vs. deadweight bankruptcy costs, "
+                    "risky credit spreads, and closed-form optimal corporate leverage ($L^*$)."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.leland_endogenous_default import (
+                            evaluate_leland_profile,
+                            verify_hmac_signature,
+                        )
+
+                        lel_col1, lel_col2 = st.columns(2)
+                        with lel_col1:
+                            lel_tax_input = st.slider(
+                                "Corporate Tax Rate (τ)",
+                                min_value=0.00,
+                                max_value=0.45,
+                                value=0.25,
+                                step=0.02,
+                                format="%.2f",
+                                help="Effective corporate tax rate generating debt interest tax shields",
+                            )
+                        with lel_col2:
+                            lel_alpha_input = st.slider(
+                                "Bankruptcy Loss Fraction (α)",
+                                min_value=0.05,
+                                max_value=0.70,
+                                value=0.35,
+                                step=0.05,
+                                format="%.2f",
+                                help="Fraction of asset value destroyed by financial distress / bankruptcy",
+                            )
+
+                        lel_rec = evaluate_leland_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            corporate_tax_rate=lel_tax_input,
+                            bankruptcy_cost_alpha=lel_alpha_input,
+                            target_leverage_proxy=0.40,
+                        )
+
+                        lel_m1, lel_m2, lel_m3, lel_m4 = st.columns(4)
+                        with lel_m1:
+                            st.metric(
+                                "Endogenous Default V_B",
+                                f"${lel_rec.endogenous_default_barrier:.2f}",
+                                delta=f"Assets V: ${lel_rec.asset_value:.2f}",
+                                delta_color="normal" if not lel_rec.default_triggered else "inverse",
+                                help="Smooth-pasting default threshold where equity holders cease servicing debt",
+                            )
+                        with lel_m2:
+                            st.metric(
+                                "Optimal Leverage L*",
+                                f"{lel_rec.optimal_leverage_ratio * 100:.1f}%",
+                                delta=f"Current: {lel_rec.leverage_ratio * 100:.1f}%",
+                                help="Theoretical debt-to-value ratio maximizing firm enterprise value",
+                            )
+                        with lel_m3:
+                            st.metric(
+                                "Credit Spread",
+                                f"{lel_rec.credit_spread_bps:.0f} bps",
+                                delta=f"Debt Value: ${lel_rec.debt_value:.2f}",
+                                delta_color="normal" if lel_rec.credit_spread_bps < 350 else "inverse",
+                                help="Risky debt yield spread over the risk-free rate",
+                            )
+                        with lel_m4:
+                            st.metric(
+                                "Net Tax Benefit vs Loss",
+                                f"${lel_rec.tax_shield_value - lel_rec.bankruptcy_cost_value:+.2f}",
+                                delta=f"Firm Value: ${lel_rec.levered_firm_value:.2f}",
+                                help="Net enterprise value added from debt financing tradeoff",
+                            )
+
+                        sig_payload = (
+                            f"{lel_rec.ticker}:{lel_rec.asset_value:.4f}:{lel_rec.asset_volatility:.4f}:"
+                            f"{lel_rec.risk_free_rate:.4f}:{lel_rec.corporate_tax_rate:.4f}:"
+                            f"{lel_rec.bankruptcy_cost_alpha:.4f}:{lel_rec.contractual_coupon:.4f}:"
+                            f"{lel_rec.endogenous_default_barrier:.4f}:{lel_rec.levered_firm_value:.4f}:"
+                            f"{lel_rec.optimal_leverage_ratio:.4f}:{lel_rec.regime}:{lel_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Leland HMAC Signature:** `{lel_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, lel_rec.hmac_signature)}`)")
+                    except Exception as lel_ex:
+                        st.info(f"Leland Endogenous Default evaluation deferred: {lel_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Leland capital structure profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
