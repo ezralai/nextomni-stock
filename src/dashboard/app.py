@@ -9846,6 +9846,68 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Fama & Bliss forward spreads.")
 
+                st.divider()
+                st.subheader("🛡️ Duffie & Singleton (1999) Reduced-Form Credit Spread & Hazard Engine")
+                st.caption("Default-adjusted short rate R = r + h*(1 - omega): RMV risky bond pricing, credit triangle & CVA discount")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.duffie_singleton_credit import (
+                            _build_hmac_payload as build_ds_payload,
+                            evaluate_duffie_singleton_profile,
+                            verify_hmac_signature as verify_ds_hmac,
+                        )
+                        ds_col1, ds_col2 = st.columns(2)
+                        with ds_col1:
+                            ds_rec_rate = st.slider(
+                                "RMV Recovery Rate (omega)",
+                                min_value=0.00,
+                                max_value=0.80,
+                                value=0.40,
+                                step=0.05,
+                                key=f"ds_omega_{selected_ticker}",
+                            )
+                        with ds_col2:
+                            ds_mat = st.slider(
+                                "Credit Maturity T (Years)",
+                                min_value=1.0,
+                                max_value=15.0,
+                                value=5.0,
+                                step=1.0,
+                                key=f"ds_t_{selected_ticker}",
+                            )
+
+                        ds_rec = evaluate_duffie_singleton_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            recovery_rate_omega=ds_rec_rate,
+                            maturity_years=ds_mat,
+                        )
+
+                        dsm1, dsm2, dsm3, dsm4 = st.columns(4)
+                        dsm1.metric("Hazard / Credit Spread", f"{ds_rec.hazard_rate_h * 100:.2f}%", delta=f"{ds_rec.credit_spread_bps:.0f} bps")
+                        dsm2.metric("RMV / RT Bond Price", f"${ds_rec.rmv_bond_price:.2f}", delta=f"RT ${ds_rec.rt_bond_price:.2f}")
+                        dsm3.metric("CVA Credit Discount", f"${ds_rec.cva_discount:.2f}", delta=f"Surv {ds_rec.survival_probability * 100:.1f}%")
+                        dsm4.metric("Credit Regime", ds_rec.regime, delta=f"Adj R {ds_rec.adjusted_short_rate * 100:.2f}%")
+
+                        ds_sig_payload = build_ds_payload(
+                            ticker=ds_rec.ticker,
+                            hazard_h=ds_rec.hazard_rate_h,
+                            recovery_omega=ds_rec.recovery_rate_omega,
+                            rate_r=ds_rec.risk_free_rate_r,
+                            maturity=ds_rec.maturity_years,
+                            spread_s=ds_rec.credit_spread_s,
+                            rmv_price=ds_rec.rmv_bond_price,
+                            survival_prob=ds_rec.survival_probability,
+                            regime=ds_rec.regime,
+                            timestamp=ds_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Duffie-Singleton Credit HMAC:** `{ds_rec.hmac_signature[:16]}...` (Sealed: `{verify_ds_hmac(ds_sig_payload, ds_rec.hmac_signature)}`)")
+                    except Exception as ds_ex:
+                        st.info(f"Duffie & Singleton credit evaluation deferred: {ds_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Duffie & Singleton credit spreads.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

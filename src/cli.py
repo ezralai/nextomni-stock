@@ -11022,6 +11022,43 @@ def fama_bliss_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def duffie_singleton_command(args: argparse.Namespace) -> None:
+    """CLI handler for Duffie & Singleton (1999) Reduced-Form Credit Spread Engine."""
+    import json
+    from src.analytics.duffie_singleton_credit import (
+        calculate_duffie_singleton_credit,
+        persist_duffie_singleton_record,
+    )
+
+    receipt = calculate_duffie_singleton_credit(
+        hazard_rate_h=args.hazard,
+        recovery_rate_omega=args.recovery,
+        risk_free_rate_r=args.rate,
+        maturity_years=args.maturity,
+        notional=args.notional,
+        ticker=args.ticker,
+    )
+    persist_duffie_singleton_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"DUFFIE & SINGLETON (1999) REDUCED-FORM CREDIT RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Hazard h / Recovery omega:      {receipt.hazard_rate_h * 100:.2f}% / {receipt.recovery_rate_omega * 100:.1f}%")
+    print(f"  Credit Spread (h * LGD):        {receipt.credit_spread_s * 100:.2f}% ({receipt.credit_spread_bps:.1f} bps)")
+    print(f"  Risk-Free / Adjusted Rate R:    {receipt.risk_free_rate_r * 100:.2f}% / {receipt.adjusted_short_rate * 100:.2f}%")
+    print(f"  RMV Price / RT Price:           ${receipt.rmv_bond_price:.4f} / ${receipt.rt_bond_price:.4f}")
+    print(f"  Risk-Free Value / CVA:          ${receipt.risk_free_bond_price:.4f} / ${receipt.cva_discount:.4f}")
+    print(f"  Survival / Default Prob ({receipt.maturity_years:.1f}y): {receipt.survival_probability * 100:.2f}% / {receipt.default_probability * 100:.2f}%")
+    print(f"  Credit Regime:                  {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17518,6 +17555,53 @@ def main() -> None:
         help="Output Fama & Bliss forward-spot receipt as JSON",
     )
 
+    # Duffie & Singleton (1999) Reduced-Form Credit Spread parser
+    ds_parser = subparsers.add_parser(
+        "reduced-credit",
+        aliases=["duffie-singleton", "ds-1999"],
+        help="Price defaultable bonds & hazard spreads via Duffie & Singleton (1999)",
+    )
+    ds_parser.add_argument(
+        "--ticker",
+        default="HYG",
+        help="Credit ETF or corporate bond ticker symbol (default: HYG)",
+    )
+    ds_parser.add_argument(
+        "--hazard",
+        type=float,
+        default=0.04,
+        help="Poisson default hazard intensity h (default: 0.04)",
+    )
+    ds_parser.add_argument(
+        "--recovery",
+        type=float,
+        default=0.40,
+        help="Recovery of market value omega in [0, 0.99] (default: 0.40)",
+    )
+    ds_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.045,
+        help="Risk-free benchmark short rate r (default: 0.045)",
+    )
+    ds_parser.add_argument(
+        "--maturity",
+        type=float,
+        default=5.0,
+        help="Bond maturity T in years (default: 5.0)",
+    )
+    ds_parser.add_argument(
+        "--notional",
+        type=float,
+        default=100.0,
+        help="Bond face notional value (default: 100.0)",
+    )
+    ds_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Duffie & Singleton credit receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17862,6 +17946,8 @@ def main() -> None:
         merton_perold_command(args)
     elif args.command in ("fama-bliss", "forward-spread", "fb-1987"):
         fama_bliss_command(args)
+    elif args.command in ("reduced-credit", "duffie-singleton", "ds-1999"):
+        duffie_singleton_command(args)
 
 
 if __name__ == "__main__":
