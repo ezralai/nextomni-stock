@@ -9890,6 +9890,66 @@ def black_cox_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def kim_verrecchia_command(args: argparse.Namespace) -> None:
+    """CLI handler for Kim & Verrecchia (1991, 1994) Differential Precision & Announcement Liquidity Engine."""
+    import json
+    from src.analytics.kim_verrecchia_liquidity import (
+        calculate_kim_verrecchia_liquidity,
+        persist_kim_verrecchia_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    prior_h = float(getattr(args, "prior_h", 4.0) if getattr(args, "prior_h", None) is not None else 4.0)
+    pub_s = float(getattr(args, "pub_s", 2.0) if getattr(args, "pub_s", None) is not None else 2.0)
+    priv_p = float(getattr(args, "priv_p", 3.0) if getattr(args, "priv_p", None) is not None else 3.0)
+    dispersion = float(getattr(args, "dispersion", 1.5) if getattr(args, "dispersion", None) is not None else 1.5)
+    abs_dp = float(getattr(args, "abs_dp", 0.04) if getattr(args, "abs_dp", None) is not None else 0.04)
+    noise_u = float(getattr(args, "noise_u", 0.50) if getattr(args, "noise_u", None) is not None else 0.50)
+
+    try:
+        receipt = calculate_kim_verrecchia_liquidity(
+            prior_precision_h=prior_h,
+            public_signal_precision_s=pub_s,
+            mean_private_precision_p=priv_p,
+            precision_dispersion_sigma_p=dispersion,
+            announcement_price_change_abs=abs_dp,
+            noise_liquidity_sigma_u=noise_u,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_kim_verrecchia_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Kim-Verrecchia evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Kim & Verrecchia (1991, 1994) Differential Precision & Announcement Liquidity Engine")
+    print("=" * 80)
+    print(f"  Issuer / Ticker:                {receipt.ticker}")
+    print(f"  Precisions (Prior h / Pub s / p): {receipt.prior_precision_h:.2f} | {receipt.public_signal_precision_s:.2f} | {receipt.mean_private_precision_p:.2f} (sigma_p={receipt.precision_dispersion_sigma_p:.2f})")
+    print(f"  Surprise |Delta P| / Total Prec: {receipt.announcement_price_change_abs * 100:.2f}% | {receipt.total_posterior_precision:.2f} (alpha={receipt.price_response_alpha:.3f})")
+    print("-" * 80)
+    print("  Announcement Volume & Event-Window Adverse Selection:")
+    print(f"    Expected Disclosure Volume:   {receipt.expected_announcement_volume:.6f} (Slope V/|dP|={receipt.volume_to_price_change_ratio:.4f})")
+    print(f"    Differential Belief Ratio:    {receipt.belief_dispersion_ratio * 100:.2f}%")
+    print(f"    Event Illiquidity lambda_KV:  {receipt.announcement_illiquidity_lambda:.4f} (Baseline: {receipt.baseline_illiquidity_lambda:.4f})")
+    print(f"    Illiquidity Surge (KV 1994):  +{receipt.illiquidity_surge_bps:.2f} bps")
+    print("-" * 80)
+    print(f"  Disclosure Liquidity Regime:    {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -15390,6 +15450,59 @@ def main() -> None:
         help="Output Black & Cox covenant credit receipt as JSON",
     )
 
+    # Kim & Verrecchia (1991, 1994) Announcement Liquidity parser
+    kv_parser = subparsers.add_parser(
+        "announcement-liquidity",
+        aliases=["kim-verrecchia", "kv-1991", "differential-precision"],
+        help="Evaluate Kim & Verrecchia (1991, 1994) disclosure volume & illiquidity surge",
+    )
+    kv_parser.add_argument(
+        "--ticker",
+        default="KV91",
+        help="Security ticker symbol (default: KV91)",
+    )
+    kv_parser.add_argument(
+        "--prior-h",
+        type=float,
+        default=4.0,
+        help="Pre-announcement prior precision h (default: 4.0)",
+    )
+    kv_parser.add_argument(
+        "--pub-s",
+        type=float,
+        default=2.0,
+        help="Public disclosure signal precision s (default: 2.0)",
+    )
+    kv_parser.add_argument(
+        "--priv-p",
+        type=float,
+        default=3.0,
+        help="Average private information precision p_bar (default: 3.0)",
+    )
+    kv_parser.add_argument(
+        "--dispersion",
+        type=float,
+        default=1.5,
+        help="Differential private precision dispersion sigma_p (default: 1.5)",
+    )
+    kv_parser.add_argument(
+        "--abs-dp",
+        type=float,
+        default=0.04,
+        help="Absolute announcement price revision |Delta P| (default: 0.04)",
+    )
+    kv_parser.add_argument(
+        "--noise-u",
+        type=float,
+        default=0.50,
+        help="Noise liquidity depth std dev sigma_u (default: 0.50)",
+    )
+    kv_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Kim & Verrecchia receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -15694,6 +15807,8 @@ def main() -> None:
         margrabe_exchange_command(args)
     elif args.command in ("black-cox", "first-passage", "safety-covenant", "bc-1976"):
         black_cox_command(args)
+    elif args.command in ("announcement-liquidity", "kim-verrecchia", "kv-1991", "differential-precision"):
+        kim_verrecchia_command(args)
 
 
 if __name__ == "__main__":

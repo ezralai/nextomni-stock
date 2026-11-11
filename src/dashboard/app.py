@@ -8667,6 +8667,61 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Black & Cox covenant credit profile.")
 
+                st.divider()
+                st.subheader("📢 Kim & Verrecchia (1991, 1994) Differential Precision & Announcement Liquidity Engine")
+                st.caption("Noisy rational expectations disclosure equilibrium: belief-dispersion volume proportionality to |Delta P| and event-window adverse-selection illiquidity surge")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.kim_verrecchia_liquidity import (
+                            evaluate_kim_verrecchia_profile,
+                            verify_hmac_signature as verify_kv_hmac,
+                        )
+                        kv_col1, kv_col2 = st.columns(2)
+                        with kv_col1:
+                            kv_pub_s = st.slider(
+                                "Public Announcement Precision (s)",
+                                min_value=0.0,
+                                max_value=6.0,
+                                value=2.0,
+                                step=0.5,
+                                key=f"kv_s_{selected_ticker}",
+                            )
+                        with kv_col2:
+                            kv_disp = st.slider(
+                                "Private Precision Heterogeneity (sigma_p)",
+                                min_value=0.0,
+                                max_value=5.0,
+                                value=1.5,
+                                step=0.25,
+                                key=f"kv_disp_{selected_ticker}",
+                            )
+
+                        kv_rec = evaluate_kim_verrecchia_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            public_signal_precision_s=kv_pub_s,
+                            precision_dispersion_sigma_p=kv_disp,
+                        )
+
+                        km1, km2, km3, km4 = st.columns(4)
+                        km1.metric("Disclosure Illiquidity lambda", f"{kv_rec.announcement_illiquidity_lambda:.3f}", delta=f"+{kv_rec.illiquidity_surge_bps:.0f} bps event surge")
+                        km2.metric("Expected Disclosure Volume", f"{kv_rec.expected_announcement_volume:.4f}", delta=f"Slope V/|dP| {kv_rec.volume_to_price_change_ratio:.3f}")
+                        km3.metric("Public Signal Response alpha", f"{kv_rec.price_response_alpha * 100:.1f}%", delta=f"Surprise {kv_rec.announcement_price_change_abs * 100:.2f}%")
+                        km4.metric("Belief Dispersion Ratio", f"{kv_rec.belief_dispersion_ratio * 100:.1f}%", delta=kv_rec.regime)
+
+                        kv_sig_payload = (
+                            f"{kv_rec.ticker}:{kv_rec.prior_precision_h:.4f}:{kv_rec.public_signal_precision_s:.4f}:"
+                            f"{kv_rec.mean_private_precision_p:.4f}:{kv_rec.precision_dispersion_sigma_p:.4f}:"
+                            f"{kv_rec.announcement_price_change_abs:.6f}:{kv_rec.expected_announcement_volume:.6f}:"
+                            f"{kv_rec.announcement_illiquidity_lambda:.6f}:{kv_rec.regime}:{kv_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Kim-Verrecchia HMAC:** `{kv_rec.hmac_signature[:16]}...` (Sealed: `{verify_kv_hmac(kv_sig_payload, kv_rec.hmac_signature)}`)")
+                    except Exception as kv_ex:
+                        st.info(f"Kim & Verrecchia disclosure liquidity evaluation deferred: {kv_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Kim & Verrecchia announcement liquidity profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
