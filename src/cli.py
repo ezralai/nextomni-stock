@@ -10008,6 +10008,70 @@ def myers_rajan_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def hull_white_command(args: argparse.Namespace) -> None:
+    """CLI handler for Hull & White (1990) No-Arbitrage Term Structure & Bond Option Engine."""
+    import json
+    from src.analytics.hull_white_bond_options import (
+        calculate_hull_white_bond_option,
+        persist_hull_white_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    r0 = float(getattr(args, "r0", 0.035) if getattr(args, "r0", None) is not None else 0.035)
+    y_inf = float(getattr(args, "y_inf", 0.050) if getattr(args, "y_inf", None) is not None else 0.050)
+    a_param = float(getattr(args, "a", 0.15) if getattr(args, "a", None) is not None else 0.15)
+    sigma = float(getattr(args, "sigma", 0.015) if getattr(args, "sigma", None) is not None else 0.015)
+    t_opt = float(getattr(args, "t_opt", 2.0) if getattr(args, "t_opt", None) is not None else 2.0)
+    s_bond = float(getattr(args, "s_bond", 10.0) if getattr(args, "s_bond", None) is not None else 10.0)
+    strike = float(getattr(args, "strike", 0.65) if getattr(args, "strike", None) is not None else 0.65)
+    opt_type = str(getattr(args, "type", "CALL") or "CALL").strip().upper()
+
+    try:
+        receipt = calculate_hull_white_bond_option(
+            short_rate_r0=r0,
+            long_yield_y_inf=y_inf,
+            mean_reversion_a=a_param,
+            rate_volatility_sigma=sigma,
+            option_maturity_t=t_opt,
+            bond_maturity_s=s_bond,
+            strike_k=strike,
+            option_type=opt_type,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_hull_white_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Hull-White bond option evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Hull & White (1990) No-Arbitrage Term Structure & Bond Option Engine")
+    print("=" * 80)
+    print(f"  Instrument / Ticker:            {receipt.ticker} (Zero-Coupon Bond {receipt.option_type})")
+    print(f"  Rates (r0 / y_inf) & a / sig:   {receipt.short_rate_r0 * 100:.2f}% / {receipt.long_yield_y_inf * 100:.2f}% | a={receipt.mean_reversion_a:.2f} | sig={receipt.rate_volatility_sigma * 100:.2f}%")
+    print(f"  Option Expiry T / Bond S / K:   {receipt.option_maturity_t:.2f}y | {receipt.bond_maturity_s:.2f}y | Strike K=${receipt.strike_k:.4f}")
+    print("-" * 80)
+    print("  No-Arbitrage Curve Fit & Closed-Form Bond Option Valuation:")
+    print(f"    Market Discounts P(0,T / S):  ${receipt.discount_p_0_t:.4f} | ${receipt.discount_p_0_s:.4f} (Fit Err: {receipt.curve_fit_error_bps:.2f} bps)")
+    print(f"    Forward Bond Price / Yield:   ${receipt.forward_bond_price:.4f} ({receipt.forward_yield_rate * 100:.2f}% | vol_p={receipt.bond_price_vol_sigma_p * 100:.2f}%)")
+    print(f"    Selected Option Fair Value:   ${receipt.option_price:.4f} (Intrinsic: ${receipt.forward_intrinsic_value:.4f}, Time: ${receipt.time_value_premium:.4f})")
+    print(f"    Bond Call / Put & Delta:      ${receipt.bond_call_price:.4f} | ${receipt.bond_put_price:.4f} (Spot Delta={receipt.spot_delta:+.4f})")
+    print("-" * 80)
+    print(f"  Rate Option Regime:             {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -15608,6 +15672,71 @@ def main() -> None:
         help="Output Myers & Rajan receipt as JSON",
     )
 
+    # Hull & White (1990) No-Arbitrage Bond Option parser
+    hw_parser = subparsers.add_parser(
+        "hull-white",
+        aliases=["hw-1990", "bond-option"],
+        help="Price zero-coupon bond options under Hull & White (1990) exact term structure fit",
+    )
+    hw_parser.add_argument(
+        "--ticker",
+        default="HW90",
+        help="Fixed-income benchmark ticker symbol (default: HW90)",
+    )
+    hw_parser.add_argument(
+        "--r0",
+        type=float,
+        default=0.035,
+        help="Initial instantaneous short rate r_0 (default: 0.035)",
+    )
+    hw_parser.add_argument(
+        "--y-inf",
+        type=float,
+        default=0.050,
+        help="Long-horizon asymptotic yield y_inf (default: 0.050)",
+    )
+    hw_parser.add_argument(
+        "--a",
+        type=float,
+        default=0.15,
+        help="Short-rate mean reversion parameter a (default: 0.15)",
+    )
+    hw_parser.add_argument(
+        "--sigma",
+        type=float,
+        default=0.015,
+        help="Normal short-rate diffusion volatility sigma (default: 0.015)",
+    )
+    hw_parser.add_argument(
+        "--t-opt",
+        type=float,
+        default=2.0,
+        help="Option expiration T in years (default: 2.0)",
+    )
+    hw_parser.add_argument(
+        "--s-bond",
+        type=float,
+        default=10.0,
+        help="Underlying zero-coupon bond maturity S > T in years (default: 10.0)",
+    )
+    hw_parser.add_argument(
+        "--strike",
+        type=float,
+        default=0.65,
+        help="Zero-coupon bond option strike K (default: 0.65)",
+    )
+    hw_parser.add_argument(
+        "--type",
+        default="CALL",
+        choices=["CALL", "PUT"],
+        help="Bond option type: CALL or PUT (default: CALL)",
+    )
+    hw_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Hull & White receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -15916,6 +16045,8 @@ def main() -> None:
         kim_verrecchia_command(args)
     elif args.command in ("liquidity-paradox", "myers-rajan", "mr-1998"):
         myers_rajan_command(args)
+    elif args.command in ("hull-white", "hw-1990", "bond-option"):
+        hull_white_command(args)
 
 
 if __name__ == "__main__":

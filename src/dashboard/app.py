@@ -8777,6 +8777,69 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Myers & Rajan paradox of liquidity.")
 
+                st.divider()
+                st.subheader("📐 Hull & White (1990) No-Arbitrage Term Structure & Bond Option Engine")
+                st.caption("Exact initial yield curve theta(t) matching and closed-form zero-coupon bond options (Call/Put parity, forward yield & convexity sigma_p)")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.hull_white_bond_options import (
+                            evaluate_hull_white_profile,
+                            verify_hmac_signature as verify_hw_hmac,
+                        )
+                        hw_col1, hw_col2, hw_col3 = st.columns(3)
+                        with hw_col1:
+                            hw_r0 = st.slider(
+                                "Short Rate r_0 (%)",
+                                min_value=0.5,
+                                max_value=9.0,
+                                value=3.5,
+                                step=0.25,
+                                key=f"hw_r0_{selected_ticker}",
+                            ) / 100.0
+                        with hw_col2:
+                            hw_yinf = st.slider(
+                                "Long Yield y_inf (%)",
+                                min_value=1.0,
+                                max_value=9.0,
+                                value=5.0,
+                                step=0.25,
+                                key=f"hw_yinf_{selected_ticker}",
+                            ) / 100.0
+                        with hw_col3:
+                            hw_type = st.selectbox(
+                                "Bond Option Type",
+                                options=["CALL", "PUT"],
+                                index=0,
+                                key=f"hw_type_{selected_ticker}",
+                            )
+
+                        hw_rec = evaluate_hull_white_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            short_rate_r0=hw_r0,
+                            long_yield_y_inf=hw_yinf,
+                            option_type=hw_type,
+                        )
+
+                        hm1, hm2, hm3, hm4 = st.columns(4)
+                        hm1.metric("ATM Bond Option Value", f"${hw_rec.option_price:.4f}", delta=f"Forward Bond ${hw_rec.forward_bond_price:.3f}")
+                        hm2.metric("Bond Price Vol sigma_p", f"{hw_rec.bond_price_vol_sigma_p * 100:.2f}%", delta=f"Fwd Yield {hw_rec.forward_yield_rate * 100:.2f}%")
+                        hm3.metric("Spot Option Delta", f"{hw_rec.spot_delta:+.3f}", delta=f"Curve Fit Err {hw_rec.curve_fit_error_bps:.1f} bps")
+                        hm4.metric("Rate Vol (Normal sigma)", f"{hw_rec.rate_volatility_sigma * 100:.2f}%", delta=hw_rec.regime)
+
+                        hw_sig_payload = (
+                            f"{hw_rec.ticker}:{hw_rec.option_type}:{hw_rec.short_rate_r0:.6f}:{hw_rec.long_yield_y_inf:.6f}:"
+                            f"{hw_rec.mean_reversion_a:.4f}:{hw_rec.rate_volatility_sigma:.4f}:"
+                            f"{hw_rec.option_maturity_t:.4f}:{hw_rec.bond_maturity_s:.4f}:"
+                            f"{hw_rec.strike_k:.4f}:{hw_rec.option_price:.6f}:{hw_rec.regime}:{hw_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Hull-White HMAC:** `{hw_rec.hmac_signature[:16]}...` (Sealed: `{verify_hw_hmac(hw_sig_payload, hw_rec.hmac_signature)}`)")
+                    except Exception as hw_ex:
+                        st.info(f"Hull & White bond option evaluation deferred: {hw_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Hull & White bond option profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
