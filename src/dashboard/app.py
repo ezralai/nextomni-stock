@@ -9435,6 +9435,68 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Blanchard & Watson rational bubbles.")
 
+                st.divider()
+                st.subheader("📉 Fischer Black (1972) Zero-Beta Restricted-Borrowing CAPM Engine")
+                st.caption("Orthogonal Zero-Beta equilibrium E[R_i] = R_z + beta_i*(R_m - R_z): SML slope flattening & positive low-beta alpha wedge vs. Sharpe-Lintner CAPM")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.black_zero_beta_capm import (
+                            evaluate_black_zero_beta_profile,
+                            verify_hmac_signature as verify_bz_hmac,
+                        )
+                        bz_col1, bz_col2 = st.columns(2)
+                        with bz_col1:
+                            bz_rz = st.slider(
+                                "Zero-Beta Portfolio Rate R_z (%)",
+                                min_value=3.5,
+                                max_value=8.0,
+                                value=5.5,
+                                step=0.25,
+                                key=f"bz_rz_{selected_ticker}",
+                            ) / 100.0
+                        with bz_col2:
+                            bz_override = st.checkbox(
+                                "Custom Asset Beta?",
+                                value=False,
+                                key=f"bz_ovr_{selected_ticker}",
+                            )
+                            bz_beta = None
+                            if bz_override:
+                                bz_beta = st.slider(
+                                    "Asset Market Beta",
+                                    min_value=0.20,
+                                    max_value=2.00,
+                                    value=0.70,
+                                    step=0.10,
+                                    key=f"bz_beta_{selected_ticker}",
+                                )
+
+                        bz_rec = evaluate_black_zero_beta_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            asset_beta=bz_beta,
+                            zero_beta_rate_rz=bz_rz,
+                        )
+
+                        bzm1, bzm2, bzm3, bzm4 = st.columns(4)
+                        bzm1.metric("Black Zero-Beta E[R]", f"{bz_rec.black_expected_return * 100:.2f}%", delta=f"SL CAPM {bz_rec.sharpe_lintner_return * 100:.2f}%")
+                        bzm2.metric("SML Alpha Wedge", f"{bz_rec.sml_alpha_wedge_pct:+.2f}%", delta=f"Beta {bz_rec.asset_beta:.2f}")
+                        bzm3.metric("SML Slope Flattening", f"{bz_rec.sml_flattening_pct:.1f}%", delta=f"ZB Spread +{bz_rec.zero_beta_spread * 100:.2f}%")
+                        bzm4.metric("Zero-Beta Regime", bz_rec.regime, delta=f"R_m {bz_rec.market_return_rm * 100:.2f}%")
+
+                        bz_sig_payload = (
+                            f"{bz_rec.ticker}:{bz_rec.asset_beta:.4f}:{bz_rec.risk_free_rate_rf:.6f}:"
+                            f"{bz_rec.zero_beta_rate_rz:.6f}:{bz_rec.market_return_rm:.6f}:"
+                            f"{bz_rec.black_expected_return:.6f}:{bz_rec.sharpe_lintner_return:.6f}:"
+                            f"{bz_rec.sml_alpha_wedge_pct:.4f}:{bz_rec.regime}:{bz_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Black Zero-Beta HMAC:** `{bz_rec.hmac_signature[:16]}...` (Sealed: `{verify_bz_hmac(bz_sig_payload, bz_rec.hmac_signature)}`)")
+                    except Exception as bz_ex:
+                        st.info(f"Black Zero-Beta CAPM evaluation deferred: {bz_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Black Zero-Beta CAPM.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

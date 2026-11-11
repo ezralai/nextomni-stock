@@ -10657,6 +10657,60 @@ def blanchard_watson_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def black_zero_beta_command(args: argparse.Namespace) -> None:
+    """CLI handler for Fischer Black (1972) Zero-Beta CAPM & SML Flattening Engine."""
+    import json
+    from src.analytics.black_zero_beta_capm import (
+        calculate_black_zero_beta_capm,
+        persist_black_zero_beta_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    beta = float(getattr(args, "beta", 0.70) if getattr(args, "beta", None) is not None else 0.70)
+    rf = float(getattr(args, "rf", 0.035) if getattr(args, "rf", None) is not None else 0.035)
+    rz = float(getattr(args, "rz", 0.055) if getattr(args, "rz", None) is not None else 0.055)
+    rm = float(getattr(args, "rm", 0.095) if getattr(args, "rm", None) is not None else 0.095)
+
+    try:
+        receipt = calculate_black_zero_beta_capm(
+            asset_beta=beta,
+            risk_free_rate_rf=rf,
+            zero_beta_rate_rz=rz,
+            market_return_rm=rm,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_black_zero_beta_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Black Zero-Beta CAPM evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Fischer Black (1972) Zero-Beta CAPM & SML Flattening Engine")
+    print("=" * 80)
+    print(f"  Asset / Ticker:                 {receipt.ticker} (Beta: {receipt.asset_beta:.2f})")
+    print(f"  Rates (rf / R_z / R_m):         {receipt.risk_free_rate_rf * 100:.2f}% | {receipt.zero_beta_rate_rz * 100:.2f}% | {receipt.market_return_rm * 100:.2f}% (ZB Spread: +{receipt.zero_beta_spread * 100:.2f}%)")
+    print("-" * 80)
+    print("  Security Market Line Flattening & CAPM Comparison:")
+    print(f"    Black Expected Return:        {receipt.black_expected_return * 100:.2f}% / yr (Slope: {receipt.black_sml_slope * 100:.2f}%)")
+    print(f"    Sharpe-Lintner Expected Ret:  {receipt.sharpe_lintner_return * 100:.2f}% / yr (Slope: {receipt.sharpe_lintner_slope * 100:.2f}%)")
+    print(f"    SML Alpha Wedge (Black - SL): {receipt.sml_alpha_wedge_pct:+.2f}% | SML Flattening: {receipt.sml_flattening_pct:.1f}%")
+    print("-" * 80)
+    print(f"  Zero-Beta Pricing Regime:       {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -16816,6 +16870,47 @@ def main() -> None:
         help="Output Blanchard & Watson receipt as JSON",
     )
 
+    # Fischer Black (1972) Zero-Beta CAPM parser
+    bz_parser = subparsers.add_parser(
+        "zero-beta",
+        aliases=["black-1972"],
+        help="Evaluate Fischer Black (1972) restricted-borrowing Zero-Beta CAPM & SML flattening",
+    )
+    bz_parser.add_argument(
+        "--ticker",
+        default="BZ72",
+        help="Asset ticker symbol (default: BZ72)",
+    )
+    bz_parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.70,
+        help="Asset systematic market beta (default: 0.70)",
+    )
+    bz_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.035,
+        help="Unconstrained risk-free lending rate r_f (default: 0.035)",
+    )
+    bz_parser.add_argument(
+        "--rz",
+        type=float,
+        default=0.055,
+        help="Orthogonal minimum-variance Zero-Beta return R_z >= r_f (default: 0.055)",
+    )
+    bz_parser.add_argument(
+        "--rm",
+        type=float,
+        default=0.095,
+        help="Expected market portfolio return R_m > R_z (default: 0.095)",
+    )
+    bz_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Black Zero-Beta CAPM receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17146,6 +17241,8 @@ def main() -> None:
         diamond_maturity_command(args)
     elif args.command in ("rational-bubble", "blanchard-watson", "bw-1982"):
         blanchard_watson_command(args)
+    elif args.command in ("zero-beta", "black-1972"):
+        black_zero_beta_command(args)
 
 
 if __name__ == "__main__":
