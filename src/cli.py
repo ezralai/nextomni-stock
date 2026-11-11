@@ -9500,6 +9500,78 @@ def diamond_monitoring_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def miller_tax_command(args: argparse.Namespace) -> None:
+    """CLI handler for Merton H. Miller (1977) Debt and Taxes Personal Clientele Engine."""
+    import json
+    from src.analytics.miller_debt_taxes import (
+        calculate_miller_debt_taxes,
+        evaluate_miller_tax_profile,
+        persist_miller_tax_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    firm_val = getattr(args, "firm_value", None)
+    debt = getattr(args, "debt", None)
+    corp_tax = float(getattr(args, "corp_tax", 0.25) if getattr(args, "corp_tax", None) is not None else 0.25)
+    eq_tax = float(getattr(args, "equity_tax", 0.12) if getattr(args, "equity_tax", None) is not None else 0.12)
+    debt_tax = float(getattr(args, "debt_tax", 0.30) if getattr(args, "debt_tax", None) is not None else 0.30)
+
+    try:
+        if firm_val is not None or debt is not None:
+            vu = float(firm_val) if firm_val is not None else 100.0
+            bd = float(debt) if debt is not None else 40.0
+            receipt = calculate_miller_debt_taxes(
+                unlevered_firm_value=vu,
+                debt_market_value=bd,
+                corporate_tax_rate=corp_tax,
+                personal_equity_tax_rate=eq_tax,
+                personal_debt_tax_rate=debt_tax,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_miller_tax_profile(
+                prices=[],
+                ticker=ticker,
+                corporate_tax_rate=corp_tax,
+                personal_equity_tax_rate=eq_tax,
+                personal_debt_tax_rate=debt_tax,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_miller_tax_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Miller Debt & Taxes evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Miller (1977) Debt & Taxes Personal Clientele Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Unlevered Value (V_U) / Debt:   ${receipt.unlevered_firm_value:.2f} | ${receipt.debt_market_value:.2f}")
+    print(f"  Tax Rates (tau_c / ps / pd):    {receipt.corporate_tax_rate * 100:.1f}% | {receipt.personal_equity_tax_rate * 100:.1f}% | {receipt.personal_debt_tax_rate * 100:.1f}%")
+    print("-" * 80)
+    print("  Miller Personal Clientele Tax Arbitrage:")
+    print(f"    Miller Leverage Gain Factor:  {receipt.miller_gain_factor * 100:+.2f}%")
+    print(f"    Net Miller Tax Gain (G_L):    ${receipt.miller_leverage_gain:+.2f} (MM63 Shield: ${receipt.mm63_corporate_shield:.2f})")
+    print(f"    Personal Tax Erosion:         ${receipt.personal_tax_erosion:+.2f}")
+    print(f"    Break-Even Bond Bracket t_pd*:{receipt.breakeven_debt_tax_rate * 100:.2f}% (Clientele: {receipt.investor_clientele})")
+    print(f"    Market Clearing Bond Yield:   {receipt.market_clearing_bond_yield * 100:.2f}% (+{receipt.tax_clientele_spread_bps:.1f} bps vs tax-free)")
+    print("-" * 80)
+    print(f"  Miller Tax Regime:              {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -14669,6 +14741,54 @@ def main() -> None:
         help="Output Diamond delegated monitoring receipt as JSON",
     )
 
+    # Subparser: debt-taxes (Merton H. Miller 1977 Debt & Taxes Personal Clientele Engine)
+    mil_parser = subparsers.add_parser(
+        "debt-taxes",
+        aliases=["miller-1977", "tax-clientele", "miller-equilibrium"],
+        help="Miller (1977) Debt & Taxes Personal Clientele Equilibrium Engine",
+    )
+    mil_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. TAX, KO, XOM)",
+    )
+    mil_parser.add_argument(
+        "--firm-value",
+        type=float,
+        default=None,
+        help="Unlevered firm enterprise value V_U (e.g. 100.0)",
+    )
+    mil_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Corporate debt market value B_D (e.g. 40.0)",
+    )
+    mil_parser.add_argument(
+        "--corp-tax",
+        type=float,
+        default=0.25,
+        help="Statutory corporate tax rate tau_c (default: 0.25)",
+    )
+    mil_parser.add_argument(
+        "--equity-tax",
+        type=float,
+        default=0.12,
+        help="Effective personal equity tax rate tau_ps (default: 0.12)",
+    )
+    mil_parser.add_argument(
+        "--debt-tax",
+        type=float,
+        default=0.30,
+        help="Personal ordinary income tax rate on debt interest tau_pd (default: 0.30)",
+    )
+    mil_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Miller (1977) tax equilibrium receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -14961,6 +15081,8 @@ def main() -> None:
         ross_signaling_command(args)
     elif args.command in ("delegated-monitoring", "diamond-1984", "bank-monitoring", "delegation-cost"):
         diamond_monitoring_command(args)
+    elif args.command in ("debt-taxes", "miller-1977", "tax-clientele", "miller-equilibrium"):
+        miller_tax_command(args)
 
 
 if __name__ == "__main__":

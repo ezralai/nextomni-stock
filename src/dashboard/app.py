@@ -8222,6 +8222,94 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Diamond monitoring profile.")
 
+                st.markdown("---")
+                st.subheader("🧾 Miller (1977) Debt and Taxes Personal Clientele Equilibrium")
+                st.markdown(
+                    "Personal & corporate taxation clientele equilibrium via **Merton H. Miller (1977, *J. Finance*)**, "
+                    "evaluating true leverage tax advantage ($G_L = [1 - \\frac{(1-\\tau_c)(1-\\tau_{ps})}{1-\\tau_{pd}}] B_D$), "
+                    "personal tax shield erosion, investor bracket clienteles, and taxable bond yield parity."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.miller_debt_taxes import (
+                            evaluate_miller_tax_profile,
+                            verify_hmac_signature,
+                        )
+
+                        mil_col1, mil_col2 = st.columns(2)
+                        with mil_col1:
+                            mil_taupd_input = st.slider(
+                                "Investor Personal Debt Tax Rate (τ_pd)",
+                                min_value=0.00,
+                                max_value=0.55,
+                                value=0.30,
+                                step=0.03,
+                                format="%.2f",
+                                help="Marginal ordinary income tax rate paid on corporate bond interest",
+                            )
+                        with mil_col2:
+                            mil_tauc_input = st.slider(
+                                "Corporate Income Tax Rate (τ_c)",
+                                min_value=0.05,
+                                max_value=0.45,
+                                value=0.25,
+                                step=0.02,
+                                format="%.2f",
+                                help="Statutory corporate tax rate shielding interest deductions",
+                            )
+
+                        mil_rec = evaluate_miller_tax_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            corporate_tax_rate=mil_tauc_input,
+                            personal_equity_tax_rate=0.12,
+                            personal_debt_tax_rate=mil_taupd_input,
+                        )
+
+                        mil_m1, mil_m2, mil_m3, mil_m4 = st.columns(4)
+                        with mil_m1:
+                            st.metric(
+                                "Net Miller Tax Gain G_L",
+                                f"${mil_rec.miller_leverage_gain:+.2f}",
+                                delta=f"MM63 Shield: ${mil_rec.mm63_corporate_shield:.2f}",
+                                delta_color="normal" if mil_rec.miller_leverage_gain >= 0 else "inverse",
+                                help="Net enterprise value gained from leverage after personal taxes",
+                            )
+                        with mil_m2:
+                            st.metric(
+                                "Break-Even Bond Bracket τ_pd*",
+                                f"{mil_rec.breakeven_debt_tax_rate * 100:.1f}%",
+                                delta=f"Clientele: {mil_rec.investor_clientele.split('_')[0]}",
+                                help="Marginal investor tax bracket where debt and equity after-tax yields clear",
+                            )
+                        with mil_m3:
+                            st.metric(
+                                "Clearing Bond Yield r_d*",
+                                f"{mil_rec.market_clearing_bond_yield * 100:.2f}%",
+                                delta=f"+{mil_rec.tax_clientele_spread_bps:.0f} bps tax wedge",
+                                help="Corporate debt interest rate required to attract marginal investors",
+                            )
+                        with mil_m4:
+                            st.metric(
+                                "Personal Tax Erosion",
+                                f"${mil_rec.personal_tax_erosion:+.2f}",
+                                delta=f"Factor: {mil_rec.miller_gain_factor * 100:+.1f}%",
+                                help="Tax shield eroded by differential personal taxation on debt vs equity",
+                            )
+
+                        sig_payload = (
+                            f"{mil_rec.ticker}:{mil_rec.unlevered_firm_value:.4f}:{mil_rec.debt_market_value:.4f}:"
+                            f"{mil_rec.corporate_tax_rate:.4f}:{mil_rec.personal_equity_tax_rate:.4f}:"
+                            f"{mil_rec.personal_debt_tax_rate:.4f}:{mil_rec.miller_gain_factor:.6f}:"
+                            f"{mil_rec.miller_leverage_gain:.4f}:{mil_rec.breakeven_debt_tax_rate:.4f}:"
+                            f"{mil_rec.regime}:{mil_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Miller (1977) HMAC:** `{mil_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, mil_rec.hmac_signature)}`)")
+                    except Exception as mil_ex:
+                        st.info(f"Miller Debt & Taxes evaluation deferred: {mil_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Miller tax equilibrium.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
