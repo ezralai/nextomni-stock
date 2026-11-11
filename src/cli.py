@@ -9635,6 +9635,64 @@ def campbell_cochrane_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def term_structure_command(args: argparse.Namespace) -> None:
+    """CLI handler for CIR (1985) & Vasicek (1977) Affine Term Structure Engine."""
+    import json
+    from src.analytics.cir_vasicek_term_structure import (
+        calculate_affine_term_structure,
+        persist_term_structure_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    r0 = float(getattr(args, "r0", 0.035) if getattr(args, "r0", None) is not None else 0.035)
+    theta = float(getattr(args, "theta", 0.050) if getattr(args, "theta", None) is not None else 0.050)
+    kappa = float(getattr(args, "kappa", 0.35) if getattr(args, "kappa", None) is not None else 0.35)
+    sigma = float(getattr(args, "sigma", 0.04) if getattr(args, "sigma", None) is not None else 0.04)
+    model_type = str(getattr(args, "model", "CIR") or "CIR").strip().upper()
+
+    try:
+        receipt = calculate_affine_term_structure(
+            short_rate_r0=r0,
+            long_run_mean_theta=theta,
+            mean_reversion_kappa=kappa,
+            rate_volatility_sigma=sigma,
+            model_type=model_type,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_term_structure_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Term structure evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: CIR (1985) & Vasicek (1977) Affine Term Structure Engine")
+    print("=" * 80)
+    print(f"  Instrument / Ticker:            {receipt.ticker} ({receipt.model_type})")
+    print(f"  Short Rate r0 / Long Mean theta:{receipt.short_rate_r0 * 100:.2f}% | {receipt.long_run_mean_theta * 100:.2f}% (kappa={receipt.mean_reversion_kappa:.2f}, sigma={receipt.rate_volatility_sigma * 100:.2f}%)")
+    print(f"  Feller Ratio (2*k*theta/sig^2): {receipt.feller_ratio:.2f}x (Positivity Guaranteed: {receipt.feller_condition_satisfied})")
+    print("-" * 80)
+    print("  Zero-Coupon Yields & Discount Bond Prices:")
+    print(f"    3M / 2Y / 5Y / 10Y / 30Y (%): {receipt.yield_3m * 100:.2f}% | {receipt.yield_2y * 100:.2f}% | {receipt.yield_5y * 100:.2f}% | {receipt.yield_10y * 100:.2f}% | {receipt.yield_30y * 100:.2f}%")
+    print(f"    1Y / 2Y / 5Y / 10Y / 30Y P($):{receipt.bond_price_1y:.4f} | {receipt.bond_price_2y:.4f} | {receipt.bond_price_5y:.4f} | {receipt.bond_price_10y:.4f} | {receipt.bond_price_30y:.4f}")
+    print(f"    10Y-2Y Curve Slope:           {receipt.term_slope_10y_2y_bps:+.2f} bps")
+    print(f"    10Y Factor Duration B(10):    {receipt.duration_10y:.4f} | Jensen Convexity: -{receipt.convexity_adjustment_bps:.2f} bps")
+    print("-" * 80)
+    print(f"  Term Structure Regime:          {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -14888,6 +14946,53 @@ def main() -> None:
         help="Output Campbell-Cochrane habit receipt as JSON",
     )
 
+    # CIR (1985) & Vasicek (1977) Affine Term Structure parser
+    ts_parser = subparsers.add_parser(
+        "term-structure",
+        aliases=["cir-1985", "vasicek", "yield-curve"],
+        help="Evaluate CIR (1985) & Vasicek (1977) affine yield curve & zero-coupon bond prices",
+    )
+    ts_parser.add_argument(
+        "--ticker",
+        default="BOND",
+        help="Instrument / benchmark ticker symbol (default: BOND)",
+    )
+    ts_parser.add_argument(
+        "--r0",
+        type=float,
+        default=0.035,
+        help="Instantaneous short rate r_0 (default: 0.035)",
+    )
+    ts_parser.add_argument(
+        "--theta",
+        type=float,
+        default=0.050,
+        help="Long-run mean short rate theta (default: 0.050)",
+    )
+    ts_parser.add_argument(
+        "--kappa",
+        type=float,
+        default=0.35,
+        help="Speed of mean reversion kappa (default: 0.35)",
+    )
+    ts_parser.add_argument(
+        "--sigma",
+        type=float,
+        default=0.04,
+        help="Short-rate diffusion volatility sigma (default: 0.04)",
+    )
+    ts_parser.add_argument(
+        "--model",
+        default="CIR",
+        choices=["CIR", "VASICEK"],
+        help="Affine short-rate specification: CIR or VASICEK (default: CIR)",
+    )
+    ts_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output affine term structure receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -15184,6 +15289,8 @@ def main() -> None:
         miller_tax_command(args)
     elif args.command in ("habit-formation", "campbell-cochrane", "cc-1999", "surplus-consumption"):
         campbell_cochrane_command(args)
+    elif args.command in ("term-structure", "cir-1985", "vasicek", "yield-curve"):
+        term_structure_command(args)
 
 
 if __name__ == "__main__":

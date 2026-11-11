@@ -8397,6 +8397,70 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Campbell-Cochrane habit profile.")
 
+                st.divider()
+                st.subheader("📈 CIR (1985) & Vasicek (1977) Affine Term Structure Engine")
+                st.caption("Exact closed-form zero-coupon bond pricing, yield curve slope, factor duration B(T), Feller condition & Jensen convexity")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.cir_vasicek_term_structure import (
+                            evaluate_term_structure_profile,
+                            verify_hmac_signature as verify_ts_hmac,
+                        )
+                        ts_col1, ts_col2, ts_col3 = st.columns(3)
+                        with ts_col1:
+                            r0_input = st.slider(
+                                "Short Rate r_0 (%)",
+                                min_value=0.5,
+                                max_value=10.0,
+                                value=3.5,
+                                step=0.25,
+                                key=f"ts_r0_{selected_ticker}",
+                            ) / 100.0
+                        with ts_col2:
+                            theta_input = st.slider(
+                                "Long-Run Mean theta (%)",
+                                min_value=1.0,
+                                max_value=10.0,
+                                value=5.0,
+                                step=0.25,
+                                key=f"ts_theta_{selected_ticker}",
+                            ) / 100.0
+                        with ts_col3:
+                            ts_model_choice = st.selectbox(
+                                "Affine Rate Model",
+                                options=["CIR", "VASICEK"],
+                                index=0,
+                                key=f"ts_model_{selected_ticker}",
+                            )
+
+                        ts_rec = evaluate_term_structure_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            short_rate_r0=r0_input,
+                            long_run_mean_theta=theta_input,
+                            model_type=ts_model_choice,
+                        )
+
+                        tm1, tm2, tm3, tm4 = st.columns(4)
+                        tm1.metric("10Y Zero Yield", f"{ts_rec.yield_10y * 100:.2f}%", delta=f"P(10Y)=${ts_rec.bond_price_10y:.3f}")
+                        tm2.metric("10Y-2Y Curve Slope", f"{ts_rec.term_slope_10y_2y_bps:+.1f} bps", delta=ts_rec.regime)
+                        tm3.metric("Feller Positivity Ratio", f"{ts_rec.feller_ratio:.2f}x", delta="Positivity OK" if ts_rec.feller_condition_satisfied else "Boundary Risk")
+                        tm4.metric("10Y Duration B(10)", f"{ts_rec.duration_10y:.2f} yrs", delta=f"Convexity -{ts_rec.convexity_adjustment_bps:.1f} bps")
+
+                        ts_sig_payload = (
+                            f"{ts_rec.ticker}:{ts_rec.model_type}:{ts_rec.short_rate_r0:.6f}:"
+                            f"{ts_rec.long_run_mean_theta:.6f}:{ts_rec.mean_reversion_kappa:.4f}:"
+                            f"{ts_rec.rate_volatility_sigma:.4f}:{ts_rec.bond_price_10y:.6f}:"
+                            f"{ts_rec.yield_10y:.6f}:{ts_rec.term_slope_10y_2y_bps:.2f}:"
+                            f"{ts_rec.regime}:{ts_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Affine Term Structure HMAC:** `{ts_rec.hmac_signature[:16]}...` (Sealed: `{verify_ts_hmac(ts_sig_payload, ts_rec.hmac_signature)}`)")
+                    except Exception as ts_ex:
+                        st.info(f"Affine term structure evaluation deferred: {ts_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate affine term structure profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
