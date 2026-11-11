@@ -10882,6 +10882,66 @@ def amihud_mendelson_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def black76_command(args: argparse.Namespace) -> None:
+    """CLI handler for Fischer Black (1976) Futures & Commodity Option Pricing Engine."""
+    import json
+    from src.analytics.black76_futures_options import (
+        calculate_black76_option,
+        persist_black76_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    fut_f = float(getattr(args, "futures", 100.0) if getattr(args, "futures", None) is not None else 100.0)
+    strike = float(getattr(args, "strike", 100.0) if getattr(args, "strike", None) is not None else 100.0)
+    maturity = float(getattr(args, "maturity", 1.0) if getattr(args, "maturity", None) is not None else 1.0)
+    rate_r = float(getattr(args, "rate", 0.05) if getattr(args, "rate", None) is not None else 0.05)
+    vol = float(getattr(args, "vol", 0.25) if getattr(args, "vol", None) is not None else 0.25)
+    opt_type = str(getattr(args, "type", "CALL") or "CALL").strip().upper()
+
+    try:
+        receipt = calculate_black76_option(
+            futures_price_f=fut_f,
+            strike_k=strike,
+            maturity_years=maturity,
+            risk_free_rate_r=rate_r,
+            volatility=vol,
+            option_type=opt_type,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_black76_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Black-76 futures option evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Fischer Black (1976) Futures & Commodity Option Pricing Engine")
+    print("=" * 80)
+    print(f"  Contract / Ticker:              {receipt.ticker} (Futures {receipt.option_type})")
+    print(f"  Futures F / Strike K / Expiry:  ${receipt.futures_price_f:.2f} | ${receipt.strike_k:.2f} | {receipt.maturity_years:.2f}y")
+    print(f"  Vol sigma / Rate r / Discount:  {receipt.volatility * 100:.2f}% | {receipt.risk_free_rate_r * 100:.2f}% | df={receipt.discount_factor:.4f}")
+    print("-" * 80)
+    print("  Black-76 Forward Option Valuation & Futures Greeks:")
+    print(f"    Option Value ({receipt.option_type}):        ${receipt.option_price:.4f} (Intrinsic: ${receipt.discounted_intrinsic:.4f}, Time: ${receipt.time_value_premium:.4f})")
+    print(f"    Call / Put Parity Pair:       ${receipt.call_price:.4f} | ${receipt.put_price:.4f}")
+    print(f"    Futures Delta / Gamma:        {receipt.futures_delta:+.4f} | {receipt.futures_gamma:.5f}")
+    print(f"    Vega / Theta / Disc Rho:      {receipt.vega:.4f} | {receipt.theta_annual:+.4f}/yr | {receipt.discount_rho:+.4f}")
+    print("-" * 80)
+    print(f"  Forward Option Regime:          {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17211,6 +17271,59 @@ def main() -> None:
         help="Output Amihud & Mendelson receipt as JSON",
     )
 
+    # Fischer Black (1976) Futures & Commodity Option parser
+    b76_parser = subparsers.add_parser(
+        "futures-option",
+        aliases=["black-76", "commodity-option"],
+        help="Price forward, futures, and commodity options via Fischer Black (1976)",
+    )
+    b76_parser.add_argument(
+        "--ticker",
+        default="CL",
+        help="Futures / commodity ticker symbol (default: CL)",
+    )
+    b76_parser.add_argument(
+        "--futures",
+        type=float,
+        default=100.0,
+        help="Current futures / forward price F (default: 100.0)",
+    )
+    b76_parser.add_argument(
+        "--strike",
+        type=float,
+        default=100.0,
+        help="Option strike price K (default: 100.0)",
+    )
+    b76_parser.add_argument(
+        "--maturity",
+        type=float,
+        default=1.0,
+        help="Time to option expiration T in years (default: 1.0)",
+    )
+    b76_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.05,
+        help="Risk-free discounting rate r (default: 0.05)",
+    )
+    b76_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.25,
+        help="Annualized futures volatility sigma (default: 0.25)",
+    )
+    b76_parser.add_argument(
+        "--type",
+        default="CALL",
+        choices=["CALL", "PUT"],
+        help="Option payoff type: CALL or PUT (default: CALL)",
+    )
+    b76_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Black-76 futures option receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17549,6 +17662,8 @@ def main() -> None:
         stambaugh_bias_command(args)
     elif args.command in ("amihud-mendelson", "am-1986", "clientele-spread"):
         amihud_mendelson_command(args)
+    elif args.command in ("futures-option", "black-76", "commodity-option"):
+        black76_command(args)
 
 
 if __name__ == "__main__":

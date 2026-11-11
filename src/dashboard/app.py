@@ -9647,6 +9647,69 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Amihud & Mendelson clientele pricing.")
 
+                st.divider()
+                st.subheader("🛢️ Fischer Black (1976) Forward & Futures Option Engine")
+                st.caption("Driftless forward pricing C = exp(-rT)[F*N(d1) - K*N(d2)]: futures put-call parity, non-positive discount rho & commodity carry basis")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.black76_futures_options import (
+                            evaluate_black76_profile,
+                            verify_hmac_signature as verify_b76_hmac,
+                        )
+                        b76_col1, b76_col2, b76_col3 = st.columns(3)
+                        with b76_col1:
+                            b76_type = st.selectbox(
+                                "Futures Option Type",
+                                options=["CALL", "PUT"],
+                                index=0,
+                                key=f"b76_type_{selected_ticker}",
+                            )
+                        with b76_col2:
+                            b76_k_ratio = st.slider(
+                                "Forward Strike Ratio (K / F)",
+                                min_value=0.70,
+                                max_value=1.30,
+                                value=1.00,
+                                step=0.05,
+                                key=f"b76_k_{selected_ticker}",
+                            )
+                        with b76_col3:
+                            b76_mat = st.slider(
+                                "Option Expiry T (Years)",
+                                min_value=0.25,
+                                max_value=2.00,
+                                value=0.50,
+                                step=0.25,
+                                key=f"b76_t_{selected_ticker}",
+                            )
+
+                        b76_rec = evaluate_black76_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            strike_ratio=b76_k_ratio,
+                            maturity_years=b76_mat,
+                            option_type=b76_type,
+                        )
+
+                        b76m1, b76m2, b76m3, b76m4 = st.columns(4)
+                        b76m1.metric("Black-76 Option Price", f"${b76_rec.option_price:.2f}", delta=f"Fwd ${b76_rec.futures_price_f:.2f}")
+                        b76m2.metric("Futures Delta / Gamma", f"{b76_rec.futures_delta:+.3f}", delta=f"Gamma {b76_rec.futures_gamma:.4f}")
+                        b76m3.metric("Vega / Discount Rho", f"{b76_rec.vega:.2f}", delta=f"Rho {b76_rec.discount_rho:+.2f}")
+                        b76m4.metric("Volatility & Regime", f"{b76_rec.volatility * 100:.1f}%", delta=b76_rec.regime)
+
+                        b76_sig_payload = (
+                            f"{b76_rec.ticker}:{b76_rec.option_type}:{b76_rec.futures_price_f:.4f}:{b76_rec.strike_k:.4f}:"
+                            f"{b76_rec.maturity_years:.4f}:{b76_rec.risk_free_rate_r:.6f}:{b76_rec.volatility:.4f}:"
+                            f"{b76_rec.option_price:.6f}:{b76_rec.futures_delta:.6f}:{b76_rec.discount_rho:.6f}:"
+                            f"{b76_rec.regime}:{b76_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Black-76 Futures HMAC:** `{b76_rec.hmac_signature[:16]}...` (Sealed: `{verify_b76_hmac(b76_sig_payload, b76_rec.hmac_signature)}`)")
+                    except Exception as b76_ex:
+                        st.info(f"Black-76 futures option evaluation deferred: {b76_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Black-76 futures options.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
