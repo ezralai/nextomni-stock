@@ -9017,6 +9017,69 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Shleifer & Vishny liquidation capacity.")
 
+                st.divider()
+                st.subheader("🔁 Avinash Dixit (1989) Entry-Exit Hysteresis Band Engine")
+                st.caption("Coupled two-sided real-option thresholds (P_H > C + r*k, P_L < C - r*l) explaining inaction bands & loss-absorbing operational persistence")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.dixit_hysteresis_entry_exit import (
+                            evaluate_dixit_hysteresis_profile,
+                            verify_hmac_signature as verify_dx_hmac,
+                        )
+                        dx_col1, dx_col2, dx_col3 = st.columns(3)
+                        with dx_col1:
+                            dx_k = st.slider(
+                                "Sunk Entry Cost (k)",
+                                min_value=0.0,
+                                max_value=5.0,
+                                value=2.0,
+                                step=0.5,
+                                key=f"dx_k_{selected_ticker}",
+                            )
+                        with dx_col2:
+                            dx_l = st.slider(
+                                "Sunk Exit Cost (l)",
+                                min_value=0.0,
+                                max_value=5.0,
+                                value=1.5,
+                                step=0.5,
+                                key=f"dx_l_{selected_ticker}",
+                            )
+                        with dx_col3:
+                            dx_state = st.selectbox(
+                                "Current Operating State",
+                                options=["ACTIVE", "IDLE"],
+                                index=0,
+                                key=f"dx_state_{selected_ticker}",
+                            )
+
+                        dx_rec = evaluate_dixit_hysteresis_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            entry_cost_k=dx_k,
+                            exit_cost_l=dx_l,
+                            current_state=dx_state,
+                        )
+
+                        dm1, dm2, dm3, dm4 = st.columns(4)
+                        dm1.metric("Entry / Exit Triggers", f"{dx_rec.entry_trigger_ph:.2f} / {dx_rec.exit_trigger_pl:.2f}", delta=f"Normalized Spot {dx_rec.current_price_p:.2f}")
+                        dm2.metric("Hysteresis Band Width", f"{dx_rec.hysteresis_band_width:.2f}", delta=f"+{dx_rec.option_hysteresis_premium:.2f} option hysteresis")
+                        dm3.metric("Active / Idle Value", f"${dx_rec.active_value_v1:.2f} / ${dx_rec.idle_value_v0:.2f}", delta=f"Vol {dx_rec.price_volatility_sigma * 100:.1f}%")
+                        dm4.metric("Switching Signal", dx_rec.recommended_action, delta=dx_rec.regime)
+
+                        dx_sig_payload = (
+                            f"{dx_rec.ticker}:{dx_rec.current_price_p:.4f}:{dx_rec.operating_cost_c:.4f}:"
+                            f"{dx_rec.entry_cost_k:.4f}:{dx_rec.exit_cost_l:.4f}:{dx_rec.price_volatility_sigma:.4f}:"
+                            f"{dx_rec.entry_trigger_ph:.4f}:{dx_rec.exit_trigger_pl:.4f}:"
+                            f"{dx_rec.idle_value_v0:.4f}:{dx_rec.active_value_v1:.4f}:{dx_rec.regime}:{dx_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Dixit Hysteresis HMAC:** `{dx_rec.hmac_signature[:16]}...` (Sealed: `{verify_dx_hmac(dx_sig_payload, dx_rec.hmac_signature)}`)")
+                    except Exception as dx_ex:
+                        st.info(f"Dixit hysteresis evaluation deferred: {dx_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Dixit entry-exit hysteresis.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

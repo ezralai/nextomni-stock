@@ -10252,6 +10252,66 @@ def shleifer_vishny_liquidation_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def dixit_hysteresis_command(args: argparse.Namespace) -> None:
+    """CLI handler for Dixit (1989) Entry-Exit Hysteresis Band & Switching Engine."""
+    import json
+    from src.analytics.dixit_hysteresis_entry_exit import (
+        calculate_dixit_hysteresis,
+        persist_dixit_hysteresis_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    price = float(getattr(args, "price", 1.10) if getattr(args, "price", None) is not None else 1.10)
+    cost = float(getattr(args, "cost", 1.00) if getattr(args, "cost", None) is not None else 1.00)
+    entry_k = float(getattr(args, "entry_k", 2.00) if getattr(args, "entry_k", None) is not None else 2.00)
+    exit_l = float(getattr(args, "exit_l", 1.50) if getattr(args, "exit_l", None) is not None else 1.50)
+    vol = float(getattr(args, "vol", 0.25) if getattr(args, "vol", None) is not None else 0.25)
+    state = str(getattr(args, "state", "ACTIVE") or "ACTIVE").strip().upper()
+
+    try:
+        receipt = calculate_dixit_hysteresis(
+            current_price_p=price,
+            operating_cost_c=cost,
+            entry_cost_k=entry_k,
+            exit_cost_l=exit_l,
+            price_volatility_sigma=vol,
+            current_state=state,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_dixit_hysteresis_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Dixit hysteresis evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Dixit (1989) Entry-Exit Hysteresis Band & Switching Engine")
+    print("=" * 80)
+    print(f"  Operator / Ticker:              {receipt.ticker} (State: {receipt.current_state} -> Action: {receipt.recommended_action})")
+    print(f"  Price P / Op Cost C / Vol sig:  ${receipt.current_price_p:.4f} | ${receipt.operating_cost_c:.4f} | {receipt.price_volatility_sigma * 100:.2f}%")
+    print(f"  Sunk Costs (Entry k / Exit l):  ${receipt.entry_cost_k:.2f} | ${receipt.exit_cost_l:.2f} (beta1={receipt.root_beta1:.3f}, alpha={receipt.root_alpha:.3f})")
+    print("-" * 80)
+    print("  Coupled Switching Boundaries & Real-Option Valuations:")
+    print(f"    Entry Trigger P_H (Marsh):    ${receipt.entry_trigger_ph:.4f} (Marsh=${receipt.marshallian_entry_trigger:.4f})")
+    print(f"    Exit Trigger P_L (Marsh):     ${receipt.exit_trigger_pl:.4f} (Marsh=${receipt.marshallian_exit_trigger:.4f})")
+    print(f"    Hysteresis Band Width:        ${receipt.hysteresis_band_width:.4f} (Option Prem: +${receipt.option_hysteresis_premium:.4f})")
+    print(f"    Idle V0(P) / Active V1(P):    ${receipt.idle_value_v0:.2f} | ${receipt.active_value_v1:.2f} (Res: {receipt.value_matching_residual:.2e})")
+    print("-" * 80)
+    print(f"  Hysteresis Switching Regime:    {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -16076,6 +16136,59 @@ def main() -> None:
         help="Output Shleifer & Vishny liquidation receipt as JSON",
     )
 
+    # Dixit (1989) Entry-Exit Hysteresis Band parser
+    dx_parser = subparsers.add_parser(
+        "entry-exit",
+        aliases=["hysteresis-exit", "dixit-1989"],
+        help="Evaluate Dixit (1989) two-sided entry/exit hysteresis triggers & switching options",
+    )
+    dx_parser.add_argument(
+        "--ticker",
+        default="DX89",
+        help="Operator / asset ticker symbol (default: DX89)",
+    )
+    dx_parser.add_argument(
+        "--price",
+        type=float,
+        default=1.10,
+        help="Current output price P (default: 1.10)",
+    )
+    dx_parser.add_argument(
+        "--cost",
+        type=float,
+        default=1.00,
+        help="Flow variable operating cost C (default: 1.00)",
+    )
+    dx_parser.add_argument(
+        "--entry-k",
+        type=float,
+        default=2.00,
+        help="Sunk entry capex k (default: 2.00)",
+    )
+    dx_parser.add_argument(
+        "--exit-l",
+        type=float,
+        default=1.50,
+        help="Sunk abandonment / exit cost l (default: 1.50)",
+    )
+    dx_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.25,
+        help="Output price diffusion volatility sigma (default: 0.25)",
+    )
+    dx_parser.add_argument(
+        "--state",
+        default="ACTIVE",
+        choices=["IDLE", "ACTIVE"],
+        help="Current production status: IDLE or ACTIVE (default: ACTIVE)",
+    )
+    dx_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Dixit hysteresis receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -16392,6 +16505,8 @@ def main() -> None:
         mcdonald_siegel_command(args)
     elif args.command in ("industry-liquidation", "sv-1992"):
         shleifer_vishny_liquidation_command(args)
+    elif args.command in ("entry-exit", "hysteresis-exit", "dixit-1989"):
+        dixit_hysteresis_command(args)
 
 
 if __name__ == "__main__":
