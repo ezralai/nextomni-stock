@@ -9950,6 +9950,64 @@ def kim_verrecchia_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def myers_rajan_command(args: argparse.Namespace) -> None:
+    """CLI handler for Myers & Rajan (1998) Paradox of Liquidity Engine."""
+    import json
+    from src.analytics.myers_rajan_liquidity_paradox import (
+        calculate_myers_rajan_paradox,
+        persist_myers_rajan_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    c1 = float(getattr(args, "assets", 100.0) if getattr(args, "assets", None) is not None else 100.0)
+    d2 = float(getattr(args, "continuation", 125.0) if getattr(args, "continuation", None) is not None else 125.0)
+    alpha = float(getattr(args, "alpha", 0.75) if getattr(args, "alpha", None) is not None else 0.75)
+    lam = float(getattr(args, "lambda_trans", 0.25) if getattr(args, "lambda_trans", None) is not None else 0.25)
+    theta = float(getattr(args, "theta", 0.0) if getattr(args, "theta", None) is not None else 0.0)
+
+    try:
+        receipt = calculate_myers_rajan_paradox(
+            invested_assets_c1=c1,
+            continuation_value_d2=d2,
+            asset_liquidity_alpha=alpha,
+            transformation_friction_lambda=lam,
+            insider_rent_share_theta=theta,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_myers_rajan_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Myers & Rajan evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Myers & Rajan (1998) Paradox of Liquidity Engine")
+    print("=" * 80)
+    print(f"  Firm / Ticker:                  {receipt.ticker} (Paradox Zone: {receipt.paradox_zone_active})")
+    print(f"  Assets c1 / Continuation d2:    ${receipt.invested_assets_c1:.2f} | ${receipt.continuation_value_d2:.2f} (Rent theta={receipt.insider_rent_share_theta * 100:.1f}%)")
+    print(f"  Liquidity alpha / Friction lam: {receipt.asset_liquidity_alpha * 100:.1f}% | {receipt.transformation_friction_lambda * 100:.1f}% (Optimal alpha*={receipt.optimal_liquidity_alpha_star * 100:.1f}%)")
+    print("-" * 80)
+    print("  Liquidation Collateral vs. Transformation Incentive Ceiling:")
+    print(f"    Creditor Liquidation Bound:   ${receipt.liquidation_debt_capacity:.2f}")
+    print(f"    Transformation Ceiling:       ${receipt.transformation_debt_ceiling:.2f}")
+    print(f"    Binding Debt Capacity:        ${receipt.binding_debt_capacity:.2f} ({receipt.leverage_ratio_pct:.1f}% of c1, Peak: ${receipt.peak_debt_capacity:.2f})")
+    print(f"    Paradox Capacity Loss:        ${receipt.paradox_capacity_loss:.2f} (Bank Short-Debt Req: {receipt.bank_monitoring_requirement_pct:.1f}%)")
+    print("-" * 80)
+    print(f"  Liquidity Governance Regime:    {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -15503,6 +15561,53 @@ def main() -> None:
         help="Output Kim & Verrecchia receipt as JSON",
     )
 
+    # Myers & Rajan (1998) Paradox of Liquidity parser
+    mr_parser = subparsers.add_parser(
+        "liquidity-paradox",
+        aliases=["myers-rajan", "mr-1998"],
+        help="Evaluate Myers & Rajan (1998) paradox of liquidity & debt capacity",
+    )
+    mr_parser.add_argument(
+        "--ticker",
+        default="MR98",
+        help="Firm / corporate issuer ticker symbol (default: MR98)",
+    )
+    mr_parser.add_argument(
+        "--assets",
+        type=float,
+        default=100.0,
+        help="Invested assets base c_1 (default: 100.0)",
+    )
+    mr_parser.add_argument(
+        "--continuation",
+        type=float,
+        default=125.0,
+        help="Going-concern continuation cash flow d_2 (default: 125.0)",
+    )
+    mr_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.75,
+        help="Asset secondary market liquidity alpha in (0, 1] (default: 0.75)",
+    )
+    mr_parser.add_argument(
+        "--lambda-trans",
+        type=float,
+        default=0.25,
+        help="Insider asset transformation friction lambda in [0, 1] (default: 0.25)",
+    )
+    mr_parser.add_argument(
+        "--theta",
+        type=float,
+        default=0.0,
+        help="Insider going-concern control rent share theta in [0, 1) (default: 0.0)",
+    )
+    mr_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Myers & Rajan receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -15809,6 +15914,8 @@ def main() -> None:
         black_cox_command(args)
     elif args.command in ("announcement-liquidity", "kim-verrecchia", "kv-1991", "differential-precision"):
         kim_verrecchia_command(args)
+    elif args.command in ("liquidity-paradox", "myers-rajan", "mr-1998"):
+        myers_rajan_command(args)
 
 
 if __name__ == "__main__":

@@ -8722,6 +8722,61 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Kim & Verrecchia announcement liquidity profile.")
 
+                st.divider()
+                st.subheader("⚖️ Myers & Rajan (1998) Paradox of Liquidity Engine")
+                st.caption("Liquidation collateral value vs. insider transformation incentive ceiling: non-monotonic borrowing capacity & short-term bank monitoring requirement")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.myers_rajan_liquidity_paradox import (
+                            evaluate_myers_rajan_profile,
+                            verify_hmac_signature as verify_mr_hmac,
+                        )
+                        mr_col1, mr_col2 = st.columns(2)
+                        with mr_col1:
+                            mr_alpha = st.slider(
+                                "Asset Market Liquidity (alpha %)",
+                                min_value=10.0,
+                                max_value=100.0,
+                                value=75.0,
+                                step=5.0,
+                                key=f"mr_alpha_{selected_ticker}",
+                            ) / 100.0
+                        with mr_col2:
+                            mr_lam = st.slider(
+                                "Transformation Friction Discount (lambda %)",
+                                min_value=0.0,
+                                max_value=80.0,
+                                value=25.0,
+                                step=5.0,
+                                key=f"mr_lam_{selected_ticker}",
+                            ) / 100.0
+
+                        mr_rec = evaluate_myers_rajan_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            asset_liquidity_alpha=mr_alpha,
+                            transformation_friction_lambda=mr_lam,
+                        )
+
+                        mrm1, mrm2, mrm3, mrm4 = st.columns(4)
+                        mrm1.metric("Binding Debt Capacity", f"${mr_rec.binding_debt_capacity:.2f}", delta=f"{mr_rec.leverage_ratio_pct:.1f}% of Assets")
+                        mrm2.metric("Optimal Liquidity alpha*", f"{mr_rec.optimal_liquidity_alpha_star * 100:.1f}%", delta=f"Peak Debt ${mr_rec.peak_debt_capacity:.2f}")
+                        mrm3.metric("Paradox Capacity Loss", f"${mr_rec.paradox_capacity_loss:.2f}", delta=f"Bank Short-Debt {mr_rec.bank_monitoring_requirement_pct:.1f}%")
+                        mrm4.metric("Paradox Status", "Active" if mr_rec.paradox_zone_active else "Normal", delta=mr_rec.regime)
+
+                        mr_sig_payload = (
+                            f"{mr_rec.ticker}:{mr_rec.invested_assets_c1:.4f}:{mr_rec.continuation_value_d2:.4f}:"
+                            f"{mr_rec.asset_liquidity_alpha:.4f}:{mr_rec.transformation_friction_lambda:.4f}:"
+                            f"{mr_rec.insider_rent_share_theta:.4f}:{mr_rec.binding_debt_capacity:.4f}:"
+                            f"{mr_rec.optimal_liquidity_alpha_star:.4f}:{mr_rec.regime}:{mr_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Myers-Rajan Paradox HMAC:** `{mr_rec.hmac_signature[:16]}...` (Sealed: `{verify_mr_hmac(mr_sig_payload, mr_rec.hmac_signature)}`)")
+                    except Exception as mr_ex:
+                        st.info(f"Myers & Rajan liquidity paradox evaluation deferred: {mr_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Myers & Rajan paradox of liquidity.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
