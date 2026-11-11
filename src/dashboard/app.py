@@ -8961,6 +8961,62 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate McDonald & Siegel value of waiting.")
 
+                st.divider()
+                st.subheader("🏭 Shleifer & Vishny (1992) Liquidation Values & Industry Debt Capacity Engine")
+                st.caption("Idiosyncratic peer absorption vs. correlated industry fire-sale liquidation to generalist buyers and ex-ante collateral debt capacity")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.shleifer_vishny_liquidation import (
+                            evaluate_shleifer_vishny_liquidation_profile,
+                            verify_hmac_signature as verify_svl_hmac,
+                        )
+                        svl_col1, svl_col2 = st.columns(2)
+                        with svl_col1:
+                            svl_spec = st.slider(
+                                "Asset Specificity Discount (delta_spec %)",
+                                min_value=0.0,
+                                max_value=80.0,
+                                value=40.0,
+                                step=5.0,
+                                key=f"svl_spec_{selected_ticker}",
+                            ) / 100.0
+                        with svl_col2:
+                            svl_rho = st.slider(
+                                "Industry Distress Correlation (rho_ind)",
+                                min_value=0.0,
+                                max_value=1.0,
+                                value=0.65,
+                                step=0.05,
+                                key=f"svl_rho_{selected_ticker}",
+                            )
+
+                        svl_rec = evaluate_shleifer_vishny_liquidation_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            asset_specificity_discount=svl_spec,
+                            industry_correlation_rho=svl_rho,
+                        )
+
+                        sm1, sm2, sm3, sm4 = st.columns(4)
+                        sm1.metric("Risky Debt Capacity", f"${svl_rec.risky_debt_capacity:.2f}", delta=f"-{svl_rec.debt_capacity_haircut_pct:.1f}% debt haircut")
+                        sm2.metric("Expected Distress Liq Price", f"${svl_rec.expected_distress_liquidation_price:.2f}", delta=f"-{svl_rec.fire_sale_haircut_pct:.1f}% fire-sale haircut")
+                        sm3.metric("Downturn Liquidation P_corr", f"${svl_rec.downturn_liquidation_price:.2f}", delta=f"Peer Slack {svl_rec.peer_debt_capacity_slack * 100:.1f}%")
+                        sm4.metric("Collateral Regime", svl_rec.regime, delta=f"Loss ${svl_rec.collateral_capacity_loss:.2f}")
+
+                        svl_sig_payload = (
+                            f"{svl_rec.ticker}:{svl_rec.specialist_asset_value_v1:.4f}:{svl_rec.asset_specificity_discount:.4f}:"
+                            f"{svl_rec.peer_debt_capacity_slack:.4f}:{svl_rec.industry_correlation_rho:.4f}:"
+                            f"{svl_rec.downturn_prob_q:.4f}:{svl_rec.expected_distress_liquidation_price:.4f}:"
+                            f"{svl_rec.risky_debt_capacity:.4f}:{svl_rec.fire_sale_haircut_pct:.2f}:"
+                            f"{svl_rec.regime}:{svl_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Shleifer-Vishny Liquidation HMAC:** `{svl_rec.hmac_signature[:16]}...` (Sealed: `{verify_svl_hmac(svl_sig_payload, svl_rec.hmac_signature)}`)")
+                    except Exception as svl_ex:
+                        st.info(f"Shleifer & Vishny liquidation evaluation deferred: {svl_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Shleifer & Vishny liquidation capacity.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

@@ -10195,6 +10195,63 @@ def mcdonald_siegel_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def shleifer_vishny_liquidation_command(args: argparse.Namespace) -> None:
+    """CLI handler for Shleifer & Vishny (1992) Liquidation Values & Debt Capacity Engine."""
+    import json
+    from src.analytics.shleifer_vishny_liquidation import (
+        calculate_shleifer_vishny_liquidation,
+        persist_shleifer_vishny_liquidation_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    v1 = float(getattr(args, "v1", 100.0) if getattr(args, "v1", None) is not None else 100.0)
+    spec = float(getattr(args, "specificity", 0.40) if getattr(args, "specificity", None) is not None else 0.40)
+    slack = float(getattr(args, "peer_slack", 0.35) if getattr(args, "peer_slack", None) is not None else 0.35)
+    rho = float(getattr(args, "rho", 0.65) if getattr(args, "rho", None) is not None else 0.65)
+    q_prob = float(getattr(args, "downturn_prob", 0.30) if getattr(args, "downturn_prob", None) is not None else 0.30)
+
+    try:
+        receipt = calculate_shleifer_vishny_liquidation(
+            specialist_asset_value_v1=v1,
+            asset_specificity_discount=spec,
+            peer_debt_capacity_slack=slack,
+            industry_correlation_rho=rho,
+            downturn_prob_q=q_prob,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_shleifer_vishny_liquidation_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Shleifer & Vishny liquidation evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Shleifer & Vishny (1992) Liquidation Values & Debt Capacity Engine")
+    print("=" * 80)
+    print(f"  Issuer / Ticker:                {receipt.ticker} (Specialist Value V1=${receipt.specialist_asset_value_v1:.2f}, Outsider V2=${receipt.outside_buyer_value_v2:.2f})")
+    print(f"  Specificity delta / Peer Slack: {receipt.asset_specificity_discount * 100:.1f}% | {receipt.peer_debt_capacity_slack * 100:.1f}% (Industry rho={receipt.industry_correlation_rho:.2f}, q={receipt.downturn_prob_q:.2f})")
+    print("-" * 80)
+    print("  Equilibrium Liquidation & Ex-Ante Debt Capacity:")
+    print(f"    Idiosyncratic / Downturn Liq: ${receipt.idiosyncratic_liquidation_price:.2f} | ${receipt.downturn_liquidation_price:.2f}")
+    print(f"    Expected Distress Liquidation:${receipt.expected_distress_liquidation_price:.2f}")
+    print(f"    Ex-Ante Risky Debt Capacity:  ${receipt.risky_debt_capacity:.2f} (Haircut: -{receipt.debt_capacity_haircut_pct:.2f}%)")
+    print(f"    Fire-Sale Haircut / Loss:     {receipt.fire_sale_haircut_pct:.2f}% (${receipt.collateral_capacity_loss:.2f})")
+    print("-" * 80)
+    print(f"  Collateral Equilibrium Regime:  {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -15972,6 +16029,53 @@ def main() -> None:
         help="Output McDonald & Siegel real-option receipt as JSON",
     )
 
+    # Shleifer & Vishny (1992) Industry Liquidation parser
+    svl_parser = subparsers.add_parser(
+        "industry-liquidation",
+        aliases=["sv-1992"],
+        help="Evaluate Shleifer & Vishny (1992) liquidation values & industry debt capacity",
+    )
+    svl_parser.add_argument(
+        "--ticker",
+        default="SV92",
+        help="Issuer ticker symbol (default: SV92)",
+    )
+    svl_parser.add_argument(
+        "--v1",
+        type=float,
+        default=100.0,
+        help="First-best specialist asset value V_1 (default: 100.0)",
+    )
+    svl_parser.add_argument(
+        "--specificity",
+        type=float,
+        default=0.40,
+        help="Outside generalist liquidation discount delta_spec in [0, 1) (default: 0.40)",
+    )
+    svl_parser.add_argument(
+        "--peer-slack",
+        type=float,
+        default=0.35,
+        help="Healthy peer balance-sheet absorption slack in [0, 1] (default: 0.35)",
+    )
+    svl_parser.add_argument(
+        "--rho",
+        type=float,
+        default=0.65,
+        help="Correlated industry downturn distress probability in [0, 1] (default: 0.65)",
+    )
+    svl_parser.add_argument(
+        "--downturn-prob",
+        type=float,
+        default=0.30,
+        help="Ex-ante state distress likelihood q in (0, 1) (default: 0.30)",
+    )
+    svl_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Shleifer & Vishny liquidation receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -16286,6 +16390,8 @@ def main() -> None:
         modigliani_miller_command(args)
     elif args.command in ("waiting-to-invest", "mcdonald-siegel", "ms-1986", "irreversible-investment"):
         mcdonald_siegel_command(args)
+    elif args.command in ("industry-liquidation", "sv-1992"):
+        shleifer_vishny_liquidation_command(args)
 
 
 if __name__ == "__main__":
