@@ -10137,6 +10137,64 @@ def modigliani_miller_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def mcdonald_siegel_command(args: argparse.Namespace) -> None:
+    """CLI handler for McDonald & Siegel (1986) Value of Waiting & Irreversible Investment Engine."""
+    import json
+    from src.analytics.mcdonald_siegel_waiting import (
+        calculate_mcdonald_siegel_waiting,
+        persist_mcdonald_siegel_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    v_val = float(getattr(args, "v", 130.0) if getattr(args, "v", None) is not None else 130.0)
+    i_cost = float(getattr(args, "cost", 100.0) if getattr(args, "cost", None) is not None else 100.0)
+    r_rate = float(getattr(args, "rate", 0.05) if getattr(args, "rate", None) is not None else 0.05)
+    delta_y = float(getattr(args, "delta", 0.04) if getattr(args, "delta", None) is not None else 0.04)
+    sigma = float(getattr(args, "vol", 0.28) if getattr(args, "vol", None) is not None else 0.28)
+
+    try:
+        receipt = calculate_mcdonald_siegel_waiting(
+            project_value_v=v_val,
+            investment_cost_i=i_cost,
+            risk_free_rate_r=r_rate,
+            dividend_shortfall_delta=delta_y,
+            cashflow_volatility_sigma=sigma,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_mcdonald_siegel_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: McDonald & Siegel evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: McDonald & Siegel (1986) Value of Waiting & Irreversible Investment Engine")
+    print("=" * 80)
+    print(f"  Project / Ticker:               {receipt.ticker} (Invest Immediately: {receipt.invest_immediately})")
+    print(f"  Value V / Cost I / Vol sigma:   ${receipt.project_value_v:.2f} | ${receipt.investment_cost_i:.2f} | {receipt.cashflow_volatility_sigma * 100:.2f}%")
+    print(f"  Rate r / Shortfall delta / b1:  {receipt.risk_free_rate_r * 100:.2f}% | {receipt.dividend_shortfall_delta * 100:.2f}% | beta_1={receipt.characteristic_root_beta1:.3f}")
+    print("-" * 80)
+    print("  Hysteresis Hurdle & Optimal Investment Timing:")
+    print(f"    Optimal Hurdle Trigger V*:    ${receipt.optimal_trigger_v_star:.2f} ({receipt.hysteresis_hurdle_multiple:.2f}x I, Cov={receipt.trigger_coverage_ratio * 100:.1f}%)")
+    print(f"    Real Option Value F(V):       ${receipt.real_option_value_f:.2f} (Delta={receipt.waiting_option_delta:.3f})")
+    print(f"    Naive Static NPV (V - I):     ${receipt.naive_static_npv:+.2f}")
+    print(f"    Pure Value of Waiting:        ${receipt.pure_value_of_waiting:.2f}")
+    print("-" * 80)
+    print(f"  Investment Timing Regime:       {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -15867,6 +15925,53 @@ def main() -> None:
         help="Output Modigliani & Miller receipt as JSON",
     )
 
+    # McDonald & Siegel (1986) Value of Waiting Real Option parser
+    ms_parser = subparsers.add_parser(
+        "waiting-to-invest",
+        aliases=["mcdonald-siegel", "ms-1986", "irreversible-investment"],
+        help="Evaluate McDonald & Siegel (1986) irreversible capex timing & waiting value",
+    )
+    ms_parser.add_argument(
+        "--ticker",
+        default="MS86",
+        help="Project / issuer ticker symbol (default: MS86)",
+    )
+    ms_parser.add_argument(
+        "--v",
+        type=float,
+        default=130.0,
+        help="Present value of completed project cash flows V (default: 130.0)",
+    )
+    ms_parser.add_argument(
+        "--cost",
+        type=float,
+        default=100.0,
+        help="Irreversible sunk investment cost I (default: 100.0)",
+    )
+    ms_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.05,
+        help="Risk-free interest rate r (default: 0.05)",
+    )
+    ms_parser.add_argument(
+        "--delta",
+        type=float,
+        default=0.04,
+        help="Dividend / convenience yield shortfall delta > 0 (default: 0.04)",
+    )
+    ms_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.28,
+        help="Project cash-flow diffusion volatility sigma (default: 0.28)",
+    )
+    ms_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output McDonald & Siegel real-option receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -16179,6 +16284,8 @@ def main() -> None:
         hull_white_command(args)
     elif args.command in ("modigliani-miller", "dividend-irrelevance", "mm-1961"):
         modigliani_miller_command(args)
+    elif args.command in ("waiting-to-invest", "mcdonald-siegel", "ms-1986", "irreversible-investment"):
+        mcdonald_siegel_command(args)
 
 
 if __name__ == "__main__":

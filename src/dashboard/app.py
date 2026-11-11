@@ -8905,6 +8905,62 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Modigliani & Miller corporate valuation.")
 
+                st.divider()
+                st.subheader("⏳ McDonald & Siegel (1986) Value of Waiting & Irreversible Investment Engine")
+                st.caption("Perpetual real-option optimal investment timing: hysteresis hurdle V* = [beta1/(beta1-1)]*I, smooth pasting & pure value of waiting")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.mcdonald_siegel_waiting import (
+                            evaluate_mcdonald_siegel_profile,
+                            verify_hmac_signature as verify_ms_hmac,
+                        )
+                        ms_col1, ms_col2 = st.columns(2)
+                        with ms_col1:
+                            ms_cost_mult = st.slider(
+                                "Capex Cost Ratio (I / V)",
+                                min_value=0.35,
+                                max_value=1.20,
+                                value=0.75,
+                                step=0.05,
+                                key=f"ms_cost_{selected_ticker}",
+                            )
+                        with ms_col2:
+                            ms_delta = st.slider(
+                                "Waiting Cost Shortfall (delta %)",
+                                min_value=1.0,
+                                max_value=10.0,
+                                value=4.0,
+                                step=0.5,
+                                key=f"ms_delta_{selected_ticker}",
+                            ) / 100.0
+
+                        ms_rec = evaluate_mcdonald_siegel_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            cost_multiple=ms_cost_mult,
+                            dividend_shortfall_delta=ms_delta,
+                        )
+
+                        msm1, msm2, msm3, msm4 = st.columns(4)
+                        msm1.metric("Optimal Trigger V*", f"${ms_rec.optimal_trigger_v_star:.2f}", delta=f"{ms_rec.hysteresis_hurdle_multiple:.2f}x Capex Hurdle")
+                        msm2.metric("Real Option Value F(V)", f"${ms_rec.real_option_value_f:.2f}", delta=f"Naive NPV ${ms_rec.naive_static_npv:+.2f}")
+                        msm3.metric("Pure Value of Waiting", f"${ms_rec.pure_value_of_waiting:.2f}", delta=f"Trigger Cov {ms_rec.trigger_coverage_ratio * 100:.1f}%")
+                        msm4.metric("Optimal Timing Action", "Invest Now" if ms_rec.invest_immediately else "Defer & Wait", delta=ms_rec.regime)
+
+                        ms_sig_payload = (
+                            f"{ms_rec.ticker}:{ms_rec.project_value_v:.4f}:{ms_rec.investment_cost_i:.4f}:"
+                            f"{ms_rec.risk_free_rate_r:.6f}:{ms_rec.dividend_shortfall_delta:.6f}:"
+                            f"{ms_rec.cashflow_volatility_sigma:.4f}:{ms_rec.optimal_trigger_v_star:.4f}:"
+                            f"{ms_rec.real_option_value_f:.6f}:{ms_rec.pure_value_of_waiting:.6f}:"
+                            f"{ms_rec.regime}:{ms_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **McDonald-Siegel HMAC:** `{ms_rec.hmac_signature[:16]}...` (Sealed: `{verify_ms_hmac(ms_sig_payload, ms_rec.hmac_signature)}`)")
+                    except Exception as ms_ex:
+                        st.info(f"McDonald & Siegel waiting valuation deferred: {ms_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate McDonald & Siegel value of waiting.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
