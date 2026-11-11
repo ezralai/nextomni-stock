@@ -10601,6 +10601,62 @@ def diamond_maturity_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def blanchard_watson_command(args: argparse.Namespace) -> None:
+    """CLI handler for Blanchard & Watson (1982) Rational Speculative Bubbles Engine."""
+    import json
+    from src.analytics.blanchard_watson_bubble import (
+        calculate_blanchard_watson_bubble,
+        persist_blanchard_watson_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    price = float(getattr(args, "price", 150.0) if getattr(args, "price", None) is not None else 150.0)
+    fund = float(getattr(args, "fundamental", 100.0) if getattr(args, "fundamental", None) is not None else 100.0)
+    rate_r = float(getattr(args, "rate", 0.05) if getattr(args, "rate", None) is not None else 0.05)
+    pi_surv = float(getattr(args, "pi", 0.85) if getattr(args, "pi", None) is not None else 0.85)
+
+    try:
+        receipt = calculate_blanchard_watson_bubble(
+            observed_price_p=price,
+            fundamental_value_f=fund,
+            discount_rate_r=rate_r,
+            survival_prob_pi=pi_surv,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_blanchard_watson_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Blanchard & Watson evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Blanchard & Watson (1982) Rational Speculative Bubbles Engine")
+    print("=" * 80)
+    print(f"  Asset / Ticker:                 {receipt.ticker} (Discount r={receipt.discount_rate_r * 100:.2f}%)")
+    print(f"  Price P_t / Fundamental F_t:    ${receipt.observed_price_p:.2f} | ${receipt.fundamental_value_f:.2f}")
+    print(f"  Speculative Bubble B_t (Share): ${receipt.bubble_component_b:.2f} ({receipt.bubble_share_pct:.1f}% of Price)")
+    print("-" * 80)
+    print("  Euler Martingale Dynamics & Crash Hazard:")
+    print(f"    Survival pi / Crash Hazard:   {receipt.survival_prob_pi * 100:.1f}% | {receipt.crash_prob * 100:.1f}% (Exp Horizon: {receipt.expected_remaining_periods:.1f} periods)")
+    print(f"    Required Bubble Growth (1+r)/pi-1: {receipt.required_bubble_growth * 100:.2f}% (Surviving Asset Ret: {receipt.surviving_asset_return * 100:.2f}%)")
+    print(f"    Euler Exp E[B_t+1] / Surv:    ${receipt.expected_next_bubble:.2f} | ${receipt.next_surviving_bubble:.2f}")
+    print(f"    Instantaneous Burst Loss:     -{receipt.burst_drawdown_loss_pct:.1f}%")
+    print("-" * 80)
+    print(f"  Speculative Bubble Regime:      {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -16719,6 +16775,47 @@ def main() -> None:
         help="Output Diamond (1991) debt maturity receipt as JSON",
     )
 
+    # Blanchard & Watson (1982) Rational Speculative Bubbles parser
+    bw_parser = subparsers.add_parser(
+        "rational-bubble",
+        aliases=["blanchard-watson", "bw-1982"],
+        help="Evaluate Blanchard & Watson (1982) rational bubbles & explosive crash hazard",
+    )
+    bw_parser.add_argument(
+        "--ticker",
+        default="BW82",
+        help="Asset ticker symbol (default: BW82)",
+    )
+    bw_parser.add_argument(
+        "--price",
+        type=float,
+        default=150.0,
+        help="Observed market asset price P_t (default: 150.0)",
+    )
+    bw_parser.add_argument(
+        "--fundamental",
+        type=float,
+        default=100.0,
+        help="Fundamental discounted cash-flow anchor F_t (default: 100.0)",
+    )
+    bw_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.05,
+        help="Required periodic discount rate r > 0 (default: 0.05)",
+    )
+    bw_parser.add_argument(
+        "--pi",
+        type=float,
+        default=0.85,
+        help="Bubble per-period survival probability pi in [0.10, 1.0] (default: 0.85)",
+    )
+    bw_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Blanchard & Watson receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17047,6 +17144,8 @@ def main() -> None:
         berk_green_command(args)
     elif args.command in ("debt-maturity", "diamond-1991", "rollover-risk"):
         diamond_maturity_command(args)
+    elif args.command in ("rational-bubble", "blanchard-watson", "bw-1982"):
+        blanchard_watson_command(args)
 
 
 if __name__ == "__main__":

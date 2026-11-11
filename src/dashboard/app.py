@@ -9373,6 +9373,68 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Diamond debt maturity structure.")
 
+                st.divider()
+                st.subheader("🫧 Blanchard & Watson (1982) Rational Speculative Bubbles Engine")
+                st.caption("No-arbitrage Euler bubble decomposition P_t = F_t + B_t: implied survival probability pi, explosive growth rate (1+r)/pi - 1 & burst drawdown")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.blanchard_watson_bubble import (
+                            evaluate_blanchard_watson_profile,
+                            verify_hmac_signature as verify_bw_hmac,
+                        )
+                        bw_col1, bw_col2 = st.columns(2)
+                        with bw_col1:
+                            bw_r = st.slider(
+                                "Required Discount Rate (r %)",
+                                min_value=2.0,
+                                max_value=12.0,
+                                value=5.0,
+                                step=0.5,
+                                key=f"bw_r_{selected_ticker}",
+                            ) / 100.0
+                        with bw_col2:
+                            bw_override = st.checkbox(
+                                "Override Survival Probability (pi)?",
+                                value=False,
+                                key=f"bw_ovr_{selected_ticker}",
+                            )
+                            bw_pi = None
+                            if bw_override:
+                                bw_pi = st.slider(
+                                    "Manual Survival Probability pi (%)",
+                                    min_value=20.0,
+                                    max_value=99.0,
+                                    value=85.0,
+                                    step=5.0,
+                                    key=f"bw_pi_{selected_ticker}",
+                                ) / 100.0
+
+                        bw_rec = evaluate_blanchard_watson_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            discount_rate_r=bw_r,
+                            survival_prob_pi=bw_pi,
+                        )
+
+                        bwm1, bwm2, bwm3, bwm4 = st.columns(4)
+                        bwm1.metric("Speculative Bubble B_t", f"${bw_rec.bubble_component_b:.2f}", delta=f"{bw_rec.bubble_share_pct:.1f}% of Price")
+                        bwm2.metric("Crash Hazard (1 - pi)", f"{bw_rec.crash_prob * 100:.1f}%", delta=f"Exp Horizon {bw_rec.expected_remaining_periods:.1f} periods")
+                        bwm3.metric("Required Bubble Growth", f"{bw_rec.required_bubble_growth * 100:.1f}%", delta=f"Burst Loss -{bw_rec.burst_drawdown_loss_pct:.1f}%")
+                        bwm4.metric("Bubble Hazard Regime", bw_rec.regime, delta=f"Fundamental ${bw_rec.fundamental_value_f:.2f}")
+
+                        bw_sig_payload = (
+                            f"{bw_rec.ticker}:{bw_rec.observed_price_p:.4f}:{bw_rec.fundamental_value_f:.4f}:"
+                            f"{bw_rec.discount_rate_r:.6f}:{bw_rec.survival_prob_pi:.4f}:"
+                            f"{bw_rec.bubble_component_b:.4f}:{bw_rec.bubble_share_pct:.2f}:"
+                            f"{bw_rec.required_bubble_growth:.6f}:{bw_rec.regime}:{bw_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Blanchard-Watson HMAC:** `{bw_rec.hmac_signature[:16]}...` (Sealed: `{verify_bw_hmac(bw_sig_payload, bw_rec.hmac_signature)}`)")
+                    except Exception as bw_ex:
+                        st.info(f"Blanchard & Watson bubble evaluation deferred: {bw_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Blanchard & Watson rational bubbles.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
