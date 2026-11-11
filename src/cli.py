@@ -10711,6 +10711,65 @@ def black_zero_beta_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def stein_internal_capital_command(args: argparse.Namespace) -> None:
+    """CLI handler for Jeremy C. Stein (1997) Internal Capital Markets & Winner-Picking Engine."""
+    import json
+    from src.analytics.stein_internal_capital import (
+        calculate_stein_internal_capital,
+        persist_stein_internal_capital_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    th1 = float(getattr(args, "theta1", 8.0) if getattr(args, "theta1", None) is not None else 8.0)
+    th2 = float(getattr(args, "theta2", 4.0) if getattr(args, "theta2", None) is not None else 4.0)
+    c1 = float(getattr(args, "c1", 5.0) if getattr(args, "c1", None) is not None else 5.0)
+    c2 = float(getattr(args, "c2", 5.0) if getattr(args, "c2", None) is not None else 5.0)
+    lam = float(getattr(args, "agency_lambda", 0.20) if getattr(args, "agency_lambda", None) is not None else 0.20)
+
+    try:
+        receipt = calculate_stein_internal_capital(
+            div1_productivity_theta1=th1,
+            div2_productivity_theta2=th2,
+            div1_standalone_budget_c1=c1,
+            div2_standalone_budget_c2=c2,
+            agency_subsidy_lambda=lam,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_stein_internal_capital_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Stein internal capital evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Stein (1997) Internal Capital Markets & Winner-Picking Engine")
+    print("=" * 80)
+    print(f"  Conglomerate / Ticker:          {receipt.ticker} (Budget Constrained: {receipt.budget_constrained})")
+    print(f"  Productivities (th1 / th2):     {receipt.div1_productivity_theta1:.2f} | {receipt.div2_productivity_theta2:.2f} (Standalone C: ${receipt.div1_standalone_budget_c1:.2f} + ${receipt.div2_standalone_budget_c2:.2f})")
+    print(f"  Socialism Friction lambda:      {receipt.agency_subsidy_lambda * 100:.1f}% (Total Capital: ${receipt.total_available_capital:.2f} vs FB ${receipt.first_best_capacity_sum:.2f})")
+    print("-" * 80)
+    print("  Internal Capital Allocation & Conglomerate Value:")
+    print(f"    Winner-Pick (K1* / K2*):      ${receipt.winner_pick_k1:.2f} | ${receipt.winner_pick_k2:.2f} (Equal MP={receipt.marginal_product_div1:.3f})")
+    print(f"    Actual HQ Alloc (K1 / K2):    ${receipt.actual_alloc_k1:.2f} | ${receipt.actual_alloc_k2:.2f}")
+    print(f"    Standalone vs Conglom Value:  ${receipt.standalone_total_value:.2f} -> ${receipt.actual_conglomerate_value:.2f}")
+    print(f"    Conglomerate Premium (Net):   ${receipt.net_conglomerate_premium:+.2f} ({receipt.conglomerate_premium_pct:+.2f}%)")
+    print(f"    Winner Surplus / Agency Loss: +${receipt.gross_winner_picking_surplus:.2f} | -${receipt.agency_socialism_loss:.2f}")
+    print("-" * 80)
+    print(f"  Internal Capital Regime:        {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -16911,6 +16970,53 @@ def main() -> None:
         help="Output Black Zero-Beta CAPM receipt as JSON",
     )
 
+    # Jeremy C. Stein (1997) Internal Capital Markets parser
+    st97_parser = subparsers.add_parser(
+        "internal-capital",
+        aliases=["winner-picking", "stein-1997"],
+        help="Evaluate Stein (1997) internal capital markets, winner-picking & conglomerate discount",
+    )
+    st97_parser.add_argument(
+        "--ticker",
+        default="ST97",
+        help="Conglomerate ticker symbol (default: ST97)",
+    )
+    st97_parser.add_argument(
+        "--theta1",
+        type=float,
+        default=8.0,
+        help="Division 1 productivity parameter theta_1 > 0 (default: 8.0)",
+    )
+    st97_parser.add_argument(
+        "--theta2",
+        type=float,
+        default=4.0,
+        help="Division 2 productivity parameter theta_2 > 0 (default: 4.0)",
+    )
+    st97_parser.add_argument(
+        "--c1",
+        type=float,
+        default=5.0,
+        help="Division 1 standalone credit budget c_1 (default: 5.0)",
+    )
+    st97_parser.add_argument(
+        "--c2",
+        type=float,
+        default=5.0,
+        help="Division 2 standalone credit budget c_2 (default: 5.0)",
+    )
+    st97_parser.add_argument(
+        "--agency-lambda",
+        type=float,
+        default=0.20,
+        help="Cross-subsidization socialism friction lambda in [0, 1] (default: 0.20)",
+    )
+    st97_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Stein (1997) internal capital receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17243,6 +17349,8 @@ def main() -> None:
         blanchard_watson_command(args)
     elif args.command in ("zero-beta", "black-1972"):
         black_zero_beta_command(args)
+    elif args.command in ("internal-capital", "winner-picking", "stein-1997"):
+        stein_internal_capital_command(args)
 
 
 if __name__ == "__main__":

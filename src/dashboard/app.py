@@ -9497,6 +9497,69 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Black Zero-Beta CAPM.")
 
+                st.divider()
+                st.subheader("🏢 Jeremy Stein (1997) Internal Capital Markets & Winner-Picking Engine")
+                st.caption("Conglomerate reallocation surplus vs. corporate socialism cross-subsidization discount under aggregate credit limits")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.stein_internal_capital import (
+                            evaluate_stein_internal_capital_profile,
+                            verify_hmac_signature as verify_st97_hmac,
+                        )
+                        st_col1, st_col2 = st.columns(2)
+                        with st_col1:
+                            st_lam = st.slider(
+                                "Cross-Subsidization Agency Friction (lambda %)",
+                                min_value=0.0,
+                                max_value=100.0,
+                                value=20.0,
+                                step=5.0,
+                                key=f"st97_lam_{selected_ticker}",
+                            ) / 100.0
+                        with st_col2:
+                            st_override = st.checkbox(
+                                "Custom Winner Productivity (theta1)?",
+                                value=False,
+                                key=f"st97_ovr_{selected_ticker}",
+                            )
+                            st_th1 = None
+                            if st_override:
+                                st_th1 = st.slider(
+                                    "Division 1 Winner Productivity (theta1)",
+                                    min_value=4.0,
+                                    max_value=12.0,
+                                    value=8.0,
+                                    step=0.5,
+                                    key=f"st97_th1_{selected_ticker}",
+                                )
+
+                        st_rec = evaluate_stein_internal_capital_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            agency_subsidy_lambda=st_lam,
+                            div1_productivity_theta1=st_th1,
+                        )
+
+                        stm1, stm2, stm3, stm4 = st.columns(4)
+                        stm1.metric("Conglomerate Premium", f"{st_rec.conglomerate_premium_pct:+.1f}%", delta=f"${st_rec.net_conglomerate_premium:+.2f} net value")
+                        stm2.metric("Winner-Pick Split K1*/K2*", f"${st_rec.winner_pick_k1:.1f} / ${st_rec.winner_pick_k2:.1f}", delta=f"Equal MP {st_rec.marginal_product_div1:.2f}")
+                        stm3.metric("Winner vs Agency Drag", f"+${st_rec.gross_winner_picking_surplus:.2f}", delta=f"Socialism -${st_rec.agency_socialism_loss:.2f}")
+                        stm4.metric("Internal Capital Regime", st_rec.regime, delta=f"Div1 Theta {st_rec.div1_productivity_theta1:.1f}")
+
+                        st_sig_payload = (
+                            f"{st_rec.ticker}:{st_rec.div1_productivity_theta1:.4f}:{st_rec.div2_productivity_theta2:.4f}:"
+                            f"{st_rec.div1_standalone_budget_c1:.4f}:{st_rec.div2_standalone_budget_c2:.4f}:"
+                            f"{st_rec.agency_subsidy_lambda:.4f}:{st_rec.winner_pick_total_value:.6f}:"
+                            f"{st_rec.actual_conglomerate_value:.6f}:{st_rec.conglomerate_premium_pct:.4f}:"
+                            f"{st_rec.regime}:{st_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Stein Internal Capital HMAC:** `{st_rec.hmac_signature[:16]}...` (Sealed: `{verify_st97_hmac(st_sig_payload, st_rec.hmac_signature)}`)")
+                    except Exception as st_ex:
+                        st.info(f"Stein internal capital evaluation deferred: {st_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Stein internal capital markets.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
