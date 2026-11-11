@@ -8601,6 +8601,72 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Margrabe exchange option profile.")
 
+                st.divider()
+                st.subheader("🛡️ Black & Cox (1976) First-Passage Structural Credit & Safety Covenant Engine")
+                st.caption("Down-and-out equity valuation, exponential bond safety covenants H(t) = K*exp(-gamma*(T-t)), spread protection & first-passage default probability")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.black_cox_covenants import (
+                            evaluate_black_cox_profile,
+                            verify_hmac_signature as verify_bc_hmac,
+                        )
+                        bc_col1, bc_col2, bc_col3 = st.columns(3)
+                        with bc_col1:
+                            bc_lev = st.slider(
+                                "Asset Leverage (F / V_0)",
+                                min_value=0.20,
+                                max_value=0.85,
+                                value=0.55,
+                                step=0.05,
+                                key=f"bc_lev_{selected_ticker}",
+                            )
+                        with bc_col2:
+                            bc_cov = st.slider(
+                                "Safety Covenant Coverage (K / F)",
+                                min_value=0.00,
+                                max_value=0.95,
+                                value=0.80,
+                                step=0.05,
+                                key=f"bc_cov_{selected_ticker}",
+                            )
+                        with bc_col3:
+                            bc_mat = st.slider(
+                                "Debt Maturity T (Years)",
+                                min_value=1.0,
+                                max_value=10.0,
+                                value=5.0,
+                                step=1.0,
+                                key=f"bc_mat_{selected_ticker}",
+                            )
+
+                        bc_rec = evaluate_black_cox_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            leverage_ratio=bc_lev,
+                            covenant_coverage=bc_cov,
+                            maturity_years=bc_mat,
+                        )
+
+                        bcm1, bcm2, bcm3, bcm4 = st.columns(4)
+                        bcm1.metric("Black-Cox Credit Spread", f"{bc_rec.black_cox_credit_spread_bps:.1f} bps", delta=f"Saves {bc_rec.covenant_spread_savings_bps:.1f} bps vs Merton")
+                        bcm2.metric("Total First-Passage PD", f"{bc_rec.total_default_prob * 100:.2f}%", delta=f"Barrier PD {bc_rec.first_passage_barrier_pd * 100:.2f}%")
+                        bcm3.metric("Down-and-Out Equity", f"${bc_rec.black_cox_equity_value:.2f}", delta=f"Transfer ${bc_rec.covenant_equity_transfer:.2f}")
+                        bcm4.metric("Distance to Barrier", f"{bc_rec.distance_to_covenant_barrier:.2f} sig", delta=bc_rec.regime)
+
+                        bc_sig_payload = (
+                            f"{bc_rec.ticker}:{bc_rec.asset_value_v0:.4f}:{bc_rec.debt_face_f:.4f}:"
+                            f"{bc_rec.covenant_level_k:.4f}:{bc_rec.covenant_growth_gamma:.4f}:"
+                            f"{bc_rec.maturity_years:.4f}:{bc_rec.asset_volatility:.4f}:"
+                            f"{bc_rec.black_cox_equity_value:.6f}:{bc_rec.black_cox_credit_spread_bps:.2f}:"
+                            f"{bc_rec.total_default_prob:.6f}:{bc_rec.regime}:{bc_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Black-Cox Covenant HMAC:** `{bc_rec.hmac_signature[:16]}...` (Sealed: `{verify_bc_hmac(bc_sig_payload, bc_rec.hmac_signature)}`)")
+                    except Exception as bc_ex:
+                        st.info(f"Black & Cox covenant credit evaluation deferred: {bc_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Black & Cox covenant credit profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

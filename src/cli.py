@@ -9826,6 +9826,70 @@ def margrabe_exchange_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def black_cox_command(args: argparse.Namespace) -> None:
+    """CLI handler for Black & Cox (1976) First-Passage Structural Credit & Safety Covenant Engine."""
+    import json
+    from src.analytics.black_cox_covenants import (
+        calculate_black_cox_covenants,
+        persist_black_cox_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    v0 = float(getattr(args, "v0", 150.0) if getattr(args, "v0", None) is not None else 150.0)
+    f_debt = float(getattr(args, "debt", 100.0) if getattr(args, "debt", None) is not None else 100.0)
+    k_cov = float(getattr(args, "covenant_k", 80.0) if getattr(args, "covenant_k", None) is not None else 80.0)
+    gamma = float(getattr(args, "gamma", 0.03) if getattr(args, "gamma", None) is not None else 0.03)
+    maturity = float(getattr(args, "maturity", 5.0) if getattr(args, "maturity", None) is not None else 5.0)
+    vol = float(getattr(args, "vol", 0.28) if getattr(args, "vol", None) is not None else 0.28)
+    rate = float(getattr(args, "rate", 0.045) if getattr(args, "rate", None) is not None else 0.045)
+
+    try:
+        receipt = calculate_black_cox_covenants(
+            asset_value_v0=v0,
+            debt_face_f=f_debt,
+            covenant_level_k=k_cov,
+            covenant_growth_gamma=gamma,
+            maturity_years=maturity,
+            asset_volatility=vol,
+            risk_free_rate=rate,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_black_cox_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Black-Cox covenant evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Black & Cox (1976) First-Passage Structural Credit & Safety Covenant Engine")
+    print("=" * 80)
+    print(f"  Issuer / Ticker:                {receipt.ticker} (Breached: {receipt.covenant_breached_at_inception})")
+    print(f"  Assets V0 / Debt F / Cov K:     ${receipt.asset_value_v0:.2f} | ${receipt.debt_face_f:.2f} | ${receipt.covenant_level_k:.2f} (H0=${receipt.initial_barrier_h0:.2f})")
+    print(f"  Maturity T / Asset Vol / gamma: {receipt.maturity_years:.2f}y | {receipt.asset_volatility * 100:.2f}% | {receipt.covenant_growth_gamma * 100:.2f}%")
+    print("-" * 80)
+    print("  Safety Covenant Valuation & First-Passage Default Risk:")
+    print(f"    Down-and-Out Equity E_BC:     ${receipt.black_cox_equity_value:.2f} (vs Merton: ${receipt.merton_equity_value:.2f}, Transfer: ${receipt.covenant_equity_transfer:.2f})")
+    print(f"    Covenant Debt Value D_BC:     ${receipt.black_cox_debt_value:.2f} (vs Merton: ${receipt.merton_debt_value:.2f})")
+    print(f"    Credit Spread (BC vs Merton): {receipt.black_cox_credit_spread_bps:.2f} bps vs {receipt.merton_credit_spread_bps:.2f} bps")
+    print(f"    Covenant Spread Savings:      {receipt.covenant_spread_savings_bps:.2f} bps")
+    print(f"    First-Passage / Total PD:     {receipt.first_passage_barrier_pd * 100:.2f}% | {receipt.total_default_prob * 100:.2f}% (Merton Term PD: {receipt.merton_terminal_pd * 100:.2f}%)")
+    print(f"    Distance to Barrier (sigma):  {receipt.distance_to_covenant_barrier:.2f}x (Pre-Mat Share: {receipt.pre_maturity_default_share * 100:.1f}%)")
+    print("-" * 80)
+    print(f"  Credit Covenant Regime:         {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -15267,6 +15331,65 @@ def main() -> None:
         help="Output Margrabe exchange option receipt as JSON",
     )
 
+    # Black & Cox (1976) First-Passage Covenant Credit parser
+    bc_parser = subparsers.add_parser(
+        "black-cox",
+        aliases=["first-passage", "safety-covenant", "bc-1976"],
+        help="Evaluate Black & Cox (1976) first-passage structural credit & safety covenants",
+    )
+    bc_parser.add_argument(
+        "--ticker",
+        default="CORP",
+        help="Corporate issuer ticker symbol (default: CORP)",
+    )
+    bc_parser.add_argument(
+        "--v0",
+        type=float,
+        default=150.0,
+        help="Current firm asset value V_0 (default: 150.0)",
+    )
+    bc_parser.add_argument(
+        "--debt",
+        type=float,
+        default=100.0,
+        help="Debt face value F at maturity (default: 100.0)",
+    )
+    bc_parser.add_argument(
+        "--covenant-k",
+        type=float,
+        default=80.0,
+        help="Terminal safety covenant level K <= F (default: 80.0)",
+    )
+    bc_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.03,
+        help="Exponential covenant growth rate gamma (default: 0.03)",
+    )
+    bc_parser.add_argument(
+        "--maturity",
+        type=float,
+        default=5.0,
+        help="Debt maturity T in years (default: 5.0)",
+    )
+    bc_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.28,
+        help="Annualized firm asset volatility sigma (default: 0.28)",
+    )
+    bc_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.045,
+        help="Risk-free interest rate r (default: 0.045)",
+    )
+    bc_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Black & Cox covenant credit receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -15569,6 +15692,8 @@ def main() -> None:
         binomial_option_command(args)
     elif args.command in ("exchange-option", "margrabe", "margrabe-1978", "switch-option"):
         margrabe_exchange_command(args)
+    elif args.command in ("black-cox", "first-passage", "safety-covenant", "bc-1976"):
+        black_cox_command(args)
 
 
 if __name__ == "__main__":
