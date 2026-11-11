@@ -9760,6 +9760,72 @@ def binomial_option_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def margrabe_exchange_command(args: argparse.Namespace) -> None:
+    """CLI handler for William Margrabe (1978) Exchange Option & Relative-Performance Engine."""
+    import json
+    from src.analytics.margrabe_exchange_option import (
+        calculate_margrabe_exchange_option,
+        persist_margrabe_exchange_record,
+    )
+
+    try:
+        t1 = validate_ticker(args.asset1)
+        t2 = validate_ticker(args.asset2)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    s1 = float(getattr(args, "s1", 100.0) if getattr(args, "s1", None) is not None else 100.0)
+    s2 = float(getattr(args, "s2", 100.0) if getattr(args, "s2", None) is not None else 100.0)
+    v1 = float(getattr(args, "vol1", 0.25) if getattr(args, "vol1", None) is not None else 0.25)
+    v2 = float(getattr(args, "vol2", 0.20) if getattr(args, "vol2", None) is not None else 0.20)
+    q1 = float(getattr(args, "div1", 0.01) if getattr(args, "div1", None) is not None else 0.01)
+    q2 = float(getattr(args, "div2", 0.015) if getattr(args, "div2", None) is not None else 0.015)
+    rho = float(getattr(args, "rho", 0.50) if getattr(args, "rho", None) is not None else 0.50)
+    maturity = float(getattr(args, "maturity", 1.0) if getattr(args, "maturity", None) is not None else 1.0)
+
+    try:
+        receipt = calculate_margrabe_exchange_option(
+            spot_asset1=s1,
+            spot_asset2=s2,
+            vol_asset1=v1,
+            vol_asset2=v2,
+            div_yield_asset1=q1,
+            div_yield_asset2=q2,
+            correlation_rho=rho,
+            maturity_years=maturity,
+            asset1_ticker=t1,
+            asset2_ticker=t2,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_margrabe_exchange_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Margrabe exchange option evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: William Margrabe (1978) Exchange Option & Relative-Performance Engine")
+    print("=" * 80)
+    print(f"  Asset Exchange Pair:            {receipt.asset1_ticker} vs {receipt.asset2_ticker} (Maturity: {receipt.maturity_years:.2f}y)")
+    print(f"  Spots (S1 / S2) & Vols:         ${receipt.spot_asset1:.2f} / ${receipt.spot_asset2:.2f} | {receipt.vol_asset1 * 100:.2f}% / {receipt.vol_asset2 * 100:.2f}% (rho={receipt.correlation_rho:+.2f})")
+    print(f"  Composite Spread Vol (rel):     {receipt.composite_volatility * 100:.2f}%")
+    print("-" * 80)
+    print("  Relative Valuation & Hedge Sensitivities:")
+    print(f"    Exchange Option Value:        ${receipt.exchange_option_value:.4f} ({receipt.normalized_switch_premium_pct:.2f}% switch premium)")
+    print(f"    Intrinsic Forward / Time Val: ${receipt.intrinsic_forward_bound:.4f} | ${receipt.time_switching_value:.4f}")
+    print(f"    Hedge Deltas (D1 / D2):       {receipt.delta_asset1:+.4f} {receipt.asset1_ticker} | {receipt.delta_asset2:+.4f} {receipt.asset2_ticker}")
+    print(f"    Rel Vega / Corr Sensitivity:  ${receipt.relative_vega:.4f} | ${receipt.correlation_sensitivity:+.4f} (Outperf P={receipt.outperformance_prob * 100:.2f}%)")
+    print("-" * 80)
+    print(f"  Pair Exchange Regime:           {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -15131,6 +15197,76 @@ def main() -> None:
         help="Output CRR binomial option receipt as JSON",
     )
 
+    # Margrabe (1978) Exchange Option parser
+    mx_parser = subparsers.add_parser(
+        "exchange-option",
+        aliases=["margrabe", "margrabe-1978", "switch-option"],
+        help="Price Margrabe (1978) two-asset relative-performance exchange option",
+    )
+    mx_parser.add_argument(
+        "--asset1",
+        default="ASSET1",
+        help="Target outperforming asset ticker S_1 (default: ASSET1)",
+    )
+    mx_parser.add_argument(
+        "--asset2",
+        default="SPY",
+        help="Surrendered benchmark asset ticker S_2 (default: SPY)",
+    )
+    mx_parser.add_argument(
+        "--s1",
+        type=float,
+        default=100.0,
+        help="Spot price of Asset 1 S_1 (default: 100.0)",
+    )
+    mx_parser.add_argument(
+        "--s2",
+        type=float,
+        default=100.0,
+        help="Spot price of Asset 2 S_2 (default: 100.0)",
+    )
+    mx_parser.add_argument(
+        "--vol1",
+        type=float,
+        default=0.25,
+        help="Volatility sigma_1 of Asset 1 (default: 0.25)",
+    )
+    mx_parser.add_argument(
+        "--vol2",
+        type=float,
+        default=0.20,
+        help="Volatility sigma_2 of Asset 2 (default: 0.20)",
+    )
+    mx_parser.add_argument(
+        "--div1",
+        type=float,
+        default=0.01,
+        help="Dividend yield q_1 of Asset 1 (default: 0.01)",
+    )
+    mx_parser.add_argument(
+        "--div2",
+        type=float,
+        default=0.015,
+        help="Dividend yield q_2 of Asset 2 (default: 0.015)",
+    )
+    mx_parser.add_argument(
+        "--rho",
+        type=float,
+        default=0.50,
+        help="Return correlation rho between Asset 1 and Asset 2 in [-1, 1] (default: 0.50)",
+    )
+    mx_parser.add_argument(
+        "--maturity",
+        type=float,
+        default=1.0,
+        help="Maturity horizon T in years (default: 1.0)",
+    )
+    mx_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Margrabe exchange option receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -15431,6 +15567,8 @@ def main() -> None:
         term_structure_command(args)
     elif args.command in ("binomial-option", "crr-1979", "american-option", "option-tree"):
         binomial_option_command(args)
+    elif args.command in ("exchange-option", "margrabe", "margrabe-1978", "switch-option"):
+        margrabe_exchange_command(args)
 
 
 if __name__ == "__main__":

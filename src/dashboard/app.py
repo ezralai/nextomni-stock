@@ -8534,6 +8534,73 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate CRR binomial option profile.")
 
+                st.divider()
+                st.subheader("🔄 William Margrabe (1978) Exchange Option & Relative-Performance Engine")
+                st.caption("Strike-free closed-form option to exchange benchmark exposure for target asset: composite spread volatility, dual hedge deltas & Euler homogeneity")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.margrabe_exchange_option import (
+                            evaluate_margrabe_exchange_profile,
+                            verify_hmac_signature as verify_mx_hmac,
+                        )
+                        mx_col1, mx_col2, mx_col3 = st.columns(3)
+                        with mx_col1:
+                            mx_rho = st.slider(
+                                "Asset-Benchmark Correlation (rho)",
+                                min_value=-0.50,
+                                max_value=0.95,
+                                value=0.55,
+                                step=0.05,
+                                key=f"mx_rho_{selected_ticker}",
+                            )
+                        with mx_col2:
+                            mx_bvol = st.slider(
+                                "Benchmark Volatility (sigma_2 %)",
+                                min_value=5.0,
+                                max_value=60.0,
+                                value=18.0,
+                                step=2.0,
+                                key=f"mx_bvol_{selected_ticker}",
+                            ) / 100.0
+                        with mx_col3:
+                            mx_mat = st.slider(
+                                "Horizon T (Years)",
+                                min_value=0.25,
+                                max_value=3.0,
+                                value=1.0,
+                                step=0.25,
+                                key=f"mx_mat_{selected_ticker}",
+                            )
+
+                        mx_rec = evaluate_margrabe_exchange_profile(
+                            prices=df["Close"].tolist(),
+                            asset1_ticker=selected_ticker,
+                            asset2_ticker="SPY",
+                            benchmark_vol=mx_bvol,
+                            correlation_rho=mx_rho,
+                            maturity_years=mx_mat,
+                        )
+
+                        mm1, mm2, mm3, mm4 = st.columns(4)
+                        mm1.metric("Exchange Option Value", f"${mx_rec.exchange_option_value:.2f}", delta=f"{mx_rec.normalized_switch_premium_pct:.1f}% of Spot")
+                        mm2.metric("Composite Spread Vol", f"{mx_rec.composite_volatility * 100:.2f}%", delta=mx_rec.regime)
+                        mm3.metric("Hedge Deltas (D1 / D2)", f"{mx_rec.delta_asset1:+.3f} / {mx_rec.delta_asset2:+.3f}", delta=f"Outperf P={mx_rec.outperformance_prob * 100:.1f}%")
+                        mm4.metric("Correlation Sensitivity", f"${mx_rec.correlation_sensitivity:+.2f}", delta=f"Rel Vega ${mx_rec.relative_vega:.2f}")
+
+                        mx_sig_payload = (
+                            f"{mx_rec.asset1_ticker}:{mx_rec.asset2_ticker}:{mx_rec.spot_asset1:.4f}:"
+                            f"{mx_rec.spot_asset2:.4f}:{mx_rec.vol_asset1:.4f}:{mx_rec.vol_asset2:.4f}:"
+                            f"{mx_rec.correlation_rho:.4f}:{mx_rec.maturity_years:.4f}:"
+                            f"{mx_rec.exchange_option_value:.6f}:{mx_rec.composite_volatility:.6f}:"
+                            f"{mx_rec.regime}:{mx_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Margrabe Exchange HMAC:** `{mx_rec.hmac_signature[:16]}...` (Sealed: `{verify_mx_hmac(mx_sig_payload, mx_rec.hmac_signature)}`)")
+                    except Exception as mx_ex:
+                        st.info(f"Margrabe exchange option evaluation deferred: {mx_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Margrabe exchange option profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
