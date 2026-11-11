@@ -9252,6 +9252,71 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Harris & Raviv informational debt.")
 
+                st.divider()
+                st.subheader("💼 Berk & Green (2004) Rational Fund Flows & Alpha Capacity Engine")
+                st.caption("Bayesian skill updating & decreasing returns to scale C(q)=a*q^2: equilibrium AUM q*, zero-alpha clearing & fee rent optimization")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.berk_green_fund_flows import (
+                            evaluate_berk_green_profile,
+                            verify_hmac_signature as verify_bg_hmac,
+                        )
+                        bg_col1, bg_col2, bg_col3 = st.columns(3)
+                        with bg_col1:
+                            bg_fee = st.slider(
+                                "Management Fee (f %)",
+                                min_value=0.0,
+                                max_value=3.0,
+                                value=1.0,
+                                step=0.25,
+                                key=f"bg_fee_{selected_ticker}",
+                            ) / 100.0
+                        with bg_col2:
+                            bg_cost_a = st.slider(
+                                "Scale Cost Convexity (a bps/$B)",
+                                min_value=10.0,
+                                max_value=150.0,
+                                value=50.0,
+                                step=10.0,
+                                key=f"bg_a_{selected_ticker}",
+                            ) / 10000.0
+                        with bg_col3:
+                            bg_aum = st.slider(
+                                "Current Fund AUM ($B)",
+                                min_value=0.5,
+                                max_value=15.0,
+                                value=3.0,
+                                step=0.5,
+                                key=f"bg_aum_{selected_ticker}",
+                            )
+
+                        bg_rec = evaluate_berk_green_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            management_fee_f=bg_fee,
+                            cost_convexity_a=bg_cost_a,
+                            current_aum_q=bg_aum,
+                        )
+
+                        bgm1, bgm2, bgm3, bgm4 = st.columns(4)
+                        bgm1.metric("Equilibrium AUM q*", f"${bg_rec.equilibrium_aum_q_star:.2f}B", delta=f"Flow {bg_rec.expected_flow_delta_q:+.2f}B")
+                        bgm2.metric("Posterior Gross Skill", f"{bg_rec.posterior_skill_phi_hat * 100:.2f}%", delta=f"Current Net {bg_rec.current_net_alpha * 100:+.2f}%")
+                        bgm3.metric("Optimal Monopoly Fee f*", f"{bg_rec.optimal_monopoly_fee_f_star * 100:.2f}%", delta=f"Rent ${bg_rec.equilibrium_fee_revenue * 1000:.1f}M")
+                        bgm4.metric("Capacity Regime", f"{bg_rec.capacity_utilization_pct:.0f}% Utilized", delta=bg_rec.regime)
+
+                        bg_sig_payload = (
+                            f"{bg_rec.ticker}:{bg_rec.prior_skill_phi0:.6f}:{bg_rec.realized_alpha_r:.6f}:"
+                            f"{bg_rec.management_fee_f:.6f}:{bg_rec.cost_convexity_a:.6f}:{bg_rec.current_aum_q:.4f}:"
+                            f"{bg_rec.posterior_skill_phi_hat:.6f}:{bg_rec.equilibrium_aum_q_star:.4f}:"
+                            f"{bg_rec.current_net_alpha:.6f}:{bg_rec.regime}:{bg_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Berk-Green HMAC:** `{bg_rec.hmac_signature[:16]}...` (Sealed: `{verify_bg_hmac(bg_sig_payload, bg_rec.hmac_signature)}`)")
+                    except Exception as bg_ex:
+                        st.info(f"Berk & Green fund flow evaluation deferred: {bg_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Berk & Green alpha capacity.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

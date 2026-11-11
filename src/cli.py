@@ -10485,6 +10485,64 @@ def harris_raviv_debt_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def berk_green_command(args: argparse.Namespace) -> None:
+    """CLI handler for Berk & Green (2004) Rational Fund Flows & Alpha Capacity Engine."""
+    import json
+    from src.analytics.berk_green_fund_flows import (
+        calculate_berk_green_equilibrium,
+        persist_berk_green_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    prior = float(getattr(args, "prior", 0.03) if getattr(args, "prior", None) is not None else 0.03)
+    realized = float(getattr(args, "realized", 0.06) if getattr(args, "realized", None) is not None else 0.06)
+    fee = float(getattr(args, "fee", 0.010) if getattr(args, "fee", None) is not None else 0.010)
+    cost_a = float(getattr(args, "cost_a", 0.005) if getattr(args, "cost_a", None) is not None else 0.005)
+    aum = float(getattr(args, "aum", 3.0) if getattr(args, "aum", None) is not None else 3.0)
+
+    try:
+        receipt = calculate_berk_green_equilibrium(
+            prior_skill_phi0=prior,
+            realized_alpha_r=realized,
+            management_fee_f=fee,
+            cost_convexity_a=cost_a,
+            current_aum_q=aum,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_berk_green_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Berk & Green evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Berk & Green (2004) Rational Fund Flows & Alpha Capacity Engine")
+    print("=" * 80)
+    print(f"  Fund / Strategy Ticker:         {receipt.ticker} (Current AUM: ${receipt.current_aum_q:.2f}B | Fee: {receipt.management_fee_f * 100:.2f}%)")
+    print(f"  Prior Skill / Realized Alpha:   {receipt.prior_skill_phi0 * 100:.2f}% | {receipt.realized_alpha_r * 100:.2f}% (Signal Weight={receipt.signal_weight:.3f})")
+    print(f"  Bayesian Posterior Skill phi:   {receipt.posterior_skill_phi_hat * 100:.2f}% (Scale Cost a={receipt.cost_convexity_a:.4f})")
+    print("-" * 80)
+    print("  Decreasing-Returns Equilibrium & Fee Rent Capture:")
+    print(f"    Equilibrium AUM q*:           ${receipt.equilibrium_aum_q_star:.2f}B (Utilization: {receipt.capacity_utilization_pct:.1f}%)")
+    print(f"    Predicted Rational Flow d_q:  {receipt.expected_flow_delta_q:+.2f}B ({receipt.flow_pct_of_aum:+.1f}%)")
+    print(f"    Current vs Eq Net Alpha:      {receipt.current_net_alpha * 100:+.2f}% vs {receipt.equilibrium_net_alpha * 100:.2f}%")
+    print(f"    Equilibrium Fee Rent (f*q*):  {receipt.equilibrium_fee_revenue * 1000:.2f}M (Opt Fee f*={receipt.optimal_monopoly_fee_f_star * 100:.2f}%, Max Rent={receipt.max_manager_fee_rent * 1000:.2f}M)")
+    print("-" * 80)
+    print(f"  Capacity & Flow Regime:         {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -16509,6 +16567,53 @@ def main() -> None:
         help="Output Harris & Raviv informational debt receipt as JSON",
     )
 
+    # Berk & Green (2004) Rational Fund Flows & Alpha Capacity parser
+    bg_parser = subparsers.add_parser(
+        "fund-flows",
+        aliases=["berk-green", "bg-2004", "capacity-alpha"],
+        help="Evaluate Berk & Green (2004) Bayesian skill, rational AUM flows & alpha capacity",
+    )
+    bg_parser.add_argument(
+        "--ticker",
+        default="BG04",
+        help="Fund / strategy ticker symbol (default: BG04)",
+    )
+    bg_parser.add_argument(
+        "--prior",
+        type=float,
+        default=0.03,
+        help="Prior expected gross annual skill phi_0 (default: 0.03)",
+    )
+    bg_parser.add_argument(
+        "--realized",
+        type=float,
+        default=0.06,
+        help="Realized gross active alpha R_t (default: 0.06)",
+    )
+    bg_parser.add_argument(
+        "--fee",
+        type=float,
+        default=0.010,
+        help="Annual management fee f (default: 0.010)",
+    )
+    bg_parser.add_argument(
+        "--cost-a",
+        type=float,
+        default=0.005,
+        help="Quadratic scale cost slope a > 0 (default: 0.005)",
+    )
+    bg_parser.add_argument(
+        "--aum",
+        type=float,
+        default=3.0,
+        help="Current assets under management q in $B (default: 3.0)",
+    )
+    bg_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Berk & Green receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -16833,6 +16938,8 @@ def main() -> None:
         cppi_insurance_command(args)
     elif args.command in ("informational-debt", "hr-1990", "default-investigation"):
         harris_raviv_debt_command(args)
+    elif args.command in ("fund-flows", "berk-green", "bg-2004", "capacity-alpha"):
+        berk_green_command(args)
 
 
 if __name__ == "__main__":
