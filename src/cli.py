@@ -10312,6 +10312,65 @@ def dixit_hysteresis_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def holmstrom_tirole_1998_command(args: argparse.Namespace) -> None:
+    """CLI handler for Holmstrom & Tirole (1998) Private & Public Supply of Liquidity Engine."""
+    import json
+    from src.analytics.holmstrom_tirole_public_liquidity import (
+        calculate_public_liquidity_supply,
+        persist_public_liquidity_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    equity_a = float(getattr(args, "equity", 20.0) if getattr(args, "equity", None) is not None else 20.0)
+    rho0 = float(getattr(args, "rho0", 0.70) if getattr(args, "rho0", None) is not None else 0.70)
+    rho1 = float(getattr(args, "rho1", 1.45) if getattr(args, "rho1", None) is not None else 1.45)
+    shock = float(getattr(args, "shock", 0.90) if getattr(args, "shock", None) is not None else 0.90)
+    theta = float(getattr(args, "theta", 0.35) if getattr(args, "theta", None) is not None else 0.35)
+    lam = float(getattr(args, "lambda_agg", 0.60) if getattr(args, "lambda_agg", None) is not None else 0.60)
+
+    try:
+        receipt = calculate_public_liquidity_supply(
+            entrepreneur_equity_a=equity_a,
+            pledgeable_return_rho0=rho0,
+            total_return_rho1=rho1,
+            interim_shock_rho=shock,
+            shock_prob_theta=theta,
+            aggregate_corr_lambda=lam,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_public_liquidity_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Public liquidity evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Holmstrom & Tirole (1998) Private & Public Supply of Liquidity Engine")
+    print("=" * 80)
+    print(f"  Sector / Ticker:                {receipt.ticker} (Net Worth A=${receipt.entrepreneur_equity_a:.2f}, Cont Efficient: {receipt.continuation_efficient})")
+    print(f"  Pledgeable rho0 / Return rho1:  {receipt.pledgeable_return_rho0:.2f} | {receipt.total_return_rho1:.2f} (Interim Shock={receipt.interim_shock_rho:.2f}, Gap={receipt.pledgeable_liquidity_gap:.2f})")
+    print(f"  Shock Prob theta / Agg lambda:  {receipt.shock_prob_theta * 100:.1f}% | {receipt.aggregate_corr_lambda * 100:.1f}% (Res Req={receipt.optimal_reserve_ratio_pct:.1f}%)")
+    print("-" * 80)
+    print("  Investment Capacity & Contingent Treasury Liquidity Equilibrium:")
+    print(f"    Pooled / Agg / Hoard Scale:   ${receipt.pooled_investment_scale:.2f} | ${receipt.aggregate_investment_scale:.2f} | ${receipt.hoarding_investment_scale:.2f}")
+    print(f"    Public Liquidity Scale Gain:  +${receipt.public_liquidity_scale_gain:.2f} (Social Welfare Gain: +${receipt.welfare_gain_public_supply:.2f})")
+    print(f"    Treasury Liquidity q_L:       {receipt.treasury_liquidity_price_ql:.4f} (+{receipt.liquidity_shortage_premium_bps:.2f} bps liquidity premium)")
+    print("-" * 80)
+    print(f"  Liquidity Supply Regime:        {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -16189,6 +16248,59 @@ def main() -> None:
         help="Output Dixit hysteresis receipt as JSON",
     )
 
+    # Holmstrom & Tirole (1998) Public Supply of Liquidity parser
+    ht98_parser = subparsers.add_parser(
+        "public-liquidity",
+        aliases=["ht-1998", "liquidity-line"],
+        help="Evaluate Holmstrom & Tirole (1998) private pooling vs. public liquidity supply",
+    )
+    ht98_parser.add_argument(
+        "--ticker",
+        default="HT98",
+        help="Corporate / banking benchmark ticker symbol (default: HT98)",
+    )
+    ht98_parser.add_argument(
+        "--equity",
+        type=float,
+        default=20.0,
+        help="Entrepreneur initial net worth A (default: 20.0)",
+    )
+    ht98_parser.add_argument(
+        "--rho0",
+        type=float,
+        default=0.70,
+        help="Pledgeable return per investment unit rho_0 (default: 0.70)",
+    )
+    ht98_parser.add_argument(
+        "--rho1",
+        type=float,
+        default=1.45,
+        help="Total continuation return rho_1 > rho_0 (default: 1.45)",
+    )
+    ht98_parser.add_argument(
+        "--shock",
+        type=float,
+        default=0.90,
+        help="Interim liquidity reinvestment shock rho (default: 0.90)",
+    )
+    ht98_parser.add_argument(
+        "--theta",
+        type=float,
+        default=0.35,
+        help="Probability theta in (0, 1) of interim liquidity shock (default: 0.35)",
+    )
+    ht98_parser.add_argument(
+        "--lambda-agg",
+        type=float,
+        default=0.60,
+        help="Fraction lambda in [0, 1] of aggregate correlated liquidity risk (default: 0.60)",
+    )
+    ht98_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Holmstrom & Tirole (1998) receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -16507,6 +16619,8 @@ def main() -> None:
         shleifer_vishny_liquidation_command(args)
     elif args.command in ("entry-exit", "hysteresis-exit", "dixit-1989"):
         dixit_hysteresis_command(args)
+    elif args.command in ("public-liquidity", "ht-1998", "liquidity-line"):
+        holmstrom_tirole_1998_command(args)
 
 
 if __name__ == "__main__":

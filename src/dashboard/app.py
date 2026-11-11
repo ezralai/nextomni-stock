@@ -9080,6 +9080,61 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Dixit entry-exit hysteresis.")
 
+                st.divider()
+                st.subheader("🏛️ Holmström & Tirole (1998) Private & Public Supply of Liquidity Engine")
+                st.caption("Idiosyncratic credit-line pooling vs. aggregate liquidity shortage premiums q_L > 1 and contingent Treasury bond welfare gains")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.holmstrom_tirole_public_liquidity import (
+                            evaluate_public_liquidity_profile,
+                            verify_hmac_signature as verify_ht98_hmac,
+                        )
+                        ht98_col1, ht98_col2 = st.columns(2)
+                        with ht98_col1:
+                            ht98_lam = st.slider(
+                                "Aggregate Crisis Correlation (lambda_agg)",
+                                min_value=0.0,
+                                max_value=1.0,
+                                value=0.60,
+                                step=0.05,
+                                key=f"ht98_lam_{selected_ticker}",
+                            )
+                        with ht98_col2:
+                            ht98_theta = st.slider(
+                                "Interim Shock Probability (theta %)",
+                                min_value=10.0,
+                                max_value=80.0,
+                                value=35.0,
+                                step=5.0,
+                                key=f"ht98_theta_{selected_ticker}",
+                            ) / 100.0
+
+                        ht98_rec = evaluate_public_liquidity_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            aggregate_corr_lambda=ht98_lam,
+                            shock_prob_theta=ht98_theta,
+                        )
+
+                        hm98_1, hm98_2, hm98_3, hm98_4 = st.columns(4)
+                        hm98_1.metric("Treasury Liquidity q_L", f"{ht98_rec.treasury_liquidity_price_ql:.4f}", delta=f"+{ht98_rec.liquidity_shortage_premium_bps:.0f} bps shortage prem")
+                        hm98_2.metric("Aggregate / Pooled Scale", f"${ht98_rec.aggregate_investment_scale:.1f}", delta=f"+${ht98_rec.public_liquidity_scale_gain:.1f} public unlock")
+                        hm98_3.metric("Pledgeable Gap / Shock", f"{ht98_rec.pledgeable_liquidity_gap:.2f}", delta=f"Shock {ht98_rec.interim_shock_rho:.2f} vs rho0 {ht98_rec.pledgeable_return_rho0:.2f}")
+                        hm98_4.metric("Public Welfare Gain", f"+${ht98_rec.welfare_gain_public_supply:.2f}", delta=ht98_rec.regime)
+
+                        ht98_sig_payload = (
+                            f"{ht98_rec.ticker}:{ht98_rec.entrepreneur_equity_a:.4f}:{ht98_rec.pledgeable_return_rho0:.4f}:"
+                            f"{ht98_rec.total_return_rho1:.4f}:{ht98_rec.interim_shock_rho:.4f}:{ht98_rec.aggregate_corr_lambda:.4f}:"
+                            f"{ht98_rec.aggregate_investment_scale:.4f}:{ht98_rec.treasury_liquidity_price_ql:.6f}:"
+                            f"{ht98_rec.regime}:{ht98_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **HT (1998) Public Liquidity HMAC:** `{ht98_rec.hmac_signature[:16]}...` (Sealed: `{verify_ht98_hmac(ht98_sig_payload, ht98_rec.hmac_signature)}`)")
+                    except Exception as ht98_ex:
+                        st.info(f"HT (1998) public liquidity evaluation deferred: {ht98_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate HT (1998) public liquidity supply.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
