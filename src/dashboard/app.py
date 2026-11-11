@@ -8310,6 +8310,93 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Miller tax equilibrium.")
 
+                st.markdown("---")
+                st.subheader("🔄 Campbell & Cochrane (1999) External Habit Formation Equilibrium")
+                st.markdown(
+                    "Dynamic consumption-based asset pricing via **Campbell & Cochrane (1999, *JPE*)**, "
+                    "quantifying slow-moving external habit persistence ($X_t$), surplus consumption ratio ($S_t$), "
+                    "time-varying risk aversion ($\\gamma / S_t$), constant real risk-free rate, and counter-cyclical equity premia."
+                )
+                if len(df_eda) >= 15:
+                    try:
+                        from src.analytics.campbell_cochrane_habit import (
+                            evaluate_campbell_cochrane_profile,
+                            verify_hmac_signature,
+                        )
+
+                        cc_col1, cc_col2 = st.columns(2)
+                        with cc_col1:
+                            cc_mult_input = st.slider(
+                                "Surplus Consumption Ratio Multiplier (S_t / S_bar)",
+                                min_value=0.40,
+                                max_value=1.60,
+                                value=1.00,
+                                step=0.10,
+                                format="%.2fx",
+                                help="Recession (<1.0x) vs expansion (>1.0x) surplus cushion above habit",
+                            )
+                        with cc_col2:
+                            cc_gamma_input = st.slider(
+                                "Utility Curvature Parameter (γ)",
+                                min_value=1.0,
+                                max_value=5.0,
+                                value=2.0,
+                                step=0.5,
+                                format="%.1f",
+                                help="Baseline power utility curvature (C-C benchmark = 2.0)",
+                            )
+
+                        cc_rec = evaluate_campbell_cochrane_profile(
+                            prices=[float(x) for x in df_eda["close"].tolist()],
+                            ticker=selected_ticker,
+                            surplus_multiplier=cc_mult_input,
+                            utility_curvature_gamma=cc_gamma_input,
+                        )
+
+                        cc_m1, cc_m2, cc_m3, cc_m4 = st.columns(4)
+                        with cc_m1:
+                            st.metric(
+                                "Local Risk Aversion (γ/S_t)",
+                                f"{cc_rec.local_risk_aversion_rra:.1f}x",
+                                delta=f"Surplus S_t: {cc_rec.current_surplus_ratio * 100:.2f}%",
+                                delta_color="normal" if cc_rec.local_risk_aversion_rra < 50.0 else "inverse",
+                                help="Counter-cyclical time-varying relative risk aversion",
+                            )
+                        with cc_m2:
+                            st.metric(
+                                "Conditional Max Sharpe",
+                                f"{cc_rec.conditional_max_sharpe:.3f}",
+                                delta=f"λ(s_t): {cc_rec.sensitivity_lambda:.2f}",
+                                help="SDF Sharpe frontier implied by nonlinear habit sensitivity lambda(s_t)",
+                            )
+                        with cc_m3:
+                            st.metric(
+                                "Counter-Cyclical Eq Premium",
+                                f"{cc_rec.expected_equity_premium * 100:.2f}%",
+                                delta=f"Real r_f: {cc_rec.implied_risk_free_rate * 100:.2f}%",
+                                help="Expected annualized equity excess return under habit pricing kernel",
+                            )
+                        with cc_m4:
+                            st.metric(
+                                "Habit Half-Life",
+                                f"{cc_rec.habit_half_life_years:.2f} yrs",
+                                delta=f"S_bar: {cc_rec.steady_state_surplus_s_bar * 100:.2f}%",
+                                help="Half-life decay horizon of external consumption habit persistence",
+                            )
+
+                        sig_payload = (
+                            f"{cc_rec.ticker}:{cc_rec.utility_curvature_gamma:.4f}:{cc_rec.habit_persistence_phi:.4f}:"
+                            f"{cc_rec.consumption_growth_vol:.4f}:{cc_rec.steady_state_surplus_s_bar:.6f}:"
+                            f"{cc_rec.current_surplus_ratio:.6f}:{cc_rec.sensitivity_lambda:.6f}:"
+                            f"{cc_rec.local_risk_aversion_rra:.4f}:{cc_rec.conditional_max_sharpe:.6f}:"
+                            f"{cc_rec.regime}:{cc_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Campbell-Cochrane HMAC:** `{cc_rec.hmac_signature[:16]}...` (Sealed: `{verify_hmac_signature(sig_payload, cc_rec.hmac_signature)}`)")
+                    except Exception as cc_ex:
+                        st.info(f"Campbell-Cochrane habit evaluation deferred: {cc_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Campbell-Cochrane habit profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

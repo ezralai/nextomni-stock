@@ -9572,6 +9572,69 @@ def miller_tax_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def campbell_cochrane_command(args: argparse.Namespace) -> None:
+    """CLI handler for Campbell & Cochrane (1999) External Habit Formation Engine."""
+    import json
+    from src.analytics.campbell_cochrane_habit import (
+        calculate_campbell_cochrane_habit,
+        evaluate_campbell_cochrane_profile,
+        persist_campbell_cochrane_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    gamma = float(getattr(args, "gamma", 2.0) if getattr(args, "gamma", None) is not None else 2.0)
+    phi = float(getattr(args, "phi", 0.87) if getattr(args, "phi", None) is not None else 0.87)
+    surplus = getattr(args, "surplus_ratio", None)
+
+    try:
+        if surplus is not None or getattr(args, "gamma", None) is not None:
+            receipt = calculate_campbell_cochrane_habit(
+                utility_curvature_gamma=gamma,
+                habit_persistence_phi=phi,
+                current_surplus_ratio=float(surplus) if surplus is not None else None,
+                ticker=ticker,
+            )
+        else:
+            receipt = evaluate_campbell_cochrane_profile(
+                prices=[],
+                ticker=ticker,
+                utility_curvature_gamma=gamma,
+            )
+
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_campbell_cochrane_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Campbell-Cochrane evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Campbell & Cochrane (1999) External Habit Formation Engine")
+    print("=" * 80)
+    print(f"  Security / Ticker:              {receipt.ticker}")
+    print(f"  Utility Curvature (gamma) / phi:{receipt.utility_curvature_gamma:.2f} | {receipt.habit_persistence_phi:.2f} (Half-Life: {receipt.habit_half_life_years:.2f} yrs)")
+    print(f"  Surplus Ratio S_t (vs S_bar):   {receipt.current_surplus_ratio * 100:.2f}% (Steady: {receipt.steady_state_surplus_s_bar * 100:.2f}%, Max: {receipt.max_surplus_ratio_s_max * 100:.2f}%)")
+    print("-" * 80)
+    print("  Counter-Cyclical Risk Aversion & Asset Pricing:")
+    print(f"    Local Relative Risk Aversion: {receipt.local_risk_aversion_rra:.2f}x (lambda: {receipt.sensitivity_lambda:.3f})")
+    print(f"    Conditional Max Sharpe (SR):  {receipt.conditional_max_sharpe:.4f}")
+    print(f"    Expected Equity Premium:      {receipt.expected_equity_premium * 100:.2f}% / yr")
+    print(f"    Constant Real Risk-Free Rate: {receipt.implied_risk_free_rate * 100:.2f}% / yr")
+    print("-" * 80)
+    print(f"  Habit Cycle Regime:             {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -14789,6 +14852,42 @@ def main() -> None:
         help="Output Miller (1977) tax equilibrium receipt as JSON",
     )
 
+    # Subparser: habit-formation (Campbell & Cochrane 1999 External Habit Formation Engine)
+    cc_parser = subparsers.add_parser(
+        "habit-formation",
+        aliases=["campbell-cochrane", "cc-1999", "surplus-consumption"],
+        help="Campbell & Cochrane (1999) External Habit Formation & Surplus Consumption Engine",
+    )
+    cc_parser.add_argument(
+        "--ticker",
+        type=str,
+        required=True,
+        help="Security ticker symbol (e.g. HABIT, SPY, QQQ)",
+    )
+    cc_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=None,
+        help="Utility curvature parameter gamma (default: 2.0)",
+    )
+    cc_parser.add_argument(
+        "--phi",
+        type=float,
+        default=0.87,
+        help="Annual habit persistence parameter phi (default: 0.87)",
+    )
+    cc_parser.add_argument(
+        "--surplus-ratio",
+        type=float,
+        default=None,
+        help="Current surplus consumption ratio S_t in (0.002, 0.50) (default: steady state S_bar)",
+    )
+    cc_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Campbell-Cochrane habit receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -15083,6 +15182,8 @@ def main() -> None:
         diamond_monitoring_command(args)
     elif args.command in ("debt-taxes", "miller-1977", "tax-clientele", "miller-equilibrium"):
         miller_tax_command(args)
+    elif args.command in ("habit-formation", "campbell-cochrane", "cc-1999", "surplus-consumption"):
+        campbell_cochrane_command(args)
 
 
 if __name__ == "__main__":
