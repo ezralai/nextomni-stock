@@ -10428,6 +10428,63 @@ def cppi_insurance_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def harris_raviv_debt_command(args: argparse.Namespace) -> None:
+    """CLI handler for Harris & Raviv (1990) Capital Structure & Informational Debt Engine."""
+    import json
+    from src.analytics.harris_raviv_informational_debt import (
+        calculate_harris_raviv_debt,
+        persist_harris_raviv_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    y_min = float(getattr(args, "y_min", 40.0) if getattr(args, "y_min", None) is not None else 40.0)
+    y_max = float(getattr(args, "y_max", 160.0) if getattr(args, "y_max", None) is not None else 160.0)
+    liq_val = float(getattr(args, "liq_val", 95.0) if getattr(args, "liq_val", None) is not None else 95.0)
+    audit_k = float(getattr(args, "audit_cost", 8.0) if getattr(args, "audit_cost", None) is not None else 8.0)
+    debt_d = getattr(args, "debt", None)
+
+    try:
+        receipt = calculate_harris_raviv_debt(
+            y_min=y_min,
+            y_max=y_max,
+            liquidation_value_l=liq_val,
+            investigation_cost_k=audit_k,
+            promised_debt_d=float(debt_d) if debt_d is not None else None,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_harris_raviv_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Harris & Raviv evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Harris & Raviv (1990) Capital Structure & Informational Debt Engine")
+    print("=" * 80)
+    print(f"  Corporation / Ticker:           {receipt.ticker} (Cash-Flow Support: [${receipt.y_min:.2f}, ${receipt.y_max:.2f}])")
+    print(f"  Liquidation L / Audit Cost k:   ${receipt.liquidation_value_l:.2f} | ${receipt.investigation_cost_k:.2f}")
+    print(f"  Promised Debt D (Chosen):       ${receipt.promised_debt_d:.2f} (Default Audit Prob: {receipt.default_audit_prob * 100:.1f}%, Liq Prob: {receipt.liquidation_prob * 100:.1f}%)")
+    print("-" * 80)
+    print("  Informational Investigation & Liquidation Discipline Equilibrium:")
+    print(f"    Optimal Debt Face D*:         ${receipt.optimal_debt_d_star:.2f} (Max Firm Value: ${receipt.optimal_firm_value_v_star:.2f})")
+    print(f"    Unlevered vs. V(D):           ${receipt.unlevered_value:.2f} -> ${receipt.firm_value_v_d:.2f} (Net Gain: +${receipt.net_discipline_value:.2f})")
+    print(f"    Gross Liq / Expected Audit:   +${receipt.gross_liquidation_gain:.2f} | -${receipt.expected_investigation_cost:.2f} (Over-Lev Waste: ${receipt.over_leverage_waste:.2f})")
+    print("-" * 80)
+    print(f"  Debt Discipline Regime:         {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -16405,6 +16462,53 @@ def main() -> None:
         help="Output CPPI portfolio insurance receipt as JSON",
     )
 
+    # Harris & Raviv (1990) Informational Role of Debt parser
+    hr90_parser = subparsers.add_parser(
+        "informational-debt",
+        aliases=["hr-1990", "default-investigation"],
+        help="Evaluate Harris & Raviv (1990) debt auditing & liquidation discipline equilibrium",
+    )
+    hr90_parser.add_argument(
+        "--ticker",
+        default="HR90",
+        help="Corporate issuer ticker symbol (default: HR90)",
+    )
+    hr90_parser.add_argument(
+        "--y-min",
+        type=float,
+        default=40.0,
+        help="Lower bound of going-concern cash flow support y_min (default: 40.0)",
+    )
+    hr90_parser.add_argument(
+        "--y-max",
+        type=float,
+        default=160.0,
+        help="Upper bound of going-concern cash flow support y_max (default: 160.0)",
+    )
+    hr90_parser.add_argument(
+        "--liq-val",
+        type=float,
+        default=95.0,
+        help="Tangible asset liquidation value L (default: 95.0)",
+    )
+    hr90_parser.add_argument(
+        "--audit-cost",
+        type=float,
+        default=8.0,
+        help="Bankruptcy default investigation cost k (default: 8.0)",
+    )
+    hr90_parser.add_argument(
+        "--debt",
+        type=float,
+        default=None,
+        help="Optional promised debt level D (defaults to optimal D*)",
+    )
+    hr90_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Harris & Raviv informational debt receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -16727,6 +16831,8 @@ def main() -> None:
         holmstrom_tirole_1998_command(args)
     elif args.command in ("cppi", "portfolio-insurance", "black-jones"):
         cppi_insurance_command(args)
+    elif args.command in ("informational-debt", "hr-1990", "default-investigation"):
+        harris_raviv_debt_command(args)
 
 
 if __name__ == "__main__":

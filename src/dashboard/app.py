@@ -9197,6 +9197,61 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate CPPI portfolio insurance.")
 
+                st.divider()
+                st.subheader("🔍 Harris & Raviv (1990) Capital Structure & Informational Debt Engine")
+                st.caption("Default investigation & liquidation discipline equilibrium: trading off reorganization value discovery against bankruptcy audit cost k*PD")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.harris_raviv_informational_debt import (
+                            evaluate_harris_raviv_profile,
+                            verify_hmac_signature as verify_hr_hmac,
+                        )
+                        hr_col1, hr_col2 = st.columns(2)
+                        with hr_col1:
+                            hr_liq = st.slider(
+                                "Tangible Liquidation Ratio (L / V_spot %)",
+                                min_value=30.0,
+                                max_value=115.0,
+                                value=85.0,
+                                step=5.0,
+                                key=f"hr_liq_{selected_ticker}",
+                            ) / 100.0
+                        with hr_col2:
+                            hr_k = st.slider(
+                                "Bankruptcy Audit Cost (k $)",
+                                min_value=1.0,
+                                max_value=30.0,
+                                value=8.0,
+                                step=1.0,
+                                key=f"hr_k_{selected_ticker}",
+                            )
+
+                        hr_rec = evaluate_harris_raviv_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            liquidation_ratio=hr_liq,
+                            investigation_cost_k=hr_k,
+                        )
+
+                        hrm1, hrm2, hrm3, hrm4 = st.columns(4)
+                        hrm1.metric("Optimal Debt Face D*", f"${hr_rec.optimal_debt_d_star:.2f}", delta=f"Audit Prob {hr_rec.default_audit_prob * 100:.1f}%")
+                        hrm2.metric("Disciplined Firm Value", f"${hr_rec.firm_value_v_d:.2f}", delta=f"+${hr_rec.net_discipline_value:.2f} vs Equity")
+                        hrm3.metric("Gross Liq vs Audit Cost", f"+${hr_rec.gross_liquidation_gain:.2f}", delta=f"Audit -${hr_rec.expected_investigation_cost:.2f}")
+                        hrm4.metric("Debt Discipline Regime", hr_rec.regime, delta=f"Liq Prob {hr_rec.liquidation_prob * 100:.1f}%")
+
+                        hr_sig_payload = (
+                            f"{hr_rec.ticker}:{hr_rec.y_min:.4f}:{hr_rec.y_max:.4f}:{hr_rec.liquidation_value_l:.4f}:"
+                            f"{hr_rec.investigation_cost_k:.4f}:{hr_rec.promised_debt_d:.4f}:"
+                            f"{hr_rec.firm_value_v_d:.6f}:{hr_rec.optimal_debt_d_star:.4f}:"
+                            f"{hr_rec.regime}:{hr_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Harris-Raviv HMAC:** `{hr_rec.hmac_signature[:16]}...` (Sealed: `{verify_hr_hmac(hr_sig_payload, hr_rec.hmac_signature)}`)")
+                    except Exception as hr_ex:
+                        st.info(f"Harris & Raviv evaluation deferred: {hr_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Harris & Raviv informational debt.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
