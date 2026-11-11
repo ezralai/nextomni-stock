@@ -9135,6 +9135,68 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate HT (1998) public liquidity supply.")
 
+                st.divider()
+                st.subheader("🛡️ Black & Jones (1987) CPPI & TIPP Portfolio Insurance Engine")
+                st.caption("Zero-lookahead dynamic cushion floor protection: E_t = min(L_max*W_t, m*(W_t - F_t)), overnight gap tolerance (1/m) & drawdown compression")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.cppi_portfolio_insurance import (
+                            evaluate_cppi_path,
+                            verify_hmac_signature as verify_cppi_hmac,
+                        )
+                        cp_col1, cp_col2, cp_col3 = st.columns(3)
+                        with cp_col1:
+                            cp_strat = st.selectbox(
+                                "Insurance Variant",
+                                options=["CPPI", "TIPP"],
+                                index=0,
+                                key=f"cp_strat_{selected_ticker}",
+                            )
+                        with cp_col2:
+                            cp_floor = st.slider(
+                                "Capital Floor (%)",
+                                min_value=60.0,
+                                max_value=95.0,
+                                value=85.0,
+                                step=5.0,
+                                key=f"cp_floor_{selected_ticker}",
+                            ) / 100.0
+                        with cp_col3:
+                            cp_mult = st.slider(
+                                "Cushion Multiplier (m)",
+                                min_value=1.5,
+                                max_value=6.0,
+                                value=4.0,
+                                step=0.5,
+                                key=f"cp_mult_{selected_ticker}",
+                            )
+
+                        cp_rec = evaluate_cppi_path(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            floor_pct=cp_floor,
+                            multiplier_m=cp_mult,
+                            strategy=cp_strat,
+                        )
+
+                        cm1, cm2, cm3, cm4 = st.columns(4)
+                        cm1.metric("Insured Portfolio Value", f"${cp_rec.portfolio_value_w:.2f}", delta=f"Floor ${cp_rec.floor_value_f:.2f}")
+                        cm2.metric("Active Risky Weight", f"{cp_rec.risky_weight_pct:.1f}%", delta=f"Crash Tol -{cp_rec.gap_crash_tolerance_pct:.1f}%")
+                        cm3.metric("CPPI Max Drawdown", f"{cp_rec.realized_drawdown_pct:.1f}%", delta=f"Saves {cp_rec.drawdown_reduction_pct:.1f}% vs Asset")
+                        cm4.metric("Floor Breach / Regime", "Breached" if cp_rec.gap_risk_breach else "Protected", delta=cp_rec.regime)
+
+                        cp_sig_payload = (
+                            f"{cp_rec.ticker}:{cp_rec.strategy}:{cp_rec.portfolio_value_w:.4f}:{cp_rec.floor_value_f:.4f}:"
+                            f"{cp_rec.multiplier_m:.2f}:{cp_rec.risky_exposure_e:.4f}:{cp_rec.risky_weight_pct:.2f}:"
+                            f"{int(cp_rec.cash_locked)}:{int(cp_rec.gap_risk_breach)}:{cp_rec.regime}:{cp_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **CPPI Insurance HMAC:** `{cp_rec.hmac_signature[:16]}...` (Sealed: `{verify_cppi_hmac(cp_sig_payload, cp_rec.hmac_signature)}`)")
+                    except Exception as cp_ex:
+                        st.info(f"CPPI portfolio insurance evaluation deferred: {cp_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate CPPI portfolio insurance.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

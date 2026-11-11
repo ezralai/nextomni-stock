@@ -10371,6 +10371,63 @@ def holmstrom_tirole_1998_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def cppi_insurance_command(args: argparse.Namespace) -> None:
+    """CLI handler for Black & Jones (1987) CPPI & TIPP Portfolio Insurance Engine."""
+    import json
+    from src.analytics.cppi_portfolio_insurance import (
+        calculate_cppi_allocation,
+        persist_cppi_insurance_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    wealth = float(getattr(args, "wealth", 100.0) if getattr(args, "wealth", None) is not None else 100.0)
+    floor_v = float(getattr(args, "floor", 85.0) if getattr(args, "floor", None) is not None else 85.0)
+    mult = float(getattr(args, "multiplier", 4.0) if getattr(args, "multiplier", None) is not None else 4.0)
+    lev_cap = float(getattr(args, "max_lev", 1.0) if getattr(args, "max_lev", None) is not None else 1.0)
+    strat = str(getattr(args, "strategy", "CPPI") or "CPPI").strip().upper()
+
+    try:
+        receipt = calculate_cppi_allocation(
+            portfolio_value_w=wealth,
+            floor_value_f=floor_v,
+            multiplier_m=mult,
+            max_leverage_cap=lev_cap,
+            strategy=strat,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_cppi_insurance_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: CPPI portfolio insurance evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Black & Jones (1987) CPPI & TIPP Portfolio Insurance Engine")
+    print("=" * 80)
+    print(f"  Portfolio / Ticker:             {receipt.ticker} ({receipt.strategy})")
+    print(f"  Wealth W / Floor F / Cushion C: ${receipt.portfolio_value_w:.2f} | ${receipt.floor_value_f:.2f} | ${receipt.cushion_c:.2f}")
+    print(f"  Multiplier m / Lev Cap / Tol:   {receipt.multiplier_m:.2f}x | {receipt.max_leverage_cap:.2f}x | -{receipt.gap_crash_tolerance_pct:.2f}% max 1-step crash")
+    print("-" * 80)
+    print("  Dynamic Cushion Risk Allocation:")
+    print(f"    Risky Asset Exposure E_t:     ${receipt.risky_exposure_e:.2f} ({receipt.risky_weight_pct:.2f}% weight)")
+    print(f"    Safe Treasury Reserve B_t:    ${receipt.safe_cash_reserve_b:.2f} ({100.0 - receipt.risky_weight_pct:.2f}% weight)")
+    print(f"    Cash Locked / Gap Breach:     {receipt.cash_locked} | {receipt.gap_risk_breach}")
+    print("-" * 80)
+    print(f"  Insurance Protection Regime:    {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -16301,6 +16358,53 @@ def main() -> None:
         help="Output Holmstrom & Tirole (1998) receipt as JSON",
     )
 
+    # Black & Jones (1987) CPPI & TIPP Portfolio Insurance parser
+    cppi_parser = subparsers.add_parser(
+        "cppi",
+        aliases=["portfolio-insurance", "black-jones"],
+        help="Evaluate Black & Jones (1987) CPPI / TIPP dynamic floor portfolio insurance",
+    )
+    cppi_parser.add_argument(
+        "--ticker",
+        default="CPPI",
+        help="Portfolio / underlying asset ticker symbol (default: CPPI)",
+    )
+    cppi_parser.add_argument(
+        "--wealth",
+        type=float,
+        default=100.0,
+        help="Current portfolio wealth W (default: 100.0)",
+    )
+    cppi_parser.add_argument(
+        "--floor",
+        type=float,
+        default=85.0,
+        help="Protected capital floor F (default: 85.0)",
+    )
+    cppi_parser.add_argument(
+        "--multiplier",
+        type=float,
+        default=4.0,
+        help="CPPI cushion multiplier m >= 1.0 (default: 4.0)",
+    )
+    cppi_parser.add_argument(
+        "--max-lev",
+        type=float,
+        default=1.0,
+        help="Maximum risky weight cap in [1.0, 2.0] (default: 1.0)",
+    )
+    cppi_parser.add_argument(
+        "--strategy",
+        default="CPPI",
+        choices=["CPPI", "TIPP"],
+        help="Floor insurance variant: CPPI or TIPP (default: CPPI)",
+    )
+    cppi_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output CPPI portfolio insurance receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -16621,6 +16725,8 @@ def main() -> None:
         dixit_hysteresis_command(args)
     elif args.command in ("public-liquidity", "ht-1998", "liquidity-line"):
         holmstrom_tirole_1998_command(args)
+    elif args.command in ("cppi", "portfolio-insurance", "black-jones"):
+        cppi_insurance_command(args)
 
 
 if __name__ == "__main__":
