@@ -10770,6 +10770,64 @@ def stein_internal_capital_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def stambaugh_bias_command(args: argparse.Namespace) -> None:
+    """CLI handler for Stambaugh (1999) Predictive Regressions & Finite-Sample Bias Engine."""
+    import json
+    from src.analytics.stambaugh_predictive_bias import (
+        calculate_stambaugh_bias,
+        persist_stambaugh_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    ols_b = float(getattr(args, "ols_beta", 0.08) if getattr(args, "ols_beta", None) is not None else 0.08)
+    rho = float(getattr(args, "rho", 0.96) if getattr(args, "rho", None) is not None else 0.96)
+    gamma = float(getattr(args, "gamma", -0.80) if getattr(args, "gamma", None) is not None else -0.80)
+    sample_t = int(getattr(args, "sample_t", 40) if getattr(args, "sample_t", None) is not None else 40)
+    se_b = float(getattr(args, "std_err", 0.035) if getattr(args, "std_err", None) is not None else 0.035)
+
+    try:
+        receipt = calculate_stambaugh_bias(
+            ols_beta=ols_b,
+            ar1_rho=rho,
+            gamma_cov_ratio=gamma,
+            sample_size_t=sample_t,
+            ols_std_err=se_b,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_stambaugh_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Stambaugh predictive bias evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Stambaugh (1999) Predictive Regressions & Finite-Sample Bias Engine")
+    print("=" * 80)
+    print(f"  Asset / Signal Ticker:          {receipt.ticker} (Sample Horizon T: {receipt.sample_size_t})")
+    print(f"  Predictor Persistence rho (Adj):{receipt.ar1_rho:.4f} (Kendall Adj: {receipt.kendall_adjusted_rho:.4f})")
+    print(f"  Shock Cov Ratio gamma = Cuv/Vv: {receipt.gamma_cov_ratio:+.4f} (OLS SE: {receipt.ols_std_err:.4f})")
+    print("-" * 80)
+    print("  Finite-Sample Predictive Bias Decomposition:")
+    print(f"    Raw OLS Predictive Slope:     {receipt.ols_beta:+.6f} (OLS t-stat: {receipt.ols_t_stat:+.2f})")
+    print(f"    Stambaugh Finite-Sample Bias: {receipt.stambaugh_bias:+.6f} ({receipt.bias_share_pct:.1f}% of OLS slope)")
+    print(f"    Stambaugh Bias-Adjusted Slope:{receipt.bias_adjusted_beta:+.6f} (Adj t-stat: {receipt.adjusted_t_stat:+.2f})")
+    print(f"    True Signal Retention Ratio:  {receipt.signal_retention_ratio * 100:.1f}%")
+    print("-" * 80)
+    print(f"  Predictability Durability:      {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17017,6 +17075,53 @@ def main() -> None:
         help="Output Stein (1997) internal capital receipt as JSON",
     )
 
+    # Robert F. Stambaugh (1999) Predictive Regressions Bias parser
+    rs99_parser = subparsers.add_parser(
+        "predictive-regression",
+        aliases=["stambaugh-bias", "rs-1999"],
+        help="Evaluate Stambaugh (1999) finite-sample predictive regression bias & true t-stat",
+    )
+    rs99_parser.add_argument(
+        "--ticker",
+        default="RS99",
+        help="Security ticker symbol (default: RS99)",
+    )
+    rs99_parser.add_argument(
+        "--ols-beta",
+        type=float,
+        default=0.08,
+        help="Unadjusted OLS predictive regression slope beta_hat (default: 0.08)",
+    )
+    rs99_parser.add_argument(
+        "--rho",
+        type=float,
+        default=0.96,
+        help="Predictor AR(1) autocorrelation rho in (-0.999, 1.0) (default: 0.96)",
+    )
+    rs99_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=-0.80,
+        help="Return-predictor shock covariance ratio Cov(u,v)/Var(v) (default: -0.80)",
+    )
+    rs99_parser.add_argument(
+        "--sample-t",
+        type=int,
+        default=40,
+        help="Effective finite sample observations T >= 12 (default: 40)",
+    )
+    rs99_parser.add_argument(
+        "--std-err",
+        type=float,
+        default=0.035,
+        help="OLS standard error on predictive slope > 0 (default: 0.035)",
+    )
+    rs99_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Stambaugh predictive bias receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17351,6 +17456,8 @@ def main() -> None:
         black_zero_beta_command(args)
     elif args.command in ("internal-capital", "winner-picking", "stein-1997"):
         stein_internal_capital_command(args)
+    elif args.command in ("predictive-regression", "stambaugh-bias", "rs-1999"):
+        stambaugh_bias_command(args)
 
 
 if __name__ == "__main__":

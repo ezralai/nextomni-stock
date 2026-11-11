@@ -9560,6 +9560,38 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Stein internal capital markets.")
 
+                st.divider()
+                st.subheader("📏 Robert Stambaugh (1999) Predictive Regressions & Finite-Sample Bias Engine")
+                st.caption("Zero-leakage causal valuation-predictor AR(1) audit: removes finite-sample OLS predictability bias -gamma*(1 + 3*rho)/T")
+
+                if df is not None and not df.empty and len(df) >= 25:
+                    try:
+                        from src.analytics.stambaugh_predictive_bias import (
+                            evaluate_stambaugh_profile,
+                            verify_hmac_signature as verify_rs_hmac,
+                        )
+                        rs_rec = evaluate_stambaugh_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                        )
+
+                        rsm1, rsm2, rsm3, rsm4 = st.columns(4)
+                        rsm1.metric("Raw OLS vs Adj Slope", f"{rs_rec.bias_adjusted_beta:+.4f}", delta=f"OLS {rs_rec.ols_beta:+.4f} (Bias {rs_rec.stambaugh_bias:+.4f})")
+                        rsm2.metric("Adj vs OLS t-Statistic", f"{rs_rec.adjusted_t_stat:+.2f}", delta=f"OLS t={rs_rec.ols_t_stat:+.2f}")
+                        rsm3.metric("AR(1) rho / Shock gamma", f"{rs_rec.ar1_rho:.3f}", delta=f"gamma={rs_rec.gamma_cov_ratio:+.2f} (T={rs_rec.sample_size_t})")
+                        rsm4.metric("Signal Durability", f"{rs_rec.signal_retention_ratio * 100:.0f}% Retained", delta=rs_rec.regime)
+
+                        rs_sig_payload = (
+                            f"{rs_rec.ticker}:{rs_rec.sample_size_t}:{rs_rec.ols_beta:.6f}:{rs_rec.ar1_rho:.4f}:"
+                            f"{rs_rec.gamma_cov_ratio:.6f}:{rs_rec.stambaugh_bias:.6f}:{rs_rec.bias_adjusted_beta:.6f}:"
+                            f"{rs_rec.adjusted_t_stat:.4f}:{rs_rec.regime}:{rs_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Stambaugh Bias HMAC:** `{rs_rec.hmac_signature[:16]}...` (Sealed: `{verify_rs_hmac(rs_sig_payload, rs_rec.hmac_signature)}`)")
+                    except Exception as rs_ex:
+                        st.info(f"Stambaugh predictive bias evaluation deferred: {rs_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 25 price sessions to evaluate Stambaugh predictive regression bias.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
