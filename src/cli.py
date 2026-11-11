@@ -10543,6 +10543,64 @@ def berk_green_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def diamond_maturity_command(args: argparse.Namespace) -> None:
+    """CLI handler for Douglas W. Diamond (1991) Debt Maturity Structure & Liquidity Risk Engine."""
+    import json
+    from src.analytics.diamond_debt_maturity import (
+        calculate_diamond_debt_maturity,
+        persist_diamond_maturity_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    f_prob = float(getattr(args, "rating_f", 0.72) if getattr(args, "rating_f", None) is not None else 0.72)
+    liq_l = float(getattr(args, "liq_l", 0.70) if getattr(args, "liq_l", None) is not None else 0.70)
+    rent_c = float(getattr(args, "rent_c", 0.50) if getattr(args, "rent_c", None) is not None else 0.50)
+    qg = float(getattr(args, "qg", 0.25) if getattr(args, "qg", None) is not None else 0.25)
+    qb = float(getattr(args, "qb", 0.80) if getattr(args, "qb", None) is not None else 0.80)
+
+    try:
+        receipt = calculate_diamond_debt_maturity(
+            prior_good_prob_f=f_prob,
+            liquidation_value_l=liq_l,
+            control_rent_c=rent_c,
+            good_bad_news_prob_qg=qg,
+            bad_bad_news_prob_qb=qb,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_diamond_maturity_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Diamond debt maturity evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Douglas W. Diamond (1991) Debt Maturity Structure & Rollover Liquidity Risk Engine")
+    print("=" * 80)
+    print(f"  Borrower / Ticker:              {receipt.ticker} (Prior Rating f={receipt.prior_good_prob_f:.2f}, Downgrade f_d={receipt.downgrade_posterior_fd:.2f})")
+    print(f"  Payoff X / Liq L / Control C:   {receipt.continuation_payoff_x:.2f} | {receipt.liquidation_value_l:.2f} | {receipt.control_rent_c:.2f} (q_G={receipt.good_bad_news_prob_qg:.2f}, q_B={receipt.bad_bad_news_prob_qb:.2f})")
+    print(f"  Feasibility (ST / LT) & Panic:  {receipt.short_term_feasible} / {receipt.long_term_feasible} | Rollover Panic: {receipt.rollover_panic_triggered}")
+    print("-" * 80)
+    print("  Maturity Tradeoff (Screening Capture vs. Rollover Liquidation):")
+    print(f"    Recommended Maturity:         {receipt.recommended_maturity} (Net ST-LT Advantage: {receipt.short_vs_long_net_advantage:+.4f})")
+    print(f"    Short vs Long Payoffs U_ST/LT:{receipt.short_term_utility_ust:.4f} | {receipt.long_term_utility_ult:.4f}")
+    print(f"    Upgrade Gain / Rollover Cost: +{receipt.upgrade_screening_gain:.4f} | -{receipt.rollover_liquidation_cost:.4f}")
+    print(f"    Contract Faces (R_ST / R_LT): {receipt.short_term_face_rst:.4f} | {receipt.long_term_face_rlt:.4f}")
+    print("-" * 80)
+    print(f"  Debt Maturity Regime:           {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -16614,6 +16672,53 @@ def main() -> None:
         help="Output Berk & Green receipt as JSON",
     )
 
+    # Diamond (1991) Debt Maturity & Rollover Risk parser
+    dm_parser = subparsers.add_parser(
+        "debt-maturity",
+        aliases=["diamond-1991", "rollover-risk"],
+        help="Evaluate Diamond (1991) short-term vs. long-term debt maturity & rollover risk",
+    )
+    dm_parser.add_argument(
+        "--ticker",
+        default="DM91",
+        help="Borrower / issuer ticker symbol (default: DM91)",
+    )
+    dm_parser.add_argument(
+        "--rating-f",
+        type=float,
+        default=0.72,
+        help="Prior good-borrower credit rating probability f in (0, 1) (default: 0.72)",
+    )
+    dm_parser.add_argument(
+        "--liq-l",
+        type=float,
+        default=0.70,
+        help="Interim date-1 forced liquidation value L < X (default: 0.70)",
+    )
+    dm_parser.add_argument(
+        "--rent-c",
+        type=float,
+        default=0.50,
+        help="Manager private non-pecuniary control rent C >= 0 (default: 0.50)",
+    )
+    dm_parser.add_argument(
+        "--qg",
+        type=float,
+        default=0.25,
+        help="Good-type interim bad-news probability q_G (default: 0.25)",
+    )
+    dm_parser.add_argument(
+        "--qb",
+        type=float,
+        default=0.80,
+        help="Bad-type interim bad-news probability q_B >= q_G (default: 0.80)",
+    )
+    dm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Diamond (1991) debt maturity receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -16940,6 +17045,8 @@ def main() -> None:
         harris_raviv_debt_command(args)
     elif args.command in ("fund-flows", "berk-green", "bg-2004", "capacity-alpha"):
         berk_green_command(args)
+    elif args.command in ("debt-maturity", "diamond-1991", "rollover-risk"):
+        diamond_maturity_command(args)
 
 
 if __name__ == "__main__":

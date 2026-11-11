@@ -9317,6 +9317,62 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Berk & Green alpha capacity.")
 
+                st.divider()
+                st.subheader("⏱️ Douglas Diamond (1991) Debt Maturity Structure & Rollover Risk Engine")
+                st.caption("Non-monotonic maturity spectrum (Short -> Long -> Monitored Short): balancing rating-upgrade capture against date-1 rollover liquidation risk")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.diamond_debt_maturity import (
+                            evaluate_diamond_maturity_profile,
+                            verify_hmac_signature as verify_dm_hmac,
+                        )
+                        dm_col1, dm_col2 = st.columns(2)
+                        with dm_col1:
+                            dm_f = st.slider(
+                                "Prior Borrower Credit Quality (f)",
+                                min_value=0.35,
+                                max_value=0.98,
+                                value=0.72,
+                                step=0.05,
+                                key=f"dm_f_{selected_ticker}",
+                            )
+                        with dm_col2:
+                            dm_c = st.slider(
+                                "Private Control Rent Penalty (C)",
+                                min_value=0.00,
+                                max_value=1.00,
+                                value=0.50,
+                                step=0.10,
+                                key=f"dm_c_{selected_ticker}",
+                            )
+
+                        dm_rec = evaluate_diamond_maturity_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            prior_good_prob_f=dm_f,
+                            control_rent_c=dm_c,
+                        )
+
+                        dmm1, dmm2, dmm3, dmm4 = st.columns(4)
+                        dmm1.metric("Recommended Maturity", dm_rec.recommended_maturity, delta=dm_rec.regime)
+                        dmm2.metric("ST vs LT Advantage", f"{dm_rec.short_vs_long_net_advantage:+.3f}", delta=f"Upgrade +{dm_rec.upgrade_screening_gain:.3f}")
+                        dmm3.metric("Rollover Liquidation Cost", f"-{dm_rec.rollover_liquidation_cost:.3f}", delta=f"Panic: {dm_rec.rollover_panic_triggered}")
+                        dmm4.metric("Downgrade Rating f_d", f"{dm_rec.downgrade_posterior_fd:.2f}", delta=f"q_G {dm_rec.good_bad_news_prob_qg:.2f}")
+
+                        dm_sig_payload = (
+                            f"{dm_rec.ticker}:{dm_rec.prior_good_prob_f:.4f}:{dm_rec.investment_i:.4f}:"
+                            f"{dm_rec.continuation_payoff_x:.4f}:{dm_rec.liquidation_value_l:.4f}:"
+                            f"{dm_rec.control_rent_c:.4f}:{dm_rec.downgrade_posterior_fd:.4f}:"
+                            f"{dm_rec.short_vs_long_net_advantage:.6f}:{dm_rec.recommended_maturity}:"
+                            f"{dm_rec.regime}:{dm_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Diamond Maturity HMAC:** `{dm_rec.hmac_signature[:16]}...` (Sealed: `{verify_dm_hmac(dm_sig_payload, dm_rec.hmac_signature)}`)")
+                    except Exception as dm_ex:
+                        st.info(f"Diamond debt maturity evaluation deferred: {dm_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Diamond debt maturity structure.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
