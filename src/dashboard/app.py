@@ -8840,6 +8840,71 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Hull & White bond option profile.")
 
+                st.divider()
+                st.subheader("🏛️ Modigliani & Miller (1958, 1961, 1963) Capital Structure & Dividend Valuation Engine")
+                st.caption("Propositions I/II with corporate tax shields (tau_c*D), after-tax WACC, MM dividend policy irrelevance & Present Value of Growth Opportunities (PVGO)")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.modigliani_miller_corporate import (
+                            evaluate_modigliani_miller_profile,
+                            verify_hmac_signature as verify_mm_hmac,
+                        )
+                        mm_col1, mm_col2, mm_col3 = st.columns(3)
+                        with mm_col1:
+                            mm_debt = st.slider(
+                                "Corporate Debt D ($)",
+                                min_value=0.0,
+                                max_value=120.0,
+                                value=40.0,
+                                step=10.0,
+                                key=f"mm_debt_{selected_ticker}",
+                            )
+                        with mm_col2:
+                            mm_tax = st.slider(
+                                "Corporate Tax Rate tau_c (%)",
+                                min_value=0.0,
+                                max_value=40.0,
+                                value=21.0,
+                                step=1.0,
+                                key=f"mm_tax_{selected_ticker}",
+                            ) / 100.0
+                        with mm_col3:
+                            mm_roic = st.slider(
+                                "Incremental ROIC (%)",
+                                min_value=4.0,
+                                max_value=25.0,
+                                value=14.0,
+                                step=1.0,
+                                key=f"mm_roic_{selected_ticker}",
+                            ) / 100.0
+
+                        mm_rec = evaluate_modigliani_miller_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            debt_d=mm_debt,
+                            corporate_tax_rate_tc=mm_tax,
+                            incremental_roic=mm_roic,
+                        )
+
+                        mmm1, mmm2, mmm3, mmm4 = st.columns(4)
+                        mmm1.metric("Levered Enterprise V_L", f"${mm_rec.levered_value_vl:.2f}", delta=f"Tax Shield ${mm_rec.tax_shield_pv:.2f}")
+                        mmm2.metric("After-Tax WACC", f"{mm_rec.wacc * 100:.2f}%", delta=f"r_E={mm_rec.levered_equity_cost_re * 100:.2f}% (D/E {mm_rec.debt_to_equity_ratio:.2f}x)")
+                        mmm3.metric("Growth PVGO", f"${mm_rec.pvgo:+.2f}", delta=f"{mm_rec.pvgo_share_pct:+.1f}% of Total Value")
+                        mmm4.metric("MM Growth Equity Value", f"${mm_rec.mm_growth_equity_value:.2f}", delta=mm_rec.regime)
+
+                        mm_sig_payload = (
+                            f"{mm_rec.ticker}:{mm_rec.ebit:.4f}:{mm_rec.debt_d:.4f}:{mm_rec.unlevered_r0:.6f}:"
+                            f"{mm_rec.corporate_tax_rate_tc:.4f}:{mm_rec.reinvestment_rate_k:.4f}:"
+                            f"{mm_rec.incremental_roic:.6f}:{mm_rec.levered_value_vl:.6f}:{mm_rec.wacc:.6f}:"
+                            f"{mm_rec.pvgo:.6f}:{mm_rec.regime}:{mm_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Modigliani-Miller HMAC:** `{mm_rec.hmac_signature[:16]}...` (Sealed: `{verify_mm_hmac(mm_sig_payload, mm_rec.hmac_signature)}`)")
+                    except Exception as mm_ex:
+                        st.info(f"Modigliani & Miller valuation evaluation deferred: {mm_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Modigliani & Miller corporate valuation.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

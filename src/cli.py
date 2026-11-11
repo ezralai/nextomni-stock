@@ -10072,6 +10072,71 @@ def hull_white_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def modigliani_miller_command(args: argparse.Namespace) -> None:
+    """CLI handler for Modigliani & Miller (1958, 1961, 1963) Capital Structure & Dividend Engine."""
+    import json
+    from src.analytics.modigliani_miller_corporate import (
+        calculate_modigliani_miller_corporate,
+        persist_modigliani_miller_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    ebit = float(getattr(args, "ebit", 20.0) if getattr(args, "ebit", None) is not None else 20.0)
+    debt = float(getattr(args, "debt", 50.0) if getattr(args, "debt", None) is not None else 50.0)
+    r0 = float(getattr(args, "r0", 0.10) if getattr(args, "r0", None) is not None else 0.10)
+    rd = float(getattr(args, "rd", 0.05) if getattr(args, "rd", None) is not None else 0.05)
+    tc = float(getattr(args, "tax_rate", 0.21) if getattr(args, "tax_rate", None) is not None else 0.21)
+    k_inv = float(getattr(args, "reinvest", 0.40) if getattr(args, "reinvest", None) is not None else 0.40)
+    roic = float(getattr(args, "roic", 0.14) if getattr(args, "roic", None) is not None else 0.14)
+    payout = float(getattr(args, "payout", 0.60) if getattr(args, "payout", None) is not None else 0.60)
+
+    try:
+        receipt = calculate_modigliani_miller_corporate(
+            ebit=ebit,
+            debt_d=debt,
+            unlevered_r0=r0,
+            cost_of_debt_rd=rd,
+            corporate_tax_rate_tc=tc,
+            reinvestment_rate_k=k_inv,
+            incremental_roic=roic,
+            payout_ratio=payout,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_modigliani_miller_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Modigliani & Miller evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Modigliani & Miller (1958, 1961, 1963) Capital Structure & Dividend Engine")
+    print("=" * 80)
+    print(f"  Corporation / Ticker:           {receipt.ticker} (EBIT=${receipt.ebit:.2f}, NOPAT=${receipt.nopat:.2f})")
+    print(f"  Debt D / Tax tc / Cost r0, rD:  ${receipt.debt_d:.2f} | {receipt.corporate_tax_rate_tc * 100:.1f}% | {receipt.unlevered_r0 * 100:.2f}%, {receipt.cost_of_debt_rd * 100:.2f}%")
+    print(f"  Reinvest k / ROIC / Payout:     {receipt.reinvestment_rate_k * 100:.1f}% | {receipt.incremental_roic * 100:.2f}% | {receipt.payout_ratio * 100:.1f}%")
+    print("-" * 80)
+    print("  MM Propositions I/II, Tax Shield & PVGO Decomposition:")
+    print(f"    Unlevered V_U + Tax Shield:   ${receipt.unlevered_value_vu:.2f} + ${receipt.tax_shield_pv:.2f} = V_L ${receipt.levered_value_vl:.2f}")
+    print(f"    Levered Equity E_L / D-to-E:  ${receipt.levered_equity_el:.2f} ({receipt.debt_to_equity_ratio:.2f}x)")
+    print(f"    Levered Cost of Equity (rE):  {receipt.levered_equity_cost_re * 100:.2f}%")
+    print(f"    After-Tax WACC:               {receipt.wacc * 100:.2f}%")
+    print(f"    Growth PVGO / MM Equity:      ${receipt.pvgo:+.2f} ({receipt.pvgo_share_pct:+.1f}% of V_total) -> ${receipt.mm_growth_equity_value:.2f}")
+    print("-" * 80)
+    print(f"  Corporate Valuation Regime:     {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -15737,6 +15802,71 @@ def main() -> None:
         help="Output Hull & White receipt as JSON",
     )
 
+    # Modigliani & Miller (1958, 1961, 1963) Corporate Finance parser
+    mm_parser = subparsers.add_parser(
+        "modigliani-miller",
+        aliases=["dividend-irrelevance", "mm-1961"],
+        help="Evaluate Modigliani & Miller (1958, 1961, 1963) Propositions I/II, WACC & PVGO",
+    )
+    mm_parser.add_argument(
+        "--ticker",
+        default="MM61",
+        help="Corporate issuer ticker symbol (default: MM61)",
+    )
+    mm_parser.add_argument(
+        "--ebit",
+        type=float,
+        default=20.0,
+        help="Annual operating income EBIT (default: 20.0)",
+    )
+    mm_parser.add_argument(
+        "--debt",
+        type=float,
+        default=50.0,
+        help="Market debt D (default: 50.0)",
+    )
+    mm_parser.add_argument(
+        "--r0",
+        type=float,
+        default=0.10,
+        help="Unlevered asset cost of capital r_0 (default: 0.10)",
+    )
+    mm_parser.add_argument(
+        "--rd",
+        type=float,
+        default=0.05,
+        help="Pre-tax cost of debt r_D (default: 0.05)",
+    )
+    mm_parser.add_argument(
+        "--tax-rate",
+        type=float,
+        default=0.21,
+        help="Corporate income tax rate tau_c in [0, 1) (default: 0.21)",
+    )
+    mm_parser.add_argument(
+        "--reinvest",
+        type=float,
+        default=0.40,
+        help="Real capital reinvestment rate k in [0, 1] (default: 0.40)",
+    )
+    mm_parser.add_argument(
+        "--roic",
+        type=float,
+        default=0.14,
+        help="Incremental return on invested capital ROIC (default: 0.14)",
+    )
+    mm_parser.add_argument(
+        "--payout",
+        type=float,
+        default=0.60,
+        help="Dividend payout ratio in [0, 1] (default: 0.60)",
+    )
+    mm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Modigliani & Miller receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -16047,6 +16177,8 @@ def main() -> None:
         myers_rajan_command(args)
     elif args.command in ("hull-white", "hw-1990", "bond-option"):
         hull_white_command(args)
+    elif args.command in ("modigliani-miller", "dividend-irrelevance", "mm-1961"):
+        modigliani_miller_command(args)
 
 
 if __name__ == "__main__":
