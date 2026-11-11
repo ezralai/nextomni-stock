@@ -10985,6 +10985,43 @@ def merton_perold_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def fama_bliss_command(args: argparse.Namespace) -> None:
+    """CLI handler for Fama & Bliss (1987) Forward-Spot Spread & Bond Excess Return Engine."""
+    import json
+    from src.analytics.fama_bliss_forward_spread import (
+        calculate_fama_bliss_forward_spread,
+        persist_fama_bliss_record,
+    )
+
+    receipt = calculate_fama_bliss_forward_spread(
+        spot_y1=args.y1,
+        long_yn=args.yn,
+        maturity_n=args.maturity,
+        prev_maturity_y_nm1=args.y_nm1,
+        next_y_nm1=args.next_y1,
+        ticker=args.ticker,
+    )
+    persist_fama_bliss_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"FAMA & BLISS (1987) FORWARD-SPOT AUDIT RECEIPT — {receipt.ticker} ({receipt.maturity_n}y)")
+    print("=" * 80)
+    print(f"  1y Spot Rate / n-Year Spot:     {receipt.spot_y1 * 100:.2f}% / {receipt.long_yn * 100:.2f}%")
+    print(f"  Implied Forward Rate f(n):      {receipt.implied_forward_fn * 100:.2f}%")
+    print(f"  Forward-Spot Spread s(n):       {receipt.forward_spot_spread * 100:+.2f}% ({receipt.forward_spread_bps:+.1f} bps)")
+    print(f"  1y Holding / Excess Return rx:  {receipt.holding_return_hn * 100:+.2f}% / {receipt.excess_bond_return_rx * 100:+.2f}%")
+    print(f"  Scaled Future Yield Shift:      {receipt.scaled_yield_change * 100:+.2f}% (Res: {receipt.identity_residual:.2e})")
+    print(f"  EH Breakeven Yield Shift:       {receipt.eh_breakeven_yield_shift * 100:+.2f}%/yr")
+    print(f"  Term Premium Regime:            {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17432,6 +17469,55 @@ def main() -> None:
         help="Output Merton & Perold risk capital receipt as JSON",
     )
 
+    # Fama & Bliss (1987) Forward-Spot Term Spread parser
+    fb_parser = subparsers.add_parser(
+        "fama-bliss",
+        aliases=["forward-spread", "fb-1987"],
+        help="Analyze Fama & Bliss (1987) forward-spot term spreads & excess bond returns",
+    )
+    fb_parser.add_argument(
+        "--ticker",
+        default="TLT",
+        help="Fixed-income / treasury ETF or bond benchmark ticker (default: TLT)",
+    )
+    fb_parser.add_argument(
+        "--y1",
+        type=float,
+        default=0.040,
+        help="1-year zero-coupon spot yield (default: 0.040)",
+    )
+    fb_parser.add_argument(
+        "--yn",
+        type=float,
+        default=0.052,
+        help="n-year zero-coupon spot yield (default: 0.052)",
+    )
+    fb_parser.add_argument(
+        "--y-nm1",
+        type=float,
+        default=None,
+        dest="y_nm1",
+        help="Optional (n-1)-year spot yield (interpolated linearly if omitted)",
+    )
+    fb_parser.add_argument(
+        "--maturity",
+        type=int,
+        default=2,
+        help="Bond maturity n in [2, 30] years (default: 2)",
+    )
+    fb_parser.add_argument(
+        "--next-y1",
+        type=float,
+        default=None,
+        dest="next_y1",
+        help="Realized (n-1)-year yield one year later (default: unchanged curve)",
+    )
+    fb_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Fama & Bliss forward-spot receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17774,6 +17860,8 @@ def main() -> None:
         black76_command(args)
     elif args.command in ("risk-capital", "merton-perold", "mp-1993"):
         merton_perold_command(args)
+    elif args.command in ("fama-bliss", "forward-spread", "fb-1987"):
+        fama_bliss_command(args)
 
 
 if __name__ == "__main__":

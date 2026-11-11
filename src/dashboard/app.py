@@ -9785,6 +9785,67 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Merton & Perold risk capital.")
 
+                st.divider()
+                st.subheader("📈 Fama & Bliss (1987) Forward-Spot Spread & Term Premium Engine")
+                st.caption("Exact forward carry identity rx + (n-1)*dY = f^(n) - y^(1): term premia vs Pure Expectations Hypothesis")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.fama_bliss_forward_spread import (
+                            _build_hmac_payload as build_fb_payload,
+                            evaluate_fama_bliss_profile,
+                            verify_hmac_signature as verify_fb_hmac,
+                        )
+                        fb_col1, fb_col2 = st.columns(2)
+                        with fb_col1:
+                            fb_spot = st.slider(
+                                "1-Year Spot Rate y(1)",
+                                min_value=0.005,
+                                max_value=0.100,
+                                value=0.042,
+                                step=0.002,
+                                key=f"fb_y1_{selected_ticker}",
+                            )
+                        with fb_col2:
+                            fb_mat = st.slider(
+                                "Bond Maturity n (Years)",
+                                min_value=2,
+                                max_value=10,
+                                value=5,
+                                step=1,
+                                key=f"fb_n_{selected_ticker}",
+                            )
+
+                        fb_rec = evaluate_fama_bliss_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            spot_y1=fb_spot,
+                            maturity_n=fb_mat,
+                        )
+
+                        fbm1, fbm2, fbm3, fbm4 = st.columns(4)
+                        fbm1.metric("Implied Forward f(n)", f"{fb_rec.implied_forward_fn * 100:.2f}%", delta=f"y(n) {fb_rec.long_yn * 100:.2f}%")
+                        fbm2.metric("Forward-Spot Spread", f"{fb_rec.forward_spread_bps:+.0f} bps", delta=f"{fb_rec.forward_spot_spread * 100:+.2f}%")
+                        fbm3.metric("Carry Excess Return rx", f"{fb_rec.excess_bond_return_rx * 100:+.2f}%", delta=f"EH dY {fb_rec.eh_breakeven_yield_shift * 100:+.2f}%")
+                        fbm4.metric("Term Spread Regime", fb_rec.regime, delta=f"n = {fb_rec.maturity_n}y")
+
+                        fb_sig_payload = build_fb_payload(
+                            ticker=fb_rec.ticker,
+                            maturity_n=fb_rec.maturity_n,
+                            spot_y1=fb_rec.spot_y1,
+                            long_yn=fb_rec.long_yn,
+                            implied_forward_fn=fb_rec.implied_forward_fn,
+                            forward_spot_spread=fb_rec.forward_spot_spread,
+                            excess_bond_return_rx=fb_rec.excess_bond_return_rx,
+                            regime=fb_rec.regime,
+                            timestamp=fb_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Fama-Bliss Forward HMAC:** `{fb_rec.hmac_signature[:16]}...` (Sealed: `{verify_fb_hmac(fb_sig_payload, fb_rec.hmac_signature)}`)")
+                    except Exception as fb_ex:
+                        st.info(f"Fama & Bliss evaluation deferred: {fb_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Fama & Bliss forward spreads.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
