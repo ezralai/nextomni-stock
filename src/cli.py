@@ -10942,6 +10942,49 @@ def black76_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def merton_perold_command(args: argparse.Namespace) -> None:
+    """CLI handler for Merton & Perold (1993) Risk Capital & Allocation Engine."""
+    import json
+    from src.analytics.merton_perold_risk_capital import (
+        calculate_merton_perold_risk_capital,
+        persist_merton_perold_record,
+    )
+
+    receipt = calculate_merton_perold_risk_capital(
+        unit1_asset_v1=args.v1,
+        unit1_volatility=args.vol1,
+        unit2_asset_v2=args.v2,
+        unit2_volatility=args.vol2,
+        cross_unit_correlation=args.corr,
+        horizon_years=args.horizon,
+        risk_free_rate_r=args.rate,
+        expected_excess_return=args.excess_return,
+        ticker=args.ticker,
+    )
+    persist_merton_perold_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"MERTON & PEROLD (1993) RISK CAPITAL AUDIT RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Unit 1 Exposure / Vol:          ${receipt.unit1_asset_v1:.2f} / {receipt.unit1_volatility * 100:.2f}%")
+    print(f"  Unit 2 Exposure / Vol:          ${receipt.unit2_asset_v2:.2f} / {receipt.unit2_volatility * 100:.2f}%")
+    print(f"  Correlation (rho) / Horizon:    {receipt.cross_unit_correlation:+.2f} / {receipt.horizon_years:.2f}y")
+    print(f"  Standalone RC_1 / RC_2:         ${receipt.standalone_rc_1:.4f} / ${receipt.standalone_rc_2:.4f}")
+    print(f"  Firm Portfolio RC_P:            ${receipt.portfolio_rc:.4f} (Vol: {receipt.portfolio_volatility * 100:.2f}%)")
+    print(f"  Marginal RC_1 / Unalloc Gap:    ${receipt.marginal_rc_1:.4f} / ${receipt.unallocated_capital_gap:.4f}")
+    print(f"  Euler RC_1 / RC_2 (100%):       ${receipt.euler_rc_1:.4f} / ${receipt.euler_rc_2:.4f}")
+    print(f"  Diversification Benefit:        ${receipt.diversification_benefit:.4f} ({receipt.diversification_benefit_pct * 100:.2f}%)")
+    print(f"  Standalone / Euler RAROC:       {receipt.standalone_raroc * 100:.2f}% / {receipt.euler_raroc * 100:.2f}%")
+    print(f"  Institutional Regime:           {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17324,6 +17367,71 @@ def main() -> None:
         help="Output Black-76 futures option receipt as JSON",
     )
 
+    # Merton & Perold (1993) Risk Capital & Allocation parser
+    mp_parser = subparsers.add_parser(
+        "risk-capital",
+        aliases=["merton-perold", "mp-1993"],
+        help="Compute Merton & Perold (1993) risk capital, diversification & Euler RAROC",
+    )
+    mp_parser.add_argument(
+        "--ticker",
+        default="JPM",
+        help="Primary firm or desk ticker symbol (default: JPM)",
+    )
+    mp_parser.add_argument(
+        "--v1",
+        type=float,
+        default=100.0,
+        help="Primary unit asset value V1 (default: 100.0)",
+    )
+    mp_parser.add_argument(
+        "--vol1",
+        type=float,
+        default=0.30,
+        help="Primary unit annualized asset volatility (default: 0.30)",
+    )
+    mp_parser.add_argument(
+        "--v2",
+        type=float,
+        default=100.0,
+        help="Secondary diversification unit asset value V2 (default: 100.0)",
+    )
+    mp_parser.add_argument(
+        "--vol2",
+        type=float,
+        default=0.20,
+        help="Secondary unit annualized asset volatility (default: 0.20)",
+    )
+    mp_parser.add_argument(
+        "--corr",
+        type=float,
+        default=0.25,
+        help="Cross-unit asset correlation rho in [-0.9999, 1.0] (default: 0.25)",
+    )
+    mp_parser.add_argument(
+        "--horizon",
+        type=float,
+        default=1.0,
+        help="Risk capital guarantee horizon T in years (default: 1.0)",
+    )
+    mp_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.05,
+        help="Risk-free benchmark rate r (default: 0.05)",
+    )
+    mp_parser.add_argument(
+        "--excess-return",
+        type=float,
+        default=0.06,
+        help="Expected unit excess return over risk-free rate (default: 0.06)",
+    )
+    mp_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Merton & Perold risk capital receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17664,6 +17772,8 @@ def main() -> None:
         amihud_mendelson_command(args)
     elif args.command in ("futures-option", "black-76", "commodity-option"):
         black76_command(args)
+    elif args.command in ("risk-capital", "merton-perold", "mp-1993"):
+        merton_perold_command(args)
 
 
 if __name__ == "__main__":

@@ -9710,6 +9710,81 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Black-76 futures options.")
 
+                st.divider()
+                st.subheader("🏦 Merton & Perold (1993) Risk Capital & Institutional Allocation Engine")
+                st.caption("Option-theoretic guarantee RC = V[2N(0.5*sigma*sqrt(T)) - 1]: portfolio sub-additivity, incremental gap & Euler RAROC")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.merton_perold_risk_capital import (
+                            _build_hmac_payload as build_mp_payload,
+                            evaluate_merton_perold_profile,
+                            verify_hmac_signature as verify_mp_hmac,
+                        )
+                        mp_col1, mp_col2, mp_col3 = st.columns(3)
+                        with mp_col1:
+                            mp_horizon = st.slider(
+                                "Capital Horizon T (Years)",
+                                min_value=0.25,
+                                max_value=5.00,
+                                value=1.00,
+                                step=0.25,
+                                key=f"mp_h_{selected_ticker}",
+                            )
+                        with mp_col2:
+                            mp_corr = st.slider(
+                                "Cross-Desk Asset Correlation (rho)",
+                                min_value=-0.80,
+                                max_value=1.00,
+                                value=0.25,
+                                step=0.05,
+                                key=f"mp_corr_{selected_ticker}",
+                            )
+                        with mp_col3:
+                            mp_spread = st.slider(
+                                "Expected Desk Excess Return",
+                                min_value=0.00,
+                                max_value=0.20,
+                                value=0.06,
+                                step=0.01,
+                                key=f"mp_ret_{selected_ticker}",
+                            )
+
+                        mp_rec = evaluate_merton_perold_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            horizon_years=mp_horizon,
+                            cross_unit_correlation=mp_corr,
+                            expected_excess_return=mp_spread,
+                        )
+
+                        mpm1, mpm2, mpm3, mpm4 = st.columns(4)
+                        mpm1.metric("Standalone / Firm RC", f"${mp_rec.standalone_rc_1:.2f}", delta=f"Firm ${mp_rec.portfolio_rc:.2f}")
+                        mpm2.metric("Euler Allocated RC", f"${mp_rec.euler_rc_1:.2f}", delta=f"Gap ${mp_rec.unallocated_capital_gap:.2f}")
+                        mpm3.metric("Diversification Benefit", f"{mp_rec.diversification_benefit_pct * 100:.1f}%", delta=f"${mp_rec.diversification_benefit:.2f}")
+                        mpm4.metric("Euler RAROC & Regime", f"{mp_rec.euler_raroc * 100:.1f}%", delta=mp_rec.regime)
+
+                        mp_sig_payload = build_mp_payload(
+                            ticker=mp_rec.ticker,
+                            v1=mp_rec.unit1_asset_v1,
+                            vol1=mp_rec.unit1_volatility,
+                            v2=mp_rec.unit2_asset_v2,
+                            vol2=mp_rec.unit2_volatility,
+                            corr=mp_rec.cross_unit_correlation,
+                            horizon=mp_rec.horizon_years,
+                            standalone_rc_1=mp_rec.standalone_rc_1,
+                            portfolio_rc=mp_rec.portfolio_rc,
+                            euler_rc_1=mp_rec.euler_rc_1,
+                            euler_raroc=mp_rec.euler_raroc,
+                            regime=mp_rec.regime,
+                            timestamp=mp_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Merton-Perold Risk Capital HMAC:** `{mp_rec.hmac_signature[:16]}...` (Sealed: `{verify_mp_hmac(mp_sig_payload, mp_rec.hmac_signature)}`)")
+                    except Exception as mp_ex:
+                        st.info(f"Merton & Perold risk capital evaluation deferred: {mp_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Merton & Perold risk capital.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
