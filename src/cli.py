@@ -10828,6 +10828,60 @@ def stambaugh_bias_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def amihud_mendelson_command(args: argparse.Namespace) -> None:
+    """CLI handler for Amihud & Mendelson (1986) Bid-Ask Spread & Clientele Engine."""
+    import json
+    from src.analytics.amihud_mendelson_clientele import (
+        calculate_amihud_mendelson_clientele,
+        persist_amihud_mendelson_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    spread = float(getattr(args, "spread", 0.015) if getattr(args, "spread", None) is not None else 0.015)
+    base_r0 = float(getattr(args, "base_r0", 0.06) if getattr(args, "base_r0", None) is not None else 0.06)
+    turnover = float(getattr(args, "turnover", 1.0) if getattr(args, "turnover", None) is not None else 1.0)
+
+    try:
+        receipt = calculate_amihud_mendelson_clientele(
+            proportional_spread_s=spread,
+            base_liquid_return_r0=base_r0,
+            investor_turnover_mu=turnover,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_amihud_mendelson_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Amihud & Mendelson evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Amihud & Mendelson (1986) Bid-Ask Spread & Clientele Engine")
+    print("=" * 80)
+    print(f"  Asset / Ticker:                 {receipt.ticker} (Spread: {receipt.spread_bps:.1f} bps = {receipt.proportional_spread_s * 100:.2f}%)")
+    print(f"  Base Return R_0 / Turnover mu:  {receipt.base_liquid_return_r0 * 100:.2f}% | {receipt.investor_turnover_mu:.2f}/yr ({receipt.investor_holding_years:.2f}y hold)")
+    print(f"  Equilibrium Clientele Cohort:   {receipt.equilibrium_clientele_tier} (Opt Hold: {receipt.optimal_clientele_holding_years:.2f}y)")
+    print("-" * 80)
+    print("  Concave Spread-Return Pricing & Clientele Net Yield:")
+    print(f"    Gross Expected Return R(S):   {receipt.gross_expected_return * 100:.2f}% / yr")
+    print(f"    Illiquidity Return Premium:   +{receipt.illiquidity_premium_bps:.2f} bps")
+    print(f"    Investor Spread-Net Return:   {receipt.investor_net_return * 100:.2f}% (Alpha vs R0: {receipt.clientele_net_alpha_bps:+.1f} bps)")
+    print(f"    Spread-Compression Uplift:    +{receipt.spread_compression_upside_pct:.2f}% Valuation Re-rating")
+    print("-" * 80)
+    print(f"  Clientele Alignment Regime:     {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17122,6 +17176,41 @@ def main() -> None:
         help="Output Stambaugh predictive bias receipt as JSON",
     )
 
+    # Amihud & Mendelson (1986) Spread-Return Clientele parser
+    am86_parser = subparsers.add_parser(
+        "amihud-mendelson",
+        aliases=["am-1986", "clientele-spread"],
+        help="Evaluate Amihud & Mendelson (1986) bid-ask spread pricing & clientele equilibrium",
+    )
+    am86_parser.add_argument(
+        "--ticker",
+        default="AM86",
+        help="Security ticker symbol (default: AM86)",
+    )
+    am86_parser.add_argument(
+        "--spread",
+        type=float,
+        default=0.015,
+        help="Proportional bid-ask spread S in [0, 0.25] (default: 0.015 = 150 bps)",
+    )
+    am86_parser.add_argument(
+        "--base-r0",
+        type=float,
+        default=0.06,
+        help="Frictionless zero-spread expected return R_0 (default: 0.06)",
+    )
+    am86_parser.add_argument(
+        "--turnover",
+        type=float,
+        default=1.0,
+        help="Investor portfolio turnover rate mu = 1/holding_years (default: 1.0)",
+    )
+    am86_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Amihud & Mendelson receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17458,6 +17547,8 @@ def main() -> None:
         stein_internal_capital_command(args)
     elif args.command in ("predictive-regression", "stambaugh-bias", "rs-1999"):
         stambaugh_bias_command(args)
+    elif args.command in ("amihud-mendelson", "am-1986", "clientele-spread"):
+        amihud_mendelson_command(args)
 
 
 if __name__ == "__main__":

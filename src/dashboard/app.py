@@ -9592,6 +9592,61 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 25 price sessions to evaluate Stambaugh predictive regression bias.")
 
+                st.divider()
+                st.subheader("⚖️ Amihud & Mendelson (1986) Bid-Ask Spread & Clientele Engine")
+                st.caption("Piecewise-linear concave spread-return equilibrium: holding-period clientele sorting, net illiquidity rents & spread-compression re-rating")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.amihud_mendelson_clientele import (
+                            evaluate_amihud_mendelson_profile,
+                            verify_hmac_signature as verify_am_hmac,
+                        )
+                        am_col1, am_col2 = st.columns(2)
+                        with am_col1:
+                            am_turn = st.slider(
+                                "Investor Annual Turnover (mu trades/yr)",
+                                min_value=0.25,
+                                max_value=4.50,
+                                value=1.00,
+                                step=0.25,
+                                key=f"am_turn_{selected_ticker}",
+                            )
+                        with am_col2:
+                            am_r0 = st.slider(
+                                "Base Liquid Return R_0 (%)",
+                                min_value=3.0,
+                                max_value=10.0,
+                                value=6.0,
+                                step=0.5,
+                                key=f"am_r0_{selected_ticker}",
+                            ) / 100.0
+
+                        am_rec = evaluate_amihud_mendelson_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            investor_turnover_mu=am_turn,
+                            base_liquid_return_r0=am_r0,
+                        )
+
+                        amm1, amm2, amm3, amm4 = st.columns(4)
+                        amm1.metric("Gross Required Return R(S)", f"{am_rec.gross_expected_return * 100:.2f}%", delta=f"+{am_rec.illiquidity_premium_bps:.0f} bps illiq prem")
+                        amm2.metric("Investor Spread-Net Return", f"{am_rec.investor_net_return * 100:.2f}%", delta=f"Net Alpha {am_rec.clientele_net_alpha_bps:+.0f} bps")
+                        amm3.metric("Spread-Compression Upside", f"+{am_rec.spread_compression_upside_pct:.1f}%", delta=f"Spread {am_rec.spread_bps:.0f} bps")
+                        amm4.metric("Clientele Horizon Match", f"{am_rec.optimal_clientele_holding_years:.2f}y Optimal", delta=am_rec.regime)
+
+                        am_sig_payload = (
+                            f"{am_rec.ticker}:{am_rec.proportional_spread_s:.6f}:{am_rec.base_liquid_return_r0:.6f}:"
+                            f"{am_rec.investor_turnover_mu:.4f}:{am_rec.gross_expected_return:.6f}:"
+                            f"{am_rec.illiquidity_premium_bps:.2f}:{am_rec.investor_net_return:.6f}:"
+                            f"{am_rec.equilibrium_clientele_tier}:{am_rec.regime}:{am_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **Amihud-Mendelson HMAC:** `{am_rec.hmac_signature[:16]}...` (Sealed: `{verify_am_hmac(am_sig_payload, am_rec.hmac_signature)}`)")
+                    except Exception as am_ex:
+                        st.info(f"Amihud & Mendelson evaluation deferred: {am_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Amihud & Mendelson clientele pricing.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
