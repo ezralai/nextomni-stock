@@ -9693,6 +9693,73 @@ def term_structure_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def binomial_option_command(args: argparse.Namespace) -> None:
+    """CLI handler for Cox, Ross & Rubinstein (1979) Binomial Option Pricing Engine."""
+    import json
+    from src.analytics.crr_binomial_options import (
+        calculate_crr_binomial_option,
+        persist_binomial_option_record,
+    )
+
+    try:
+        ticker = validate_ticker(args.ticker)
+    except ValueError as e:
+        print(f"\nError: {e}\n")
+        return
+
+    spot = float(getattr(args, "spot", 100.0) if getattr(args, "spot", None) is not None else 100.0)
+    strike = float(getattr(args, "strike", 100.0) if getattr(args, "strike", None) is not None else 100.0)
+    maturity = float(getattr(args, "maturity", 1.0) if getattr(args, "maturity", None) is not None else 1.0)
+    rate = float(getattr(args, "rate", 0.05) if getattr(args, "rate", None) is not None else 0.05)
+    div_yield = float(getattr(args, "div_yield", 0.0) if getattr(args, "div_yield", None) is not None else 0.0)
+    vol = float(getattr(args, "vol", 0.25) if getattr(args, "vol", None) is not None else 0.25)
+    steps = int(getattr(args, "steps", 150) if getattr(args, "steps", None) is not None else 150)
+    opt_type = str(getattr(args, "type", "PUT") or "PUT").strip().upper()
+    style = str(getattr(args, "style", "AMERICAN") or "AMERICAN").strip().upper()
+
+    try:
+        receipt = calculate_crr_binomial_option(
+            spot_price=spot,
+            strike_price=strike,
+            maturity_years=maturity,
+            risk_free_rate=rate,
+            dividend_yield=div_yield,
+            volatility=vol,
+            steps=steps,
+            option_type=opt_type,
+            exercise_style=style,
+            ticker=ticker,
+        )
+        db_path = getattr(args, "db_path", "data/nextomni_stock.db")
+        persist_binomial_option_record(receipt, db_path=db_path)
+    except Exception as ex:
+        print(f"\nError: Binomial option evaluation failed: {ex}\n")
+        return
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print("  NextOmni Stock: Cox, Ross & Rubinstein (1979) Binomial Option Pricing Engine")
+    print("=" * 80)
+    print(f"  Contract / Ticker:              {receipt.ticker} ({receipt.exercise_style} {receipt.option_type})")
+    print(f"  Spot S0 / Strike K / T (yrs):   ${receipt.spot_price:.2f} | ${receipt.strike_price:.2f} | {receipt.maturity_years:.2f}y")
+    print(f"  Vol / Rate r / Div q / Steps N: {receipt.volatility * 100:.2f}% | {receipt.risk_free_rate * 100:.2f}% | {receipt.dividend_yield * 100:.2f}% | {receipt.steps}")
+    print(f"  Lattice Factors (u / d / p):    {receipt.up_factor_u:.4f} | {receipt.down_factor_d:.4f} | p={receipt.risk_neutral_prob_p:.4f}")
+    print("-" * 80)
+    print("  Valuation, Early-Exercise Decomposition & Lattice Greeks:")
+    print(f"    Fair Option Value:            ${receipt.option_price:.4f} (BSM Euro Ref: ${receipt.black_scholes_benchmark:.4f}, Err: ${receipt.discretization_error_vs_bsm:.4f})")
+    print(f"    American vs European Value:   ${receipt.american_price:.4f} vs ${receipt.european_price:.4f}")
+    print(f"    Early-Exercise Premium:       ${receipt.early_exercise_premium:.4f} ({receipt.early_exercise_nodes} exercise nodes)")
+    print(f"    Greeks (Delta/Gamma/Theta):   {receipt.delta:+.4f} | {receipt.gamma:.4f} | {receipt.theta_annual:+.4f}/yr")
+    print("-" * 80)
+    print(f"  Exercise Regime:                {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -14993,6 +15060,77 @@ def main() -> None:
         help="Output affine term structure receipt as JSON",
     )
 
+    # CRR (1979) Binomial Option Pricing parser
+    bo_parser = subparsers.add_parser(
+        "binomial-option",
+        aliases=["crr-1979", "american-option", "option-tree"],
+        help="Value American & European options via Cox-Ross-Rubinstein (1979) binomial lattice",
+    )
+    bo_parser.add_argument(
+        "--ticker",
+        default="OPT",
+        help="Underlying ticker symbol (default: OPT)",
+    )
+    bo_parser.add_argument(
+        "--spot",
+        type=float,
+        default=100.0,
+        help="Underlying spot price S_0 (default: 100.0)",
+    )
+    bo_parser.add_argument(
+        "--strike",
+        type=float,
+        default=100.0,
+        help="Option strike price K (default: 100.0)",
+    )
+    bo_parser.add_argument(
+        "--maturity",
+        type=float,
+        default=1.0,
+        help="Time to expiration T in years (default: 1.0)",
+    )
+    bo_parser.add_argument(
+        "--rate",
+        type=float,
+        default=0.05,
+        help="Continuously compounded risk-free rate r (default: 0.05)",
+    )
+    bo_parser.add_argument(
+        "--div-yield",
+        type=float,
+        default=0.0,
+        help="Continuous dividend yield q (default: 0.0)",
+    )
+    bo_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.25,
+        help="Annualized volatility sigma (default: 0.25)",
+    )
+    bo_parser.add_argument(
+        "--steps",
+        type=int,
+        default=150,
+        help="Number of recombining binomial steps N in [10, 1000] (default: 150)",
+    )
+    bo_parser.add_argument(
+        "--type",
+        default="PUT",
+        choices=["CALL", "PUT"],
+        help="Option payoff type: CALL or PUT (default: PUT)",
+    )
+    bo_parser.add_argument(
+        "--style",
+        default="AMERICAN",
+        choices=["AMERICAN", "EUROPEAN"],
+        help="Exercise style: AMERICAN or EUROPEAN (default: AMERICAN)",
+    )
+    bo_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output CRR binomial option receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -15291,6 +15429,8 @@ def main() -> None:
         campbell_cochrane_command(args)
     elif args.command in ("term-structure", "cir-1985", "vasicek", "yield-curve"):
         term_structure_command(args)
+    elif args.command in ("binomial-option", "crr-1979", "american-option", "option-tree"):
+        binomial_option_command(args)
 
 
 if __name__ == "__main__":

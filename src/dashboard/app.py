@@ -8461,6 +8461,79 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate affine term structure profile.")
 
+                st.divider()
+                st.subheader("🌳 Cox, Ross & Rubinstein (1979) Binomial Option Pricing Engine")
+                st.caption("Discrete-time recombining lattice for American & European option pricing, early-exercise premium, lattice Greeks & Black-Scholes convergence")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.crr_binomial_options import (
+                            evaluate_binomial_option_profile,
+                            verify_hmac_signature as verify_bo_hmac,
+                        )
+                        last_px = float(df["Close"].iloc[-1])
+                        bo_col1, bo_col2, bo_col3, bo_col4 = st.columns(4)
+                        with bo_col1:
+                            bo_type = st.selectbox(
+                                "Option Type",
+                                options=["PUT", "CALL"],
+                                index=0,
+                                key=f"bo_type_{selected_ticker}",
+                            )
+                        with bo_col2:
+                            bo_style = st.selectbox(
+                                "Exercise Style",
+                                options=["AMERICAN", "EUROPEAN"],
+                                index=0,
+                                key=f"bo_style_{selected_ticker}",
+                            )
+                        with bo_col3:
+                            bo_moneyness = st.slider(
+                                "Strike Ratio (K / S_0)",
+                                min_value=0.75,
+                                max_value=1.25,
+                                value=1.00,
+                                step=0.05,
+                                key=f"bo_k_{selected_ticker}",
+                            )
+                        with bo_col4:
+                            bo_steps = st.slider(
+                                "Lattice Steps N",
+                                min_value=30,
+                                max_value=300,
+                                value=120,
+                                step=30,
+                                key=f"bo_n_{selected_ticker}",
+                            )
+
+                        bo_rec = evaluate_binomial_option_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            strike_price=last_px * bo_moneyness,
+                            steps=bo_steps,
+                            option_type=bo_type,
+                            exercise_style=bo_style,
+                        )
+
+                        bm1, bm2, bm3, bm4 = st.columns(4)
+                        bm1.metric("CRR Option Value", f"${bo_rec.option_price:.2f}", delta=f"BSM Euro ${bo_rec.black_scholes_benchmark:.2f}")
+                        bm2.metric("Early-Exercise Premium", f"${bo_rec.early_exercise_premium:.3f}", delta=f"{bo_rec.early_exercise_nodes} exercise nodes")
+                        bm3.metric("Lattice Delta / Gamma", f"{bo_rec.delta:+.3f}", delta=f"Gamma {bo_rec.gamma:.4f}")
+                        bm4.metric("Calibrated Sigma / Prob p", f"{bo_rec.volatility * 100:.1f}%", delta=f"p={bo_rec.risk_neutral_prob_p:.3f}")
+
+                        bo_sig_payload = (
+                            f"{bo_rec.ticker}:{bo_rec.option_type}:{bo_rec.exercise_style}:"
+                            f"{bo_rec.spot_price:.4f}:{bo_rec.strike_price:.4f}:"
+                            f"{bo_rec.maturity_years:.4f}:{bo_rec.volatility:.4f}:{bo_rec.steps}:"
+                            f"{bo_rec.option_price:.6f}:{bo_rec.early_exercise_premium:.6f}:"
+                            f"{bo_rec.regime}:{bo_rec.timestamp}"
+                        )
+                        st.caption(f"🛡️ **CRR Binomial HMAC:** `{bo_rec.hmac_signature[:16]}...` (Sealed: `{verify_bo_hmac(bo_sig_payload, bo_rec.hmac_signature)}`)")
+                    except Exception as bo_ex:
+                        st.info(f"CRR binomial option evaluation deferred: {bo_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate CRR binomial option profile.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
