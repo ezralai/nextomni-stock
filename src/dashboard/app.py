@@ -10232,6 +10232,46 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate BGIR survivorship bias.")
 
+                st.divider()
+                st.subheader("🎨 William F. Sharpe (1992) Returns-Based Style Analysis (RBSA)")
+                st.caption("Constrained simplex QP min Var(R_p - Fw) (w >= 0, sum=1): effective asset-mix Style R^2 vs Active Selection Alpha")
+
+                if df is not None and not df.empty and len(df) >= 20:
+                    try:
+                        from src.analytics.sharpe_style_analysis import (
+                            _build_hmac_payload as build_rbsa_payload,
+                            evaluate_sharpe_style_profile,
+                            verify_hmac_signature as verify_rbsa_hmac,
+                        )
+                        rbsa_rec = evaluate_sharpe_style_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                        )
+
+                        rm1, rm2, rm3, rm4 = st.columns(4)
+                        rm1.metric("Dominant Style Exposure", rbsa_rec.dominant_style, delta=f"{rbsa_rec.dominant_weight * 100:.1f}% weight")
+                        rm2.metric("Style Allocation R^2", f"{rbsa_rec.style_r2 * 100:.1f}%", delta=f"Sel Risk {rbsa_rec.selection_var_share * 100:.1f}%")
+                        rm3.metric("Selection Alpha / TE", f"{rbsa_rec.selection_alpha_ann * 100:+.2f}%", delta=f"TE {rbsa_rec.selection_te_ann * 100:.1f}%")
+                        rm4.metric("Selection IR & Regime", f"{rbsa_rec.selection_ir:+.2f}", delta=rbsa_rec.regime)
+
+                        rbsa_sig_payload = build_rbsa_payload(
+                            ticker=rbsa_rec.ticker,
+                            n_obs=rbsa_rec.n_obs,
+                            n_factors=rbsa_rec.n_factors,
+                            dominant_style=rbsa_rec.dominant_style,
+                            dominant_weight=rbsa_rec.dominant_weight,
+                            style_r2=rbsa_rec.style_r2,
+                            selection_alpha_ann=rbsa_rec.selection_alpha_ann,
+                            selection_te_ann=rbsa_rec.selection_te_ann,
+                            regime=rbsa_rec.regime,
+                            timestamp=rbsa_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Sharpe RBSA HMAC:** `{rbsa_rec.hmac_signature[:16]}...` (Sealed: `{verify_rbsa_hmac(rbsa_sig_payload, rbsa_rec.hmac_signature)}`)")
+                    except Exception as rbsa_ex:
+                        st.info(f"Sharpe style analysis deferred: {rbsa_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to evaluate Sharpe RBSA.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

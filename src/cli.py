@@ -11248,6 +11248,53 @@ def brown_goetzmann_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def sharpe_style_command(args: argparse.Namespace) -> None:
+    """CLI handler for William F. Sharpe (1992) Returns-Based Style Analysis."""
+    import json
+    from src.analytics.sharpe_style_analysis import (
+        build_synthetic_style_returns,
+        calculate_sharpe_style_analysis,
+        persist_sharpe_style_record,
+    )
+
+    raw_w = [args.w_value, args.w_growth, args.w_small, args.w_bond]
+    total_w = sum(raw_w)
+    if total_w <= 0.0:
+        raise ValueError("Sum of style weights must be strictly positive.")
+    norm_w = [w / total_w for w in raw_w]
+
+    rp, factors, names = build_synthetic_style_returns(
+        weights=norm_w,
+        n_obs=args.n_obs,
+        alpha_ann=args.alpha_ann,
+        selection_vol_ann=args.selection_vol,
+    )
+    receipt = calculate_sharpe_style_analysis(
+        portfolio_returns=rp,
+        style_returns=factors,
+        factor_names=names,
+        ticker=args.ticker,
+    )
+    persist_sharpe_style_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"SHARPE (1992) RETURNS-BASED STYLE ANALYSIS RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Observations / Style Factors:   {receipt.n_obs} / {receipt.n_factors}")
+    print(f"  Style R^2 / Selection Share:    {receipt.style_r2 * 100:.2f}% / {receipt.selection_var_share * 100:.2f}%")
+    print(f"  Dominant Style Exposure:        {receipt.dominant_style} ({receipt.dominant_weight * 100:.1f}%)")
+    print(f"  Style Allocation Weights:       " + ", ".join(f"{k}={v*100:.1f}%" for k, v in receipt.style_weights.items()))
+    print(f"  Selection Alpha / TE / IR:      {receipt.selection_alpha_ann * 100:+.2f}% / {receipt.selection_te_ann * 100:.2f}% / {receipt.selection_ir:+.3f}")
+    print(f"  Style Regime:                   {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18038,6 +18085,72 @@ def main() -> None:
         help="Output BGIR survivorship bias receipt as JSON",
     )
 
+    # William F. Sharpe (1992) Returns-Based Style Analysis parser
+    rbsa_parser = subparsers.add_parser(
+        "style-analysis",
+        aliases=["sharpe-rbsa", "rbsa-1992"],
+        help="Decompose portfolio style weights & selection risk via Sharpe (1992) RBSA",
+    )
+    rbsa_parser.add_argument(
+        "--ticker",
+        default="FUND",
+        help="Fund or portfolio ticker symbol (default: FUND)",
+    )
+    rbsa_parser.add_argument(
+        "--w-value",
+        type=float,
+        default=0.40,
+        dest="w_value",
+        help="Value Equity style weight proxy (default: 0.40)",
+    )
+    rbsa_parser.add_argument(
+        "--w-growth",
+        type=float,
+        default=0.35,
+        dest="w_growth",
+        help="Growth Equity style weight proxy (default: 0.35)",
+    )
+    rbsa_parser.add_argument(
+        "--w-small",
+        type=float,
+        default=0.15,
+        dest="w_small",
+        help="Small Cap style weight proxy (default: 0.15)",
+    )
+    rbsa_parser.add_argument(
+        "--w-bond",
+        type=float,
+        default=0.10,
+        dest="w_bond",
+        help="Govt Bonds style weight proxy (default: 0.10)",
+    )
+    rbsa_parser.add_argument(
+        "--alpha-ann",
+        type=float,
+        default=0.02,
+        dest="alpha_ann",
+        help="Annualized manager selection alpha (default: 0.02)",
+    )
+    rbsa_parser.add_argument(
+        "--selection-vol",
+        type=float,
+        default=0.03,
+        dest="selection_vol",
+        help="Annualized active selection residual volatility (default: 0.03)",
+    )
+    rbsa_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=120,
+        dest="n_obs",
+        help="Number of daily return observations (default: 120)",
+    )
+    rbsa_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Sharpe RBSA receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18394,6 +18507,8 @@ def main() -> None:
         malkiel_duration_command(args)
     elif args.command in ("survivorship-bias", "bgir-1992", "truncation-bias"):
         brown_goetzmann_command(args)
+    elif args.command in ("style-analysis", "sharpe-rbsa", "rbsa-1992"):
+        sharpe_style_command(args)
 
 
 if __name__ == "__main__":
