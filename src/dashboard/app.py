@@ -10658,6 +10658,62 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 30 price sessions to evaluate Maximum Diversification Portfolio.")
 
+                st.divider()
+                st.subheader("📊 Brinson, Hood & Beebower (1986) / Brinson-Fachler Return Attribution")
+                st.caption("Exact holdings-based active-return decomposition: Active Return = Allocation + Selection + Interaction")
+
+                if df is not None and not df.empty and len(df) >= 21:
+                    try:
+                        from src.analytics.brinson_attribution import (
+                            _build_hmac_payload as build_brinson_payload,
+                            evaluate_brinson_profile,
+                            verify_hmac_signature as verify_brinson_hmac,
+                        )
+                        bhb_rec = evaluate_brinson_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                        )
+
+                        bm1, bm2, bm3, bm4 = st.columns(4)
+                        bm1.metric(
+                            "Portfolio / Benchmark Ret",
+                            f"{bhb_rec.portfolio_return * 100:+.2f}% / {bhb_rec.benchmark_return * 100:+.2f}%",
+                            delta=f"Active {bhb_rec.active_return * 100:+.2f}%",
+                        )
+                        bm2.metric(
+                            "Allocation Effect (BF)",
+                            f"{bhb_rec.allocation_effect * 100:+.2f}%",
+                            delta=f"Top: {bhb_rec.top_driver_sector}",
+                        )
+                        bm3.metric(
+                            "Selection / Interaction",
+                            f"{bhb_rec.selection_effect * 100:+.2f}% / {bhb_rec.interaction_effect * 100:+.2f}%",
+                            delta=f"Total Sel {bhb_rec.total_selection_effect * 100:+.2f}%",
+                        )
+                        bm4.metric(
+                            "Attribution Driver",
+                            f"{bhb_rec.n_sectors} sleeves",
+                            delta=bhb_rec.regime,
+                        )
+
+                        bhb_sig_payload = build_brinson_payload(
+                            ticker=bhb_rec.ticker,
+                            n_sectors=bhb_rec.n_sectors,
+                            portfolio_return=bhb_rec.portfolio_return,
+                            benchmark_return=bhb_rec.benchmark_return,
+                            active_return=bhb_rec.active_return,
+                            allocation_effect=bhb_rec.allocation_effect,
+                            selection_effect=bhb_rec.selection_effect,
+                            interaction_effect=bhb_rec.interaction_effect,
+                            regime=bhb_rec.regime,
+                            timestamp=bhb_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Brinson Attribution HMAC:** `{bhb_rec.hmac_signature[:16]}...` (Sealed: `{verify_brinson_hmac(bhb_sig_payload, bhb_rec.hmac_signature)}`)")
+                    except Exception as bhb_ex:
+                        st.info(f"Brinson attribution deferred: {bhb_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 21 price sessions to evaluate Brinson attribution.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

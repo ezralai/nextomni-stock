@@ -11563,6 +11563,39 @@ def max_diversification_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def brinson_attribution_command(args: argparse.Namespace) -> None:
+    """CLI handler for Brinson, Hood & Beebower (1986) / Fachler Attribution."""
+    import json
+    from src.analytics.brinson_attribution import (
+        calculate_brinson_attribution,
+        persist_brinson_record,
+    )
+
+    wb = [0.35, 0.30, 0.20, 0.15]
+    wp = [0.45, 0.25, 0.20, 0.10]
+    rb = [0.12, 0.08, 0.04, 0.09]
+    rp = [rb[0] + args.active_alpha, rb[1] + 0.005, rb[2] - 0.005, rb[3] + 0.010]
+    sectors = ["Tech_Growth", "Core_Equity", "Defensive_Val", "Quality_Tilt"]
+
+    receipt = calculate_brinson_attribution(wp, wb, rp, rb, sector_names=sectors, ticker=args.ticker)
+    persist_brinson_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"BRINSON, HOOD & BEEBOWER (1986) RETURN ATTRIBUTION RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Portfolio / Benchmark Return:   {receipt.portfolio_return * 100:+.2f}% / {receipt.benchmark_return * 100:+.2f}% (Active: {receipt.active_return * 100:+.2f}%)")
+    print(f"  Allocation / Selection / Inter: {receipt.allocation_effect * 100:+.2f}% / {receipt.selection_effect * 100:+.2f}% / {receipt.interaction_effect * 100:+.2f}%")
+    print(f"  Total Selection / Top Sector:   {receipt.total_selection_effect * 100:+.2f}% / {receipt.top_driver_sector}")
+    print(f"  Attribution Regime:             {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18758,6 +18791,30 @@ def main() -> None:
         help="Output Maximum Diversification receipt as JSON",
     )
 
+    # Brinson, Hood & Beebower (1986) / Brinson & Fachler (1985) Attribution parser
+    bhb_parser = subparsers.add_parser(
+        "brinson-attribution",
+        aliases=["bhb-1986", "brinson-fachler"],
+        help="Decompose active return into Allocation, Selection, and Interaction effects",
+    )
+    bhb_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Benchmark or portfolio sleeve ticker label (default: SPY)",
+    )
+    bhb_parser.add_argument(
+        "--active-alpha",
+        type=float,
+        default=0.02,
+        dest="active_alpha",
+        help="Lead sleeve active selection spread (default: 0.02)",
+    )
+    bhb_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Brinson attribution receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19130,6 +19187,8 @@ def main() -> None:
         hurst_exponent_command(args)
     elif args.command in ("max-diversification", "choueifaty-dr", "cc-2008"):
         max_diversification_command(args)
+    elif args.command in ("brinson-attribution", "bhb-1986", "brinson-fachler"):
+        brinson_attribution_command(args)
 
 
 if __name__ == "__main__":
