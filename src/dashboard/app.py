@@ -10604,6 +10604,60 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 35 price sessions to estimate R/S Hurst exponent.")
 
+                st.divider()
+                st.subheader("🌐 Choueifaty & Coignard (2008) Maximum Diversification Portfolio")
+                st.caption("Forecast-free Diversification Ratio DR(w) = (w' sigma) / sqrt(w' Sigma w), Effective Independent Bets DR^2 & Equal-Correlation Check")
+
+                if df is not None and not df.empty and len(df) >= 30:
+                    try:
+                        from src.analytics.choueifaty_diversification import (
+                            _build_hmac_payload as build_dr_payload,
+                            evaluate_diversification_profile,
+                            verify_hmac_signature as verify_dr_hmac,
+                        )
+                        dr_rec = evaluate_diversification_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                        )
+
+                        drm1, drm2, drm3, drm4 = st.columns(4)
+                        drm1.metric(
+                            "MDP Diversification Ratio",
+                            f"{dr_rec.dr_mdp:.3f}",
+                            delta=f"EW {dr_rec.dr_equal_weight:.3f}",
+                        )
+                        drm2.metric(
+                            "Effective Independent Bets",
+                            f"{dr_rec.effective_independent_bets:.2f} / {dr_rec.n_assets}",
+                            delta=f"Benefit {dr_rec.diversification_benefit_pct * 100:.1f}%",
+                        )
+                        drm3.metric(
+                            "MDP Vol / Equal-Wt Vol",
+                            f"{dr_rec.mdp_volatility * 100:.1f}% / {dr_rec.equal_weight_volatility * 100:.1f}%",
+                            delta=f"Corr Spread {dr_rec.active_correlation_spread:.4f}",
+                        )
+                        drm4.metric(
+                            "Diversification Regime",
+                            f"{dr_rec.n_active_holdings} active",
+                            delta=dr_rec.regime,
+                        )
+
+                        dr_sig_payload = build_dr_payload(
+                            ticker=dr_rec.ticker,
+                            n_assets=dr_rec.n_assets,
+                            dr_mdp=dr_rec.dr_mdp,
+                            dr_equal_weight=dr_rec.dr_equal_weight,
+                            effective_independent_bets=dr_rec.effective_independent_bets,
+                            mdp_volatility=dr_rec.mdp_volatility,
+                            regime=dr_rec.regime,
+                            timestamp=dr_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Choueifaty DR HMAC:** `{dr_rec.hmac_signature[:16]}...` (Sealed: `{verify_dr_hmac(dr_sig_payload, dr_rec.hmac_signature)}`)")
+                    except Exception as dr_ex:
+                        st.info(f"Choueifaty diversification deferred: {dr_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 30 price sessions to evaluate Maximum Diversification Portfolio.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

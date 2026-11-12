@@ -11530,6 +11530,39 @@ def hurst_exponent_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def max_diversification_command(args: argparse.Namespace) -> None:
+    """CLI handler for Choueifaty & Coignard (2008) Maximum Diversification Engine."""
+    import json
+    from src.analytics.choueifaty_diversification import (
+        build_synthetic_correlation_cov,
+        calculate_maximum_diversification,
+        persist_diversification_record,
+    )
+
+    cov = build_synthetic_correlation_cov(
+        n_assets=args.n_assets,
+        base_corr=args.corr,
+    )
+    receipt = calculate_maximum_diversification(cov, ticker=args.ticker)
+    persist_diversification_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"CHOUEIFATY & COIGNARD (2008) MAXIMUM DIVERSIFICATION RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Assets / Active Holdings:       {receipt.n_assets} / {receipt.n_active_holdings} (Max Wt {receipt.max_weight * 100:.1f}%)")
+    print(f"  Diversification Ratio DR(MDP):  {receipt.dr_mdp:.4f} (EW: {receipt.dr_equal_weight:.4f}, GMV: {receipt.dr_min_variance:.4f})")
+    print(f"  Effective Independent Bets:     {receipt.effective_independent_bets:.3f} (Benefit: {receipt.diversification_benefit_pct * 100:.1f}%)")
+    print(f"  MDP Vol / EW Vol / Spread:      {receipt.mdp_volatility * 100:.2f}% / {receipt.equal_weight_volatility * 100:.2f}% / {receipt.active_correlation_spread:.6f}")
+    print(f"  Diversification Regime:         {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18695,6 +18728,36 @@ def main() -> None:
         help="Output Hurst R/S fractal persistence receipt as JSON",
     )
 
+    # Choueifaty & Coignard (2008) Maximum Diversification Portfolio parser
+    dr_parser = subparsers.add_parser(
+        "max-diversification",
+        aliases=["choueifaty-dr", "cc-2008"],
+        help="Solve Choueifaty & Coignard Maximum Diversification Ratio DR(w) portfolio",
+    )
+    dr_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Portfolio or benchmark ticker symbol (default: SPY)",
+    )
+    dr_parser.add_argument(
+        "--n-assets",
+        type=int,
+        default=5,
+        dest="n_assets",
+        help="Number of sleeve assets N in [2, 50] (default: 5)",
+    )
+    dr_parser.add_argument(
+        "--corr",
+        type=float,
+        default=0.30,
+        help="Synthetic uniform pairwise asset correlation (default: 0.30)",
+    )
+    dr_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Maximum Diversification receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19065,6 +19128,8 @@ def main() -> None:
         jobson_korkie_command(args)
     elif args.command in ("hurst-exponent", "fractal-market", "rs-1951"):
         hurst_exponent_command(args)
+    elif args.command in ("max-diversification", "choueifaty-dr", "cc-2008"):
+        max_diversification_command(args)
 
 
 if __name__ == "__main__":
