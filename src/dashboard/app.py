@@ -9970,6 +9970,77 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Fundamental Law metrics.")
 
+                st.divider()
+                st.subheader("📐 Jorion (1986) Bayes-Stein Shrinkage & Portfolio Stabilization Engine")
+                st.caption("Empirical-Bayes shrinkage w_hat = (N+2)/((N+2) + T*d^2) toward GMV mean: predictive covariance & Markowitz leverage damping")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.jorion_bayes_stein import (
+                            _build_hmac_payload as build_jbs_payload,
+                            evaluate_bayes_stein_profile,
+                            verify_hmac_signature as verify_jbs_hmac,
+                        )
+                        jbs_col1, jbs_col2, jbs_col3 = st.columns(3)
+                        with jbs_col1:
+                            jbs_n = st.slider(
+                                "Cross-Asset Sleeves (N)",
+                                min_value=2,
+                                max_value=12,
+                                value=4,
+                                step=1,
+                                key=f"jbs_n_{selected_ticker}",
+                            )
+                        with jbs_col2:
+                            jbs_t = st.slider(
+                                "Estimation Sample Window (T)",
+                                min_value=20,
+                                max_value=250,
+                                value=60,
+                                step=10,
+                                key=f"jbs_t_{selected_ticker}",
+                            )
+                        with jbs_col3:
+                            jbs_disp = st.slider(
+                                "Cross-Sleeve Alpha Dispersion",
+                                min_value=0.01,
+                                max_value=0.20,
+                                value=0.06,
+                                step=0.01,
+                                key=f"jbs_d_{selected_ticker}",
+                            )
+
+                        jbs_rec = evaluate_bayes_stein_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            n_assets=jbs_n,
+                            sample_size_t=jbs_t,
+                            mean_dispersion=jbs_disp,
+                        )
+
+                        jbsm1, jbsm2, jbsm3, jbsm4 = st.columns(4)
+                        jbsm1.metric("Shrinkage Intensity (w_hat)", f"{jbs_rec.shrinkage_intensity_w * 100:.1f}%", delta=f"d^2 {jbs_rec.mahalanobis_d2:.4f}")
+                        jbsm2.metric("GMV Anchor Mean (mu_0)", f"{jbs_rec.gmv_grand_mean_mu0 * 100:.2f}%", delta=f"Disp -{jbs_rec.shrinkage_intensity_w * 100:.1f}%")
+                        jbsm3.metric("Bayes-Stein / MLE Leverage", f"{jbs_rec.bs_gross_leverage:.2f}x", delta=f"Red -{jbs_rec.leverage_reduction_pct * 100:.1f}%")
+                        jbsm4.metric("Cov Inflation & Regime", f"{jbs_rec.cov_inflation_ratio:.4f}x", delta=jbs_rec.regime)
+
+                        jbs_sig_payload = build_jbs_payload(
+                            ticker=jbs_rec.ticker,
+                            n_assets=jbs_rec.n_assets,
+                            sample_size_t=jbs_rec.sample_size_t,
+                            gmv_mu0=jbs_rec.gmv_grand_mean_mu0,
+                            mahal_d2=jbs_rec.mahalanobis_d2,
+                            shrinkage_w=jbs_rec.shrinkage_intensity_w,
+                            bs_gross_leverage=jbs_rec.bs_gross_leverage,
+                            regime=jbs_rec.regime,
+                            timestamp=jbs_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Jorion Bayes-Stein HMAC:** `{jbs_rec.hmac_signature[:16]}...` (Sealed: `{verify_jbs_hmac(jbs_sig_payload, jbs_rec.hmac_signature)}`)")
+                    except Exception as jbs_ex:
+                        st.info(f"Jorion Bayes-Stein evaluation deferred: {jbs_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Jorion Bayes-Stein shrinkage.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

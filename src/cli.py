@@ -11094,6 +11094,48 @@ def fundamental_law_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def jorion_bayes_stein_command(args: argparse.Namespace) -> None:
+    """CLI handler for Philippe Jorion (1986) Bayes-Stein Shrinkage Engine."""
+    import json
+    from src.analytics.jorion_bayes_stein import (
+        build_synthetic_asset_moments,
+        calculate_jorion_bayes_stein,
+        persist_jorion_bayes_stein_record,
+    )
+
+    means, cov = build_synthetic_asset_moments(
+        n_assets=args.n_assets,
+        mean_dispersion=args.disp,
+        base_vol=args.vol,
+    )
+    receipt = calculate_jorion_bayes_stein(
+        sample_means=means,
+        sample_cov=cov,
+        sample_size_t=args.sample_t,
+        risk_free_rate_r=args.rf,
+        ticker=args.ticker,
+    )
+    persist_jorion_bayes_stein_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"JORION (1986) BAYES-STEIN SHRINKAGE AUDIT RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Assets N / Sample Window T:     {receipt.n_assets} / {receipt.sample_size_t}")
+    print(f"  GMV Grand Mean (mu_0) / d^2:    {receipt.gmv_grand_mean_mu0 * 100:.2f}% / {receipt.mahalanobis_d2:.4f}")
+    print(f"  Shrinkage Intensity (w_hat):    {receipt.shrinkage_intensity_w * 100:.2f}% (lambda: {receipt.lambda_hyperparam:.2f})")
+    print(f"  Mean Dispersion (Sample -> BS): {receipt.mean_dispersion_sample * 100:.2f}% -> {receipt.mean_dispersion_bs * 100:.2f}%")
+    print(f"  MLE -> BS Tangency Leverage:    {receipt.mle_gross_leverage:.3f}x -> {receipt.bs_gross_leverage:.3f}x (-{receipt.leverage_reduction_pct * 100:.1f}%)")
+    print(f"  Predictive Cov Inflation:       {receipt.cov_inflation_ratio:.4f}x")
+    print(f"  Estimation Regime:              {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17678,6 +17720,55 @@ def main() -> None:
         help="Output Fundamental Law active management receipt as JSON",
     )
 
+    # Philippe Jorion (1986) Bayes-Stein Shrinkage Portfolio parser
+    jbs_parser = subparsers.add_parser(
+        "bayes-stein",
+        aliases=["jorion-1986", "shrinkage-weights"],
+        help="Compute Philippe Jorion (1986) Bayes-Stein return shrinkage & predictive covariance",
+    )
+    jbs_parser.add_argument(
+        "--ticker",
+        default="PORT",
+        help="Portfolio or benchmark ticker identifier (default: PORT)",
+    )
+    jbs_parser.add_argument(
+        "--n-assets",
+        type=int,
+        default=4,
+        dest="n_assets",
+        help="Number of portfolio assets N in [2, 50] (default: 4)",
+    )
+    jbs_parser.add_argument(
+        "--sample-t",
+        type=int,
+        default=60,
+        dest="sample_t",
+        help="Historical sample window length T > N + 2 (default: 60)",
+    )
+    jbs_parser.add_argument(
+        "--disp",
+        type=float,
+        default=0.06,
+        help="Cross-asset sample mean dispersion (default: 0.06)",
+    )
+    jbs_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.20,
+        help="Annualized base asset volatility (default: 0.20)",
+    )
+    jbs_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Risk-free benchmark rate (default: 0.04)",
+    )
+    jbs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Jorion Bayes-Stein shrinkage receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18026,6 +18117,8 @@ def main() -> None:
         duffie_singleton_command(args)
     elif args.command in ("fundamental-law", "grinold-kahn", "gk-1989"):
         fundamental_law_command(args)
+    elif args.command in ("bayes-stein", "jorion-1986", "shrinkage-weights"):
+        jorion_bayes_stein_command(args)
 
 
 if __name__ == "__main__":
