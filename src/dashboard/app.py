@@ -10777,6 +10777,60 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to calibrate Copeland-Galai bid-ask spread.")
 
+                st.divider()
+                st.subheader("⚖️ Maillard, Roncalli & Teiletche (2010) / Spinu (2013) Equal Risk Parity (ERC)")
+                st.caption("Convex log-barrier Euler risk-budgeting solution enforcing RC_i / sigma_p = b_i with sigma_ERC <= sigma_EW")
+
+                if df is not None and not df.empty and len(df) >= 25:
+                    try:
+                        from src.analytics.maillard_erc_portfolio import (
+                            _build_hmac_payload as build_erc_payload,
+                            evaluate_erc_profile,
+                            verify_hmac_signature as verify_erc_hmac,
+                        )
+                        erc_rec = evaluate_erc_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                        )
+
+                        em1, em2, em3, em4 = st.columns(4)
+                        em1.metric(
+                            "ERC / Equal-Wt Volatility",
+                            f"{erc_rec.erc_volatility * 100:.2f}% / {erc_rec.equal_weight_volatility * 100:.2f}%",
+                            delta=f"InvVol {erc_rec.inverse_vol_volatility * 100:.2f}%",
+                        )
+                        em2.metric(
+                            "Effective Risk Bets (N_eff)",
+                            f"{erc_rec.effective_risk_bets:.3f} / {erc_rec.n_assets}",
+                            delta=f"DR {erc_rec.diversification_ratio:.3f}",
+                        )
+                        em3.metric(
+                            "Max Risk-Budget Error",
+                            f"{erc_rec.max_risk_budget_error:.2e}",
+                            delta=f"Weight HHI {erc_rec.weight_herfindahl:.3f}",
+                        )
+                        em4.metric(
+                            "Risk Parity Regime",
+                            f"{erc_rec.n_assets} sleeves",
+                            delta=erc_rec.regime,
+                        )
+
+                        erc_sig_payload = build_erc_payload(
+                            ticker=erc_rec.ticker,
+                            n_assets=erc_rec.n_assets,
+                            erc_volatility=erc_rec.erc_volatility,
+                            equal_weight_volatility=erc_rec.equal_weight_volatility,
+                            max_risk_budget_error=erc_rec.max_risk_budget_error,
+                            effective_risk_bets=erc_rec.effective_risk_bets,
+                            regime=erc_rec.regime,
+                            timestamp=erc_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Maillard ERC HMAC:** `{erc_rec.hmac_signature[:16]}...` (Sealed: `{verify_erc_hmac(erc_sig_payload, erc_rec.hmac_signature)}`)")
+                    except Exception as erc_ex:
+                        st.info(f"Maillard ERC risk parity deferred: {erc_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 25 price sessions to calibrate Equal Risk Contribution portfolio.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

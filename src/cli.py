@@ -11631,6 +11631,36 @@ def copeland_galai_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def erc_portfolio_command(args: argparse.Namespace) -> None:
+    """CLI handler for Maillard, Roncalli & Teiletche (2010) / Spinu (2013) ERC."""
+    import json
+    from src.analytics.maillard_erc_portfolio import (
+        build_synthetic_erc_cov,
+        calculate_erc_portfolio,
+        persist_erc_record,
+    )
+
+    vols = [0.10 + 0.05 * i for i in range(args.n_assets)]
+    cov = build_synthetic_erc_cov(vols=vols, base_corr=args.corr)
+    receipt = calculate_erc_portfolio(cov, ticker=args.ticker)
+    persist_erc_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"MAILLARD, RONCALLI & TEILETCHE (2010) ERC RISK PARITY — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Assets / Effective Risk Bets:   {receipt.n_assets} / {receipt.effective_risk_bets:.4f} (DR: {receipt.diversification_ratio:.3f})")
+    print(f"  ERC / EW / InvVol Volatility:   {receipt.erc_volatility * 100:.2f}% / {receipt.equal_weight_volatility * 100:.2f}% / {receipt.inverse_vol_volatility * 100:.2f}%")
+    print(f"  Max Risk-Budget Error / HHI:    {receipt.max_risk_budget_error:.2e} / {receipt.weight_herfindahl:.4f}")
+    print(f"  Parity Regime:                  {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18893,6 +18923,36 @@ def main() -> None:
         help="Output Copeland & Galai spread equilibrium receipt as JSON",
     )
 
+    # Maillard, Roncalli & Teiletche (2010) / Spinu (2013) ERC Risk Parity parser
+    erc_parser = subparsers.add_parser(
+        "erc-portfolio",
+        aliases=["risk-budget", "mrt-2010"],
+        help="Solve convex Equal Risk Contribution (ERC) / Risk-Budgeting portfolio",
+    )
+    erc_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Benchmark or portfolio sleeve ticker symbol (default: SPY)",
+    )
+    erc_parser.add_argument(
+        "--n-assets",
+        type=int,
+        default=4,
+        dest="n_assets",
+        help="Number of sleeve assets N >= 2 (default: 4)",
+    )
+    erc_parser.add_argument(
+        "--corr",
+        type=float,
+        default=0.25,
+        help="Synthetic uniform pairwise asset correlation (default: 0.25)",
+    )
+    erc_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output ERC Risk Parity receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19269,6 +19329,8 @@ def main() -> None:
         brinson_attribution_command(args)
     elif args.command in ("copeland-galai", "option-spread", "cg-1983"):
         copeland_galai_command(args)
+    elif args.command in ("erc-portfolio", "risk-budget", "mrt-2010"):
+        erc_portfolio_command(args)
 
 
 if __name__ == "__main__":
