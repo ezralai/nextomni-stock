@@ -10438,6 +10438,61 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 24 price sessions to compute Lo & MacKinlay Variance Ratio.")
 
+                st.divider()
+                st.subheader("⚖️ Gibbons, Ross & Shanken (1989) Multivariate GRS Efficiency F-Test")
+                st.caption("Exact finite-sample F(N, T-N-K) test of H0: alpha_1=...=alpha_N=0 & ex-post Sharpe spanning gap theta_p^2 - theta_K^2")
+
+                if df is not None and not df.empty and len(df) >= 40:
+                    try:
+                        from src.analytics.gibbons_ross_shanken import (
+                            _build_hmac_payload as build_grs_payload,
+                            evaluate_grs_profile,
+                            verify_hmac_signature as verify_grs_hmac,
+                        )
+                        grs_rec = evaluate_grs_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                        )
+
+                        gm1, gm2, gm3, gm4 = st.columns(4)
+                        gm1.metric(
+                            f"GRS W ~ F({grs_rec.df_num}, {grs_rec.df_den})",
+                            f"{grs_rec.grs_f_stat:.3f}",
+                            delta=f"p = {grs_rec.grs_p_value:.4f}",
+                        )
+                        gm2.metric(
+                            "Factor / Combined Sharpe",
+                            f"{grs_rec.factor_sharpe_ann:.2f} / {grs_rec.combined_sharpe_ann:.2f}",
+                            delta=f"Delta SR^2 {grs_rec.sharpe_spanning_gap_sq * 252:.3f}",
+                        )
+                        gm3.metric(
+                            "Mean / Max |Alpha| Ann.",
+                            f"{grs_rec.mean_abs_alpha_ann * 100:.2f}% / {grs_rec.max_abs_alpha_ann * 100:.2f}%",
+                            delta=f"T={grs_rec.n_obs}, N={grs_rec.n_assets}, K={grs_rec.n_factors}",
+                        )
+                        gm4.metric(
+                            "GRS Spanning Regime",
+                            "Efficient" if grs_rec.grs_p_value > 0.05 else "Inefficient",
+                            delta=grs_rec.regime,
+                        )
+
+                        grs_sig_payload = build_grs_payload(
+                            ticker=grs_rec.ticker,
+                            n_obs=grs_rec.n_obs,
+                            n_assets=grs_rec.n_assets,
+                            n_factors=grs_rec.n_factors,
+                            grs_f_stat=grs_rec.grs_f_stat,
+                            grs_p_value=grs_rec.grs_p_value,
+                            sharpe_spanning_gap_sq=grs_rec.sharpe_spanning_gap_sq,
+                            regime=grs_rec.regime,
+                            timestamp=grs_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **GRS Efficiency HMAC:** `{grs_rec.hmac_signature[:16]}...` (Sealed: `{verify_grs_hmac(grs_sig_payload, grs_rec.hmac_signature)}`)")
+                    except Exception as grs_ex:
+                        st.info(f"GRS multivariate evaluation deferred: {grs_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 40 price sessions to evaluate Gibbons-Ross-Shanken GRS spanning.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

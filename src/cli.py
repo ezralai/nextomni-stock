@@ -11413,6 +11413,42 @@ def lo_mackinlay_vr_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def grs_test_command(args: argparse.Namespace) -> None:
+    """CLI handler for Gibbons, Ross & Shanken (1989) Multivariate GRS F-Test."""
+    import json
+    from src.analytics.gibbons_ross_shanken import (
+        build_synthetic_grs_returns,
+        calculate_grs_test,
+        persist_grs_record,
+    )
+
+    assets, factors = build_synthetic_grs_returns(
+        n_obs=args.n_obs,
+        n_assets=args.n_assets,
+        n_factors=args.n_factors,
+        alpha_ann_level=args.alpha_ann,
+        idio_vol_ann=args.idio_vol,
+    )
+    receipt = calculate_grs_test(assets, factors, ticker=args.ticker)
+    persist_grs_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"GIBBONS, ROSS & SHANKEN (1989) GRS MULTIVARIATE EFFICIENCY RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Panel Shape (T / N / K):        {receipt.n_obs} / {receipt.n_assets} / {receipt.n_factors} (df: {receipt.df_num}, {receipt.df_den})")
+    print(f"  GRS F-Statistic / p-value:      {receipt.grs_f_stat:.4f} / {receipt.grs_p_value:.6f}")
+    print(f"  Factor / Combined Ann. Sharpe:  {receipt.factor_sharpe_ann:.3f} / {receipt.combined_sharpe_ann:.3f}")
+    print(f"  Daily Sharpe^2 Spanning Gap:    {receipt.sharpe_spanning_gap_sq:.6f} (Mean |alpha| ann: {receipt.mean_abs_alpha_ann * 100:.2f}%)")
+    print(f"  Efficiency Regime:              {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18424,6 +18460,58 @@ def main() -> None:
         help="Output Lo & MacKinlay Variance Ratio receipt as JSON",
     )
 
+    # Gibbons, Ross & Shanken (1989) Multivariate GRS F-Test parser
+    grs_parser = subparsers.add_parser(
+        "grs-test",
+        aliases=["gibbons-ross-shanken", "grs-1989"],
+        help="Run exact finite-sample Gibbons-Ross-Shanken multivariate alpha efficiency F-test",
+    )
+    grs_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Benchmark factor proxy ticker symbol (default: SPY)",
+    )
+    grs_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=180,
+        dest="n_obs",
+        help="Time-series session count T (default: 180)",
+    )
+    grs_parser.add_argument(
+        "--n-assets",
+        type=int,
+        default=4,
+        dest="n_assets",
+        help="Number of test portfolios N (default: 4)",
+    )
+    grs_parser.add_argument(
+        "--n-factors",
+        type=int,
+        default=1,
+        dest="n_factors",
+        help="Number of benchmark factors K (default: 1)",
+    )
+    grs_parser.add_argument(
+        "--alpha-ann",
+        type=float,
+        default=0.0,
+        dest="alpha_ann",
+        help="Annualized joint pricing alpha injected into synthetic test assets (default: 0.0)",
+    )
+    grs_parser.add_argument(
+        "--idio-vol",
+        type=float,
+        default=0.10,
+        dest="idio_vol",
+        help="Annualized idiosyncratic residual volatility (default: 0.10)",
+    )
+    grs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output GRS multivariate efficiency receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18788,6 +18876,8 @@ def main() -> None:
         kelly_growth_command(args)
     elif args.command in ("variance-ratio", "lo-mackinlay", "lm-1988"):
         lo_mackinlay_vr_command(args)
+    elif args.command in ("grs-test", "gibbons-ross-shanken", "grs-1989"):
+        grs_test_command(args)
 
 
 if __name__ == "__main__":
