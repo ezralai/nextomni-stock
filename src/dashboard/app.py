@@ -10169,6 +10169,69 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Malkiel bond duration.")
 
+                st.divider()
+                st.subheader("📉 Brown, Goetzmann, Ibbotson & Ross (1992) Survivorship Bias Engine")
+                st.caption("Left-truncated Gaussian attrition E[R|R>=c] = mu + sigma*lambda(alpha): return bias, risk attenuation & phantom Sharpe")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.brown_goetzmann_survivorship import (
+                            _build_hmac_payload as build_bg_payload,
+                            evaluate_survivorship_profile,
+                            verify_hmac_signature as verify_bg_hmac,
+                        )
+                        bg_col1, bg_col2 = st.columns(2)
+                        with bg_col1:
+                            bg_cutoff = st.slider(
+                                "Annual Liquidation Cutoff Return (c)",
+                                min_value=-0.35,
+                                max_value=0.05,
+                                value=-0.10,
+                                step=0.05,
+                                key=f"bg_cut_{selected_ticker}",
+                            )
+                        with bg_col2:
+                            bg_horizon = st.slider(
+                                "Cumulative Attrition Horizon (Years)",
+                                min_value=1.0,
+                                max_value=15.0,
+                                value=5.0,
+                                step=1.0,
+                                key=f"bg_hor_{selected_ticker}",
+                            )
+
+                        bg_rec = evaluate_survivorship_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            liquidation_cutoff_c=bg_cutoff,
+                            horizon_years=bg_horizon,
+                        )
+
+                        bgm1, bgm2, bgm3, bgm4 = st.columns(4)
+                        bgm1.metric("Survivorship Bias (bps)", f"+{bg_rec.survivorship_bias_bps:.0f} bps", delta=f"Surv {bg_rec.annual_survival_prob * 100:.1f}%/yr")
+                        bgm2.metric("Obs Mean / True Mean", f"{bg_rec.observed_survivor_mean * 100:.2f}%", delta=f"True {bg_rec.true_universe_mean * 100:.2f}%")
+                        bgm3.metric("Survivor Risk Attenuation", f"{bg_rec.observed_survivor_vol * 100:.1f}%", delta=f"True {bg_rec.true_universe_vol * 100:.1f}%")
+                        bgm4.metric("Apparent Sharpe Inflation", f"+{bg_rec.sharpe_bias_delta:.2f}", delta=bg_rec.regime)
+
+                        bg_sig_payload = build_bg_payload(
+                            ticker=bg_rec.ticker,
+                            mu_true=bg_rec.true_universe_mean,
+                            vol_true=bg_rec.true_universe_vol,
+                            cutoff_c=bg_rec.liquidation_cutoff_c,
+                            horizon=bg_rec.horizon_years,
+                            surv_prob=bg_rec.annual_survival_prob,
+                            bias_bps=bg_rec.survivorship_bias_bps,
+                            obs_vol=bg_rec.observed_survivor_vol,
+                            sharpe_delta=bg_rec.sharpe_bias_delta,
+                            regime=bg_rec.regime,
+                            timestamp=bg_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **BGIR Survivorship HMAC:** `{bg_rec.hmac_signature[:16]}...` (Sealed: `{verify_bg_hmac(bg_sig_payload, bg_rec.hmac_signature)}`)")
+                    except Exception as bg_ex:
+                        st.info(f"BGIR survivorship bias evaluation deferred: {bg_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate BGIR survivorship bias.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

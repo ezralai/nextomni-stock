@@ -11212,6 +11212,42 @@ def malkiel_duration_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def brown_goetzmann_command(args: argparse.Namespace) -> None:
+    """CLI handler for BGIR (1992) Survivorship Bias & Attrition Engine."""
+    import json
+    from src.analytics.brown_goetzmann_survivorship import (
+        calculate_survivorship_bias,
+        persist_brown_goetzmann_record,
+    )
+
+    receipt = calculate_survivorship_bias(
+        true_universe_mean=args.mu,
+        true_universe_vol=args.vol,
+        liquidation_cutoff_c=args.cutoff,
+        horizon_years=args.horizon,
+        risk_free_rate_r=args.rf,
+        ticker=args.ticker,
+    )
+    persist_brown_goetzmann_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"BROWN, GOETZMANN, IBBOTSON & ROSS (1992) SURVIVORSHIP RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  True Universe Mean / Vol:       {receipt.true_universe_mean * 100:.2f}% / {receipt.true_universe_vol * 100:.2f}% (SR: {receipt.true_universe_sharpe:+.3f})")
+    print(f"  Cutoff c / Annual Surv Rate:    {receipt.liquidation_cutoff_c * 100:+.2f}% / {receipt.annual_survival_prob * 100:.2f}% ({receipt.horizon_years:.0f}y Surv: {receipt.multiyear_survival_prob * 100:.2f}%)")
+    print(f"  Survivorship Return Bias:       +{receipt.survivorship_return_bias * 100:.2f}% (+{receipt.survivorship_bias_bps:.1f} bps)")
+    print(f"  Observed Survivor Mean / Vol:   {receipt.observed_survivor_mean * 100:.2f}% / {receipt.observed_survivor_vol * 100:.2f}%")
+    print(f"  Apparent Sharpe / Inflation:    {receipt.apparent_survivor_sharpe:+.3f} (+{receipt.sharpe_bias_delta:.3f})")
+    print(f"  Attrition Regime:               {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17955,6 +17991,53 @@ def main() -> None:
         help="Output Malkiel bond duration receipt as JSON",
     )
 
+    # Brown, Goetzmann, Ibbotson & Ross (1992) Survivorship Bias parser
+    bg_parser = subparsers.add_parser(
+        "survivorship-bias",
+        aliases=["bgir-1992", "truncation-bias"],
+        help="Quantify truncated-normal survivorship return bias & Sharpe inflation (BGIR 1992)",
+    )
+    bg_parser.add_argument(
+        "--ticker",
+        default="HFRI",
+        help="Fund index or strategy universe ticker (default: HFRI)",
+    )
+    bg_parser.add_argument(
+        "--mu",
+        type=float,
+        default=0.08,
+        help="True unconditional universe expected return (default: 0.08)",
+    )
+    bg_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.20,
+        help="True unconditional universe volatility (default: 0.20)",
+    )
+    bg_parser.add_argument(
+        "--cutoff",
+        type=float,
+        default=-0.10,
+        help="Annual liquidation attrition cutoff return (default: -0.10)",
+    )
+    bg_parser.add_argument(
+        "--horizon",
+        type=float,
+        default=5.0,
+        help="Cumulative survival attrition horizon in years (default: 5.0)",
+    )
+    bg_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Risk-free benchmark rate (default: 0.04)",
+    )
+    bg_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output BGIR survivorship bias receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18309,6 +18392,8 @@ def main() -> None:
         modigliani_m2_command(args)
     elif args.command in ("bond-duration", "malkiel-duration", "convexity-theorems"):
         malkiel_duration_command(args)
+    elif args.command in ("survivorship-bias", "bgir-1992", "truncation-bias"):
+        brown_goetzmann_command(args)
 
 
 if __name__ == "__main__":
