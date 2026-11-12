@@ -10272,6 +10272,45 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to evaluate Sharpe RBSA.")
 
+                st.divider()
+                st.subheader("🧭 Treynor-Mazuy (1966) & Henriksson-Merton (1981) Market-Timing Convexity")
+                st.caption("Asymmetric Bull/Bear option timing beta_up = beta_down + gamma_HM & quadratic Treynor-Mazuy curvature gamma_TM")
+
+                if df is not None and not df.empty and len(df) >= 22:
+                    try:
+                        from src.analytics.market_timing_convexity import (
+                            _build_hmac_payload as build_mt_payload,
+                            evaluate_market_timing_profile,
+                            verify_hmac_signature as verify_mt_hmac,
+                        )
+                        mt_rec = evaluate_market_timing_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                        )
+
+                        mtm1, mtm2, mtm3, mtm4 = st.columns(4)
+                        mtm1.metric("Bull / Bear Beta", f"{mt_rec.hm_beta_up:.2f} / {mt_rec.hm_beta_down:.2f}", delta=f"Spread {mt_rec.bull_bear_beta_spread:+.2f}")
+                        mtm2.metric("HM Option Timing gamma", f"{mt_rec.hm_gamma:+.3f}", delta=f"t = {mt_rec.hm_gamma_tstat:+.2f}")
+                        mtm3.metric("TM Curvature gamma", f"{mt_rec.tm_gamma:+.2f}", delta=f"R^2 {mt_rec.tm_r2 * 100:.1f}%")
+                        mtm4.metric("HM Alpha & Regime", f"{mt_rec.hm_alpha_ann * 100:+.1f}%", delta=mt_rec.regime)
+
+                        mt_sig_payload = build_mt_payload(
+                            ticker=mt_rec.ticker,
+                            n_obs=mt_rec.n_obs,
+                            tm_gamma=mt_rec.tm_gamma,
+                            hm_beta_down=mt_rec.hm_beta_down,
+                            hm_beta_up=mt_rec.hm_beta_up,
+                            hm_gamma=mt_rec.hm_gamma,
+                            hm_gamma_tstat=mt_rec.hm_gamma_tstat,
+                            regime=mt_rec.regime,
+                            timestamp=mt_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Market Timing HMAC:** `{mt_rec.hmac_signature[:16]}...` (Sealed: `{verify_mt_hmac(mt_sig_payload, mt_rec.hmac_signature)}`)")
+                    except Exception as mt_ex:
+                        st.info(f"Market timing evaluation deferred: {mt_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 22 price sessions to evaluate market timing convexity.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

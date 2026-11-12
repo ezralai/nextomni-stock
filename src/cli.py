@@ -11295,6 +11295,48 @@ def sharpe_style_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def market_timing_command(args: argparse.Namespace) -> None:
+    """CLI handler for Treynor-Mazuy (1966) & Henriksson-Merton (1981) Market Timing."""
+    import json
+    from src.analytics.market_timing_convexity import (
+        build_synthetic_timing_returns,
+        calculate_market_timing,
+        persist_market_timing_record,
+    )
+
+    rp, rm = build_synthetic_timing_returns(
+        beta_down=args.beta_down,
+        gamma_hm=args.gamma_hm,
+        alpha_ann=args.alpha_ann,
+        n_obs=args.n_obs,
+        noise_vol_ann=args.noise_vol,
+    )
+    receipt = calculate_market_timing(
+        portfolio_returns=rp,
+        market_returns=rm,
+        risk_free_annual=args.rf,
+        ticker=args.ticker,
+    )
+    persist_market_timing_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"TREYNOR-MAZUY & HENRIKSSON-MERTON MARKET TIMING RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Observations / Risk-Free Rate:  {receipt.n_obs} / {receipt.risk_free_annual * 100:.2f}%")
+    print(f"  HM Bear / Bull Beta:            {receipt.hm_beta_down:.3f} / {receipt.hm_beta_up:.3f} (Spread: {receipt.bull_bear_beta_spread:+.3f})")
+    print(f"  HM Option Timing gamma / t:     {receipt.hm_gamma:+.4f} / {receipt.hm_gamma_tstat:+.2f} (R^2: {receipt.hm_r2 * 100:.1f}%)")
+    print(f"  TM Quadratic gamma / t:         {receipt.tm_gamma:+.3f} / {receipt.tm_gamma_tstat:+.2f} (R^2: {receipt.tm_r2 * 100:.1f}%)")
+    print(f"  Annualized Selection Alpha:     TM {receipt.tm_alpha_ann * 100:+.2f}% / HM {receipt.hm_alpha_ann * 100:+.2f}%")
+    print(f"  Timing Regime:                  {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18151,6 +18193,64 @@ def main() -> None:
         help="Output Sharpe RBSA receipt as JSON",
     )
 
+    # Treynor & Mazuy (1966) & Henriksson & Merton (1981) Market Timing parser
+    mt_parser = subparsers.add_parser(
+        "market-timing",
+        aliases=["henriksson-merton", "treynor-mazuy", "hm-1981"],
+        help="Evaluate parametric market-timing convexity & Bull/Bear beta asymmetry",
+    )
+    mt_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Fund or equity strategy ticker symbol (default: SPY)",
+    )
+    mt_parser.add_argument(
+        "--beta-down",
+        type=float,
+        default=0.70,
+        dest="beta_down",
+        help="Downside bear-market beta exposure (default: 0.70)",
+    )
+    mt_parser.add_argument(
+        "--gamma-hm",
+        type=float,
+        default=0.50,
+        dest="gamma_hm",
+        help="Henriksson-Merton option-like timing delta beta (default: 0.50)",
+    )
+    mt_parser.add_argument(
+        "--alpha-ann",
+        type=float,
+        default=0.01,
+        dest="alpha_ann",
+        help="Annualized stock-selection alpha component (default: 0.01)",
+    )
+    mt_parser.add_argument(
+        "--noise-vol",
+        type=float,
+        default=0.02,
+        dest="noise_vol",
+        help="Annualized idiosyncratic residual volatility (default: 0.02)",
+    )
+    mt_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Annual risk-free benchmark rate (default: 0.04)",
+    )
+    mt_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=160,
+        dest="n_obs",
+        help="Number of paired return sessions (default: 160)",
+    )
+    mt_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Market Timing convexity receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18509,6 +18609,8 @@ def main() -> None:
         brown_goetzmann_command(args)
     elif args.command in ("style-analysis", "sharpe-rbsa", "rbsa-1992"):
         sharpe_style_command(args)
+    elif args.command in ("market-timing", "henriksson-merton", "treynor-mazuy", "hm-1981"):
+        market_timing_command(args)
 
 
 if __name__ == "__main__":
