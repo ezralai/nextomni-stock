@@ -10714,6 +10714,69 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 21 price sessions to evaluate Brinson attribution.")
 
+                st.divider()
+                st.subheader("⚖️ Copeland & Galai (1983) Option-Theoretic Bid-Ask Spread Equilibrium")
+                st.caption("Competitive dealer zero-profit straddle equilibrium: (1 - pi_I)*delta* = pi_I*[C(P_0, P_0+delta*) + P(P_0, P_0-delta*)]")
+
+                if df is not None and not df.empty and len(df) >= 20:
+                    try:
+                        from src.analytics.copeland_galai_spread import (
+                            _build_hmac_payload as build_cg_payload,
+                            evaluate_copeland_galai_profile,
+                            verify_hmac_signature as verify_cg_hmac,
+                        )
+                        cg_pi = st.slider(
+                            "Informed Arrival Share (pi_I)",
+                            min_value=0.0,
+                            max_value=0.60,
+                            value=0.15,
+                            step=0.05,
+                            key=f"cg_pi_{selected_ticker}",
+                        )
+                        cg_rec = evaluate_copeland_galai_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            informed_prob=cg_pi,
+                        )
+
+                        cm1, cm2, cm3, cm4 = st.columns(4)
+                        cm1.metric(
+                            "Equilibrium Bid / Ask",
+                            f"${cg_rec.bid_price:.2f} / ${cg_rec.ask_price:.2f}",
+                            delta=f"Spread ${cg_rec.equilibrium_spread:.3f}",
+                        )
+                        cm2.metric(
+                            "Equilibrium Spread (bps)",
+                            f"{cg_rec.spread_bps:.1f} bps",
+                            delta=f"+{cg_rec.spread_sensitivity_per_1pct_pi:.1f} bps / +1% pi_I",
+                        )
+                        cm3.metric(
+                            "Informed Option C + P",
+                            f"${cg_rec.informed_call_value + cg_rec.informed_put_value:.3f}",
+                            delta=f"ATM Bound ${cg_rec.atm_straddle_upper_bound:.3f}",
+                        )
+                        cm4.metric(
+                            "Dealer Spread Regime",
+                            f"Vol {cg_rec.volatility_annual * 100:.1f}%",
+                            delta=cg_rec.regime,
+                        )
+
+                        cg_sig_payload = build_cg_payload(
+                            ticker=cg_rec.ticker,
+                            spot_price=cg_rec.spot_price,
+                            volatility_annual=cg_rec.volatility_annual,
+                            informed_prob=cg_rec.informed_prob,
+                            equilibrium_spread=cg_rec.equilibrium_spread,
+                            spread_bps=cg_rec.spread_bps,
+                            regime=cg_rec.regime,
+                            timestamp=cg_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Copeland-Galai HMAC:** `{cg_rec.hmac_signature[:16]}...` (Sealed: `{verify_cg_hmac(cg_sig_payload, cg_rec.hmac_signature)}`)")
+                    except Exception as cg_ex:
+                        st.info(f"Copeland-Galai equilibrium deferred: {cg_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to calibrate Copeland-Galai bid-ask spread.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

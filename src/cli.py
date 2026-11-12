@@ -11596,6 +11596,41 @@ def brinson_attribution_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def copeland_galai_command(args: argparse.Namespace) -> None:
+    """CLI handler for Copeland & Galai (1983) Option-Theoretic Bid-Ask Spread."""
+    import json
+    from src.analytics.copeland_galai_spread import (
+        calculate_copeland_galai_spread,
+        persist_copeland_galai_record,
+    )
+
+    receipt = calculate_copeland_galai_spread(
+        spot_price=args.spot,
+        volatility_annual=args.vol,
+        informed_prob=args.informed_prob,
+        quote_life_years=args.quote_days / 252.0,
+        ticker=args.ticker,
+    )
+    persist_copeland_galai_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"COPELAND & GALAI (1983) BID-ASK SPREAD EQUILIBRIUM — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Spot / Ann Vol / Informed pi_I: ${receipt.spot_price:.2f} / {receipt.volatility_annual * 100:.1f}% / {receipt.informed_prob * 100:.1f}%")
+    print(f"  Equilibrium Bid / Ask Quotes:   ${receipt.bid_price:.4f} / ${receipt.ask_price:.4f}")
+    print(f"  Equilibrium Spread / bps:       ${receipt.equilibrium_spread:.4f} ({receipt.spread_bps:.2f} bps)")
+    print(f"  Informed Call / Put Value:      ${receipt.informed_call_value:.4f} / ${receipt.informed_put_value:.4f} (Residual: {receipt.equilibrium_residual:.2e})")
+    print(f"  Sensitivity per +1% pi_I:       +{receipt.spread_sensitivity_per_1pct_pi:.2f} bps")
+    print(f"  Microstructure Regime:          {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18815,6 +18850,49 @@ def main() -> None:
         help="Output Brinson attribution receipt as JSON",
     )
 
+    # Copeland & Galai (1983) Option-Theoretic Bid-Ask Spread parser
+    cg_parser = subparsers.add_parser(
+        "copeland-galai",
+        aliases=["option-spread", "cg-1983"],
+        help="Solve Copeland & Galai option-theoretic dealer bid-ask spread equilibrium",
+    )
+    cg_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Asset ticker symbol (default: SPY)",
+    )
+    cg_parser.add_argument(
+        "--spot",
+        type=float,
+        default=100.0,
+        help="Current spot asset price P_0 (default: 100.0)",
+    )
+    cg_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.25,
+        help="Annualized fundamental volatility sigma (default: 0.25)",
+    )
+    cg_parser.add_argument(
+        "--informed-prob",
+        type=float,
+        default=0.15,
+        dest="informed_prob",
+        help="Probability of informed trader arrival pi_I in [0, 0.85) (default: 0.15)",
+    )
+    cg_parser.add_argument(
+        "--quote-days",
+        type=float,
+        default=1.0,
+        dest="quote_days",
+        help="Dealer quote-life horizon in trading days (default: 1.0)",
+    )
+    cg_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Copeland & Galai spread equilibrium receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19189,6 +19267,8 @@ def main() -> None:
         max_diversification_command(args)
     elif args.command in ("brinson-attribution", "bhb-1986", "brinson-fachler"):
         brinson_attribution_command(args)
+    elif args.command in ("copeland-galai", "option-spread", "cg-1983"):
+        copeland_galai_command(args)
 
 
 if __name__ == "__main__":
