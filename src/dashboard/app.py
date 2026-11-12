@@ -10893,6 +10893,30 @@ def render_dashboard() -> None:
                 except Exception as bdt_ex:
                     st.info(f"Black-Derman-Toy short-rate lattice deferred: {bdt_ex}")
 
+                st.divider()
+                st.markdown("#### 📐 Nelson-Siegel-Svensson (1987/1994) Yield Curve Factors")
+                try:
+                    from src.analytics.nelson_siegel_svensson import evaluate_nss_profile
+                    if len(prices) >= 25:
+                        nss_rec = evaluate_nss_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                        )
+                        nc1, nc2, nc3, nc4 = st.columns(4)
+                        nc1.metric("β₀ Level / β₁ Slope", f"{nss_rec.beta0_level*100:.2f}% / {nss_rec.beta1_slope*100:+.2f}%")
+                        nc2.metric("β₂ / β₃ Curvature", f"{nss_rec.beta2_curvature*100:+.2f}% / {nss_rec.beta3_second_hump*100:+.2f}%")
+                        nc3.metric("10Y-2Y / RMSE", f"{nss_rec.spread_10y_2y_bps:+.1f} bps / {nss_rec.rmse_bps:.2f} bps")
+                        nc4.metric("NSS Regime", nss_rec.regime)
+                        st.caption(
+                            f"τ₁={nss_rec.tau1:.2f}y, τ₂={nss_rec.tau2:.2f}y | "
+                            f"Short-end limit={nss_rec.short_end_limit*100:.2f}% | R²={nss_rec.r_squared:.5f} | "
+                            f"HMAC `{nss_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions to fit Nelson-Siegel-Svensson curve.")
+                except Exception as nss_ex:
+                    st.info(f"Nelson-Siegel-Svensson yield curve fit deferred: {nss_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

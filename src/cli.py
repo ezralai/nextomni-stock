@@ -11754,6 +11754,41 @@ def bdt_lattice_command(args: argparse.Namespace) -> None:
     )
 
 
+def nss_curve_command(args: argparse.Namespace) -> None:
+    """Run Nelson-Siegel-Svensson (1987/1994) Yield Curve Factor Fitting."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.nelson_siegel_svensson import (
+        build_synthetic_nss_curve,
+        fit_nelson_siegel_svensson,
+        persist_nss_record,
+    )
+
+    ticker = str(getattr(args, "ticker", "UST")).strip().upper()
+    mode = str(getattr(args, "mode", "normal"))
+
+    maturities, yields = build_synthetic_nss_curve(mode=mode)
+    receipt = fit_nelson_siegel_svensson(
+        maturities=maturities,
+        yields=yields,
+        ticker=ticker,
+    )
+    persist_nss_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n📐 Nelson-Siegel-Svensson (1987/1994) Yield Curve [{receipt.ticker}]"
+        f"\n  β₀(Level)={receipt.beta0_level*100:.3f}% | β₁(Slope)={receipt.beta1_slope*100:+.3f}% | "
+        f"β₂(Curv1)={receipt.beta2_curvature*100:+.3f}% | β₃(Curv2)={receipt.beta3_second_hump*100:+.3f}%"
+        f"\n  τ₁={receipt.tau1:.3f}y | τ₂={receipt.tau2:.3f}y | "
+        f"10Y-2Y={receipt.spread_10y_2y_bps:+.2f} bps | RMSE={receipt.rmse_bps:.4f} bps | R²={receipt.r_squared:.6f}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19126,6 +19161,28 @@ def main() -> None:
         help="Output Black-Derman-Toy lattice receipt as JSON",
     )
 
+    nss_parser = subparsers.add_parser(
+        "nss-curve",
+        aliases=["nelson-siegel", "svensson", "nss-1994", "yield-curve-fit"],
+        help="Fit Nelson-Siegel-Svensson (1987/1994) Parametric Yield Curve Factors",
+    )
+    nss_parser.add_argument(
+        "--ticker",
+        default="UST",
+        help="Curve ticker symbol (default: UST)",
+    )
+    nss_parser.add_argument(
+        "--mode",
+        choices=["normal", "humped", "inverted", "flat"],
+        default="normal",
+        help="Synthetic yield curve shape mode (default: normal)",
+    )
+    nss_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Nelson-Siegel-Svensson receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19508,6 +19565,8 @@ def main() -> None:
         var_backtest_command(args)
     elif args.command in ("bdt-lattice", "black-derman-toy", "bdt-1990", "rate-lattice"):
         bdt_lattice_command(args)
+    elif args.command in ("nss-curve", "nelson-siegel", "svensson", "nss-1994", "yield-curve-fit"):
+        nss_curve_command(args)
 
 
 if __name__ == "__main__":
