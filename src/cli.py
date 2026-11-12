@@ -11944,6 +11944,41 @@ def lo_sharpe_command(args: argparse.Namespace) -> None:
     )
 
 
+def key_rate_immunization_command(args: argparse.Namespace) -> None:
+    """Run Ho (1992) Key-Rate Duration & Fisher-Weil (1971) Liability Immunization."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.key_rate_immunization import (
+        persist_krd_record,
+        solve_key_rate_immunization,
+    )
+
+    ticker = str(getattr(args, "ticker", "ALM")).strip().upper()
+    liab_mat = float(getattr(args, "liab_maturity", 10.0))
+    mode = str(getattr(args, "mode", "ladder"))
+
+    receipt = solve_key_rate_immunization(
+        liability_maturity=liab_mat,
+        mode=mode,
+        ticker=ticker,
+    )
+    persist_krd_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n🛡️ Ho (1992) Key-Rate Duration & Fisher-Weil Immunization [{receipt.ticker}]"
+        f"\n  Liab T={receipt.liability_maturity:.1f}y | PV={receipt.liability_pv:.2f} | "
+        f"Dur(A/L)={receipt.asset_duration:.3f}/{receipt.liability_duration:.3f} | "
+        f"ConvSurplus={receipt.convexity_surplus:+.2f}"
+        f"\n  KRD[1Y={receipt.krd_1y:.2f}, 2Y={receipt.krd_2y:.2f}, 5Y={receipt.krd_5y:.2f}, "
+        f"10Y={receipt.krd_10y:.2f}, 30Y={receipt.krd_30y:.2f}] | TwistGap={receipt.krd_twist_l2_gap:.3f}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19474,6 +19509,34 @@ def main() -> None:
         help="Output Andrew Lo (2002) Sharpe receipt as JSON",
     )
 
+    krd_parser = subparsers.add_parser(
+        "key-rate-duration",
+        aliases=["krd-1992", "fisher-weil", "immunization"],
+        help="Compute Ho (1992) Key-Rate Duration & Fisher-Weil (1971) Liability Immunization",
+    )
+    krd_parser.add_argument(
+        "--ticker",
+        default="ALM",
+        help="ALM fund/portfolio ticker symbol (default: ALM)",
+    )
+    krd_parser.add_argument(
+        "--liab-maturity",
+        type=float,
+        default=10.0,
+        help="Target liability bullet maturity in years (default: 10.0)",
+    )
+    krd_parser.add_argument(
+        "--mode",
+        choices=["barbell", "ladder", "bullet"],
+        default="ladder",
+        help="Hedging bond ladder structure (default: ladder)",
+    )
+    krd_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Ho (1992) KRD immunization receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19866,6 +19929,8 @@ def main() -> None:
         haircut_sharpe_command(args)
     elif args.command in ("lo-sharpe", "lo-2002", "autocorr-sharpe", "lo-adjusted-sr"):
         lo_sharpe_command(args)
+    elif args.command in ("key-rate-duration", "krd-1992", "fisher-weil", "immunization"):
+        key_rate_immunization_command(args)
 
 
 if __name__ == "__main__":

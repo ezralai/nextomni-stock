@@ -11031,6 +11031,37 @@ def render_dashboard() -> None:
                 except Exception as lo_ex:
                     st.info(f"Andrew Lo (2002) autocorrelation-adjusted Sharpe deferred: {lo_ex}")
 
+                st.divider()
+                st.markdown("#### 🛡️ Ho (1992) Key-Rate Duration & Fisher-Weil Immunization")
+                try:
+                    from src.analytics.key_rate_immunization import evaluate_krd_profile
+                    krd_mat = st.selectbox(
+                        "Target Liability Horizon (Years)",
+                        options=[5.0, 10.0, 15.0, 20.0],
+                        index=1,
+                        key="krd_liab_maturity",
+                    )
+                    if len(prices) >= 25:
+                        krd_rec = evaluate_krd_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                            liability_maturity=float(krd_mat),
+                        )
+                        kc1, kc2, kc3, kc4 = st.columns(4)
+                        kc1.metric("Asset / Liab Dur", f"{krd_rec.asset_duration:.2f}y / {krd_rec.liability_duration:.2f}y")
+                        kc2.metric("Convexity Surplus", f"{krd_rec.convexity_surplus:+.2f}")
+                        kc3.metric("KRD Twist L2 Gap", f"{krd_rec.krd_twist_l2_gap:.3f}")
+                        kc4.metric("ALM Regime", krd_rec.regime)
+                        st.caption(
+                            f"KRD [1Y={krd_rec.krd_1y:.2f}, 2Y={krd_rec.krd_2y:.2f}, 5Y={krd_rec.krd_5y:.2f}, "
+                            f"10Y={krd_rec.krd_10y:.2f}, 30Y={krd_rec.krd_30y:.2f}] | "
+                            f"PartErr={krd_rec.partition_error:.1e} | HMAC `{krd_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for Key-Rate Duration immunization.")
+                except Exception as krd_ex:
+                    st.info(f"Ho (1992) Key-Rate Duration immunization deferred: {krd_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
