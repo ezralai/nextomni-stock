@@ -10493,6 +10493,62 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 40 price sessions to evaluate Gibbons-Ross-Shanken GRS spanning.")
 
+                st.divider()
+                st.subheader("📏 Jobson & Korkie (1981) / Memmel (2003) Paired Sharpe Equality Test")
+                st.caption("Correlation-adjusted z_JKM test of H0: SR_Momentum = SR_BuyHold accounting for cross-correlation rho")
+
+                if df is not None and not df.empty and len(df) >= 35:
+                    try:
+                        from src.analytics.jobson_korkie_memmel import (
+                            _build_hmac_payload as build_jkm_payload,
+                            evaluate_sharpe_comparison_profile,
+                            verify_hmac_signature as verify_jkm_hmac,
+                        )
+                        jkm_rec = evaluate_sharpe_comparison_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                        )
+
+                        jm1, jm2, jm3, jm4 = st.columns(4)
+                        jm1.metric(
+                            f"Sharpe ({jkm_rec.ticker_a} vs {jkm_rec.ticker_b})",
+                            f"{jkm_rec.sharpe_a_ann:+.2f} vs {jkm_rec.sharpe_b_ann:+.2f}",
+                            delta=f"Delta SR {jkm_rec.sharpe_diff_ann:+.2f}",
+                        )
+                        jm2.metric(
+                            "Memmel z_JKM / p-val",
+                            f"{jkm_rec.z_stat:+.2f}",
+                            delta=f"p = {jkm_rec.p_value:.4f}",
+                        )
+                        jm3.metric(
+                            "Pair Correlation / SE Gain",
+                            f"rho = {jkm_rec.correlation:.3f}",
+                            delta=f"95% CI [{jkm_rec.ci_95_low_ann:+.2f}, {jkm_rec.ci_95_high_ann:+.2f}]",
+                        )
+                        jm4.metric(
+                            "Equality Verdict",
+                            "Different" if jkm_rec.p_value <= 0.05 else "Equal (Null)",
+                            delta=jkm_rec.regime,
+                        )
+
+                        jkm_sig_payload = build_jkm_payload(
+                            ticker_a=jkm_rec.ticker_a,
+                            ticker_b=jkm_rec.ticker_b,
+                            n_obs=jkm_rec.n_obs,
+                            sharpe_a_ann=jkm_rec.sharpe_a_ann,
+                            sharpe_b_ann=jkm_rec.sharpe_b_ann,
+                            correlation=jkm_rec.correlation,
+                            z_stat=jkm_rec.z_stat,
+                            p_value=jkm_rec.p_value,
+                            regime=jkm_rec.regime,
+                            timestamp=jkm_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **JKM Sharpe Equality HMAC:** `{jkm_rec.hmac_signature[:16]}...` (Sealed: `{verify_jkm_hmac(jkm_sig_payload, jkm_rec.hmac_signature)}`)")
+                    except Exception as jkm_ex:
+                        st.info(f"Jobson-Korkie-Memmel evaluation deferred: {jkm_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 35 price sessions to evaluate paired Sharpe equality.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

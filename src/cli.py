@@ -11449,6 +11449,49 @@ def grs_test_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def jobson_korkie_command(args: argparse.Namespace) -> None:
+    """CLI handler for Jobson & Korkie (1981) & Memmel (2003) Paired Sharpe Equality Test."""
+    import json
+    from src.analytics.jobson_korkie_memmel import (
+        build_synthetic_paired_returns,
+        calculate_jobson_korkie_memmel,
+        persist_sharpe_comparison_record,
+    )
+
+    ra, rb = build_synthetic_paired_returns(
+        n_obs=args.n_obs,
+        sharpe_a_ann=args.sr_a,
+        sharpe_b_ann=args.sr_b,
+        correlation=args.rho,
+        risk_free_annual=args.rf,
+    )
+    receipt = calculate_jobson_korkie_memmel(
+        returns_a=ra,
+        returns_b=rb,
+        risk_free_annual=args.rf,
+        ticker_a=args.ticker_a,
+        ticker_b=args.ticker_b,
+    )
+    persist_sharpe_comparison_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"JOBSON & KORKIE (1981) / MEMMEL (2003) SHARPE EQUALITY — {receipt.ticker_a} vs {receipt.ticker_b}")
+    print("=" * 80)
+    print(f"  Sessions N / Risk-Free Rate:    {receipt.n_obs} / {receipt.risk_free_annual * 100:.2f}%")
+    print(f"  Ann. Sharpe A / B / Diff:       {receipt.sharpe_a_ann:+.3f} / {receipt.sharpe_b_ann:+.3f} ({receipt.sharpe_diff_ann:+.3f})")
+    print(f"  Correlation rho:                {receipt.correlation:.4f}")
+    print(f"  Memmel z_JKM / p-value:         {receipt.z_stat:+.4f} / {receipt.p_value:.6f}")
+    print(f"  95% CI Ann. Sharpe Diff:        [{receipt.ci_95_low_ann:+.3f}, {receipt.ci_95_high_ann:+.3f}]")
+    print(f"  Equality Verdict:               {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18512,6 +18555,63 @@ def main() -> None:
         help="Output GRS multivariate efficiency receipt as JSON",
     )
 
+    # Jobson & Korkie (1981) / Memmel (2003) Paired Sharpe Equality Test parser
+    jkm_parser = subparsers.add_parser(
+        "sharpe-test",
+        aliases=["jobson-korkie", "memmel", "jkm-2003"],
+        help="Run correlation-adjusted Jobson-Korkie-Memmel paired Sharpe equality test",
+    )
+    jkm_parser.add_argument(
+        "--ticker-a",
+        default="STRAT",
+        dest="ticker_a",
+        help="Strategy A ticker label (default: STRAT)",
+    )
+    jkm_parser.add_argument(
+        "--ticker-b",
+        default="SPY",
+        dest="ticker_b",
+        help="Benchmark B ticker label (default: SPY)",
+    )
+    jkm_parser.add_argument(
+        "--sr-a",
+        type=float,
+        default=1.40,
+        dest="sr_a",
+        help="Annualized Sharpe ratio of Stream A (default: 1.40)",
+    )
+    jkm_parser.add_argument(
+        "--sr-b",
+        type=float,
+        default=0.70,
+        dest="sr_b",
+        help="Annualized Sharpe ratio of Stream B (default: 0.70)",
+    )
+    jkm_parser.add_argument(
+        "--rho",
+        type=float,
+        default=0.85,
+        help="Cross-correlation between streams in [-0.99, 0.99] (default: 0.85)",
+    )
+    jkm_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Annual risk-free benchmark rate (default: 0.04)",
+    )
+    jkm_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=252,
+        dest="n_obs",
+        help="Number of paired return sessions T (default: 252)",
+    )
+    jkm_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Jobson-Korkie-Memmel Sharpe equality receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18878,6 +18978,8 @@ def main() -> None:
         lo_mackinlay_vr_command(args)
     elif args.command in ("grs-test", "gibbons-ross-shanken", "grs-1989"):
         grs_test_command(args)
+    elif args.command in ("sharpe-test", "jobson-korkie", "memmel", "jkm-2003"):
+        jobson_korkie_command(args)
 
 
 if __name__ == "__main__":
