@@ -10917,6 +10917,37 @@ def render_dashboard() -> None:
                 except Exception as nss_ex:
                     st.info(f"Nelson-Siegel-Svensson yield curve fit deferred: {nss_ex}")
 
+                st.divider()
+                st.markdown("#### 🎯 Gârleanu & Pedersen (2013) Dynamic Aim Portfolio")
+                try:
+                    from src.analytics.garleanu_pedersen_trading import evaluate_gp_profile
+                    gp_cost_bps = st.selectbox(
+                        "Transaction Cost Penalty (bps)",
+                        options=[5.0, 15.0, 30.0, 60.0],
+                        index=1,
+                        key="gp_cost_bps",
+                    )
+                    if len(prices) >= 25:
+                        gp_rec = evaluate_gp_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                            cost_bps=float(gp_cost_bps),
+                        )
+                        gc1, gc2, gc3, gc4 = st.columns(4)
+                        gc1.metric("Optimal Trade Rate", f"{gp_rec.mean_trade_rate:.3f}")
+                        gc2.metric("Turnover Reduction", f"{gp_rec.turnover_reduction_pct:.1f}%")
+                        gc3.metric("Slow vs Fast Alpha Ratio", f"{gp_rec.slow_alpha_weight_ratio:.2f} / {gp_rec.fast_alpha_weight_ratio:.2f}")
+                        gc4.metric("GP Regime", gp_rec.regime)
+                        st.caption(
+                            f"Myopic norm={gp_rec.myopic_norm:.3f}, Aim norm={gp_rec.aim_norm:.3f}, "
+                            f"Trade norm={gp_rec.optimal_trade_norm:.3f} | Riccati res={gp_rec.riccati_residual:.1e} | "
+                            f"HMAC `{gp_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for Gârleanu-Pedersen dynamic trading.")
+                except Exception as gp_ex:
+                    st.info(f"Gârleanu-Pedersen dynamic trading deferred: {gp_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

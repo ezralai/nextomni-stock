@@ -11789,6 +11789,53 @@ def nss_curve_command(args: argparse.Namespace) -> None:
     )
 
 
+def gp_dynamic_command(args: argparse.Namespace) -> None:
+    """Run Gârleanu & Pedersen (2013) Dynamic Trading Policy Optimization."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.garleanu_pedersen_trading import (
+        build_synthetic_gp_inputs,
+        persist_gp_record,
+        solve_garleanu_pedersen,
+    )
+
+    ticker = str(getattr(args, "ticker", "SPY")).strip().upper()
+    risk_aversion = float(getattr(args, "risk_aversion", 2.5))
+    cost_bps = float(getattr(args, "cost_bps", 15.0))
+    fast_rho = float(getattr(args, "fast_rho", 0.35))
+    slow_rho = float(getattr(args, "slow_rho", 0.03))
+
+    sigma, b_mat, phi, f_t, x_prev = build_synthetic_gp_inputs(
+        n_assets=3,
+        fast_rho=fast_rho,
+        slow_rho=slow_rho,
+    )
+    receipt = solve_garleanu_pedersen(
+        sigma=sigma,
+        b_loadings=b_mat,
+        phi_decay=phi,
+        f_t=f_t,
+        x_prev=x_prev,
+        risk_aversion=risk_aversion,
+        cost_bps=cost_bps,
+        ticker=ticker,
+    )
+    persist_gp_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n🎯 Gârleanu & Pedersen (2013) Dynamic Trading [{receipt.ticker}]"
+        f"\n  γ={receipt.risk_aversion:.2f} | Cost={receipt.cost_bps:.1f} bps | "
+        f"TradeRate={receipt.mean_trade_rate:.4f} | TurnoverReduction={receipt.turnover_reduction_pct:.1f}%"
+        f"\n  AimRatio(Slow/Fast)={receipt.slow_alpha_weight_ratio:.3f} / {receipt.fast_alpha_weight_ratio:.3f} | "
+        f"RiccatiRes={receipt.riccati_residual:.2e}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19183,6 +19230,46 @@ def main() -> None:
         help="Output Nelson-Siegel-Svensson receipt as JSON",
     )
 
+    gp_parser = subparsers.add_parser(
+        "gp-trading",
+        aliases=["gp-dynamic", "gp-2013", "dynamic-aim"],
+        help="Solve Gârleanu & Pedersen (2013) Dynamic Trading Aim Portfolio Policy",
+    )
+    gp_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Portfolio/benchmark ticker symbol (default: SPY)",
+    )
+    gp_parser.add_argument(
+        "--risk-aversion",
+        type=float,
+        default=2.5,
+        help="Mean-variance risk aversion parameter gamma (default: 2.5)",
+    )
+    gp_parser.add_argument(
+        "--cost-bps",
+        type=float,
+        default=15.0,
+        help="Quadratic transaction cost scaling in bps (default: 15.0)",
+    )
+    gp_parser.add_argument(
+        "--fast-rho",
+        type=float,
+        default=0.35,
+        help="Fast alpha mean-reversion decay speed in (0, 1) (default: 0.35)",
+    )
+    gp_parser.add_argument(
+        "--slow-rho",
+        type=float,
+        default=0.03,
+        help="Slow alpha mean-reversion decay speed in (0, 1) (default: 0.03)",
+    )
+    gp_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Gârleanu-Pedersen dynamic trading receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19567,6 +19654,8 @@ def main() -> None:
         bdt_lattice_command(args)
     elif args.command in ("nss-curve", "nelson-siegel", "svensson", "nss-1994", "yield-curve-fit"):
         nss_curve_command(args)
+    elif args.command in ("gp-trading", "gp-dynamic", "gp-2013", "dynamic-aim"):
+        gp_dynamic_command(args)
 
 
 if __name__ == "__main__":
