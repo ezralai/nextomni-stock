@@ -10549,6 +10549,61 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 35 price sessions to evaluate paired Sharpe equality.")
 
+                st.divider()
+                st.subheader("🌀 Hurst (1951) & Peters (1994) Rescaled Range (R/S) Fractal Persistence")
+                st.caption("Anis-Lloyd bias-corrected Hurst exponent H_adj, Fractal Dimension D = 2 - H, and long-memory persistence")
+
+                if df is not None and not df.empty and len(df) >= 35:
+                    try:
+                        from src.analytics.hurst_fractal_persistence import (
+                            _build_hmac_payload as build_hurst_payload,
+                            calculate_hurst_exponent,
+                            verify_hmac_signature as verify_hurst_hmac,
+                        )
+                        hurst_rec = calculate_hurst_exponent(
+                            prices=df["Close"].tolist(),
+                            min_window=8,
+                            ticker=selected_ticker,
+                        )
+
+                        hm1, hm2, hm3, hm4 = st.columns(4)
+                        hm1.metric(
+                            "Corrected Hurst H_adj",
+                            f"{hurst_rec.hurst_corrected:.3f}",
+                            delta=f"Raw R/S {hurst_rec.hurst_classical:.3f}",
+                        )
+                        hm2.metric(
+                            "Fractal Dimension D",
+                            f"{hurst_rec.fractal_dimension:.3f}",
+                            delta=f"Implied C {hurst_rec.implied_correlation:+.3f}",
+                        )
+                        hm3.metric(
+                            "Log-Log Scaling R^2",
+                            f"{hurst_rec.scaling_r2 * 100:.1f}%",
+                            delta=f"{hurst_rec.n_windows} windows / N={hurst_rec.n_returns}",
+                        )
+                        hm4.metric(
+                            "Memory Regime",
+                            "Trending" if hurst_rec.hurst_corrected > 0.56 else ("Mean-Rev" if hurst_rec.hurst_corrected < 0.44 else "Brownian"),
+                            delta=hurst_rec.regime,
+                        )
+
+                        hurst_sig_payload = build_hurst_payload(
+                            ticker=hurst_rec.ticker,
+                            n_returns=hurst_rec.n_returns,
+                            hurst_classical=hurst_rec.hurst_classical,
+                            hurst_corrected=hurst_rec.hurst_corrected,
+                            fractal_dimension=hurst_rec.fractal_dimension,
+                            scaling_r2=hurst_rec.scaling_r2,
+                            regime=hurst_rec.regime,
+                            timestamp=hurst_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Hurst Fractal HMAC:** `{hurst_rec.hmac_signature[:16]}...` (Sealed: `{verify_hurst_hmac(hurst_sig_payload, hurst_rec.hmac_signature)}`)")
+                    except Exception as hurst_ex:
+                        st.info(f"Hurst fractal persistence deferred: {hurst_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 35 price sessions to estimate R/S Hurst exponent.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

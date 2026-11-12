@@ -11492,6 +11492,44 @@ def jobson_korkie_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def hurst_exponent_command(args: argparse.Namespace) -> None:
+    """CLI handler for Hurst (1951) & Peters (1994) Rescaled Range (R/S) Engine."""
+    import json
+    from src.analytics.hurst_fractal_persistence import (
+        build_synthetic_fractional_prices,
+        calculate_hurst_exponent,
+        persist_hurst_record,
+    )
+
+    prices = build_synthetic_fractional_prices(
+        hurst_target=args.hurst_target,
+        n_obs=args.n_obs,
+        vol_daily=args.vol_daily,
+    )
+    receipt = calculate_hurst_exponent(
+        prices=prices,
+        min_window=args.min_window,
+        ticker=args.ticker,
+    )
+    persist_hurst_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"HURST (1951) & PETERS (1994) R/S FRACTAL PERSISTENCE RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Returns N / Scaling Windows:    {receipt.n_returns} / {receipt.n_windows}")
+    print(f"  Classical R/S H / RW Bias:      {receipt.hurst_classical:.4f} / {receipt.hurst_random_walk_bias:.4f}")
+    print(f"  Anis-Lloyd Corrected H_adj:     {receipt.hurst_corrected:.4f} (R^2: {receipt.scaling_r2 * 100:.2f}%)")
+    print(f"  Fractal Dimension D / Corr C:   {receipt.fractal_dimension:.4f} / {receipt.implied_correlation:+.4f}")
+    print(f"  Memory Regime:                  {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18612,6 +18650,51 @@ def main() -> None:
         help="Output Jobson-Korkie-Memmel Sharpe equality receipt as JSON",
     )
 
+    # Hurst (1951) & Peters (1994) Rescaled Range (R/S) parser
+    hurst_parser = subparsers.add_parser(
+        "hurst-exponent",
+        aliases=["fractal-market", "rs-1951"],
+        help="Compute Anis-Lloyd bias-corrected R/S Hurst exponent & fractal dimension",
+    )
+    hurst_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Asset or index ticker symbol (default: SPY)",
+    )
+    hurst_parser.add_argument(
+        "--hurst-target",
+        type=float,
+        default=0.50,
+        dest="hurst_target",
+        help="Synthetic fBm target Hurst exponent in (0.05, 0.95) (default: 0.50)",
+    )
+    hurst_parser.add_argument(
+        "--min-window",
+        type=int,
+        default=8,
+        dest="min_window",
+        help="Minimum non-overlapping R/S block size in [4, 64] (default: 8)",
+    )
+    hurst_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=320,
+        dest="n_obs",
+        help="Number of synthetic fBm sessions (default: 320)",
+    )
+    hurst_parser.add_argument(
+        "--vol-daily",
+        type=float,
+        default=0.012,
+        dest="vol_daily",
+        help="Daily return volatility scale (default: 0.012)",
+    )
+    hurst_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Hurst R/S fractal persistence receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18980,6 +19063,8 @@ def main() -> None:
         grs_test_command(args)
     elif args.command in ("sharpe-test", "jobson-korkie", "memmel", "jkm-2003"):
         jobson_korkie_command(args)
+    elif args.command in ("hurst-exponent", "fractal-market", "rs-1951"):
+        hurst_exponent_command(args)
 
 
 if __name__ == "__main__":
