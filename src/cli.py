@@ -11337,6 +11337,42 @@ def market_timing_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def kelly_growth_command(args: argparse.Namespace) -> None:
+    """CLI handler for Kelly (1956) & Thorp (1997) Fractional Kelly Log-Wealth Growth."""
+    import json
+    from src.analytics.kelly_growth_criterion import (
+        calculate_kelly_growth,
+        persist_kelly_growth_record,
+    )
+
+    receipt = calculate_kelly_growth(
+        expected_return_annual=args.mu,
+        volatility_annual=args.vol,
+        risk_free_annual=args.rf,
+        kelly_fraction=args.kelly_fraction,
+        drawdown_threshold=args.drawdown_threshold,
+        ticker=args.ticker,
+    )
+    persist_kelly_growth_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"KELLY (1956) & THORP (1997) FRACTIONAL KELLY GROWTH RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Drift mu / Vol sigma / Rf:      {receipt.expected_return_annual * 100:.2f}% / {receipt.volatility_annual * 100:.2f}% / {receipt.risk_free_annual * 100:.2f}% (SR {receipt.sharpe_ratio:+.2f})")
+    print(f"  Full Kelly f* / Applied f:      {receipt.full_kelly_fraction * 100:.2f}% / {receipt.applied_fraction * 100:.2f}% (k={receipt.kelly_multiplier:.2f}x)")
+    print(f"  Half-Kelly / Ruin Boundary:     {receipt.half_kelly_fraction * 100:.2f}% / {receipt.double_kelly_ruin_fraction * 100:.2f}%")
+    print(f"  Applied / Optimal Log-Growth:   {receipt.applied_growth_ann * 100:+.2f}% / {receipt.full_kelly_growth_ann * 100:+.2f}% (Eff {receipt.growth_efficiency_ratio * 100:.1f}%)")
+    print(f"  Variance Reduction / P(DD):     {receipt.variance_reduction_ratio * 100:.1f}% / {receipt.drawdown_exceedance_prob * 100:.2f}% (at {receipt.drawdown_threshold * 100:.0f}% DD)")
+    print(f"  Growth Regime:                  {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18251,6 +18287,55 @@ def main() -> None:
         help="Output Market Timing convexity receipt as JSON",
     )
 
+    # Kelly (1956) & Thorp (1997) Fractional Kelly Log-Wealth Growth parser
+    kelly_parser = subparsers.add_parser(
+        "kelly-growth",
+        aliases=["fractional-kelly", "kt-1956"],
+        help="Evaluate Fractional Kelly optimal compounding growth & overbetting ruin risk",
+    )
+    kelly_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Asset or strategy ticker symbol (default: SPY)",
+    )
+    kelly_parser.add_argument(
+        "--mu",
+        type=float,
+        default=0.12,
+        help="Annualized arithmetic expected return mu (default: 0.12)",
+    )
+    kelly_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.20,
+        help="Annualized return volatility sigma (default: 0.20)",
+    )
+    kelly_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Annual risk-free benchmark rate (default: 0.04)",
+    )
+    kelly_parser.add_argument(
+        "--kelly-fraction",
+        type=float,
+        default=0.50,
+        dest="kelly_fraction",
+        help="Fractional Kelly multiplier k = f / f* (default: 0.50 Half-Kelly)",
+    )
+    kelly_parser.add_argument(
+        "--drawdown-threshold",
+        type=float,
+        default=0.50,
+        dest="drawdown_threshold",
+        help="Drawdown level d in (0.05, 0.95) for P(DD >= d) ruin metric (default: 0.50)",
+    )
+    kelly_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Fractional Kelly growth receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18611,6 +18696,8 @@ def main() -> None:
         sharpe_style_command(args)
     elif args.command in ("market-timing", "henriksson-merton", "treynor-mazuy", "hm-1981"):
         market_timing_command(args)
+    elif args.command in ("kelly-growth", "fractional-kelly", "kt-1956"):
+        kelly_growth_command(args)
 
 
 if __name__ == "__main__":

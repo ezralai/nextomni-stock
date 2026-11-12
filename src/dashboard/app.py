@@ -10311,6 +10311,71 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 22 price sessions to evaluate market timing convexity.")
 
+                st.divider()
+                st.subheader("📈 Kelly (1956) & Thorp (1997) Fractional Kelly Log-Wealth Growth")
+                st.caption("Continuous-time optimal compounding fraction f* = (mu - rf)/sigma^2, Half-Kelly efficiency & Double-Kelly ruin boundary")
+
+                if df is not None and not df.empty and len(df) >= 20:
+                    try:
+                        from src.analytics.kelly_growth_criterion import (
+                            _build_hmac_payload as build_kelly_payload,
+                            evaluate_kelly_growth_profile,
+                            verify_hmac_signature as verify_kelly_hmac,
+                        )
+                        k_mult = st.slider(
+                            "Fractional Kelly Multiplier (k = f / f*)",
+                            min_value=0.0,
+                            max_value=2.5,
+                            value=0.50,
+                            step=0.05,
+                            key=f"kelly_mult_{selected_ticker}",
+                        )
+                        kelly_rec = evaluate_kelly_growth_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            kelly_fraction=k_mult,
+                        )
+
+                        km1, km2, km3, km4 = st.columns(4)
+                        km1.metric(
+                            "Full Kelly f* / Applied f",
+                            f"{kelly_rec.full_kelly_fraction * 100:.1f}% / {kelly_rec.applied_fraction * 100:.1f}%",
+                            delta=f"Ruin Boundary {kelly_rec.double_kelly_ruin_fraction * 100:.1f}%",
+                        )
+                        km2.metric(
+                            "Applied / Optimal Growth",
+                            f"{kelly_rec.applied_growth_ann * 100:+.2f}% / {kelly_rec.full_kelly_growth_ann * 100:+.2f}%",
+                            delta=f"Eff {kelly_rec.growth_efficiency_ratio * 100:.1f}%",
+                        )
+                        km3.metric(
+                            "Variance Reduction / Sharpe",
+                            f"{kelly_rec.variance_reduction_ratio * 100:.1f}%",
+                            delta=f"SR {kelly_rec.sharpe_ratio:+.2f}",
+                        )
+                        km4.metric(
+                            "P(50% Drawdown) & Regime",
+                            f"{kelly_rec.drawdown_exceedance_prob * 100:.1f}%",
+                            delta=kelly_rec.regime,
+                        )
+
+                        kelly_sig_payload = build_kelly_payload(
+                            ticker=kelly_rec.ticker,
+                            expected_return_annual=kelly_rec.expected_return_annual,
+                            volatility_annual=kelly_rec.volatility_annual,
+                            kelly_multiplier=kelly_rec.kelly_multiplier,
+                            full_kelly_fraction=kelly_rec.full_kelly_fraction,
+                            applied_fraction=kelly_rec.applied_fraction,
+                            applied_growth_ann=kelly_rec.applied_growth_ann,
+                            drawdown_exceedance_prob=kelly_rec.drawdown_exceedance_prob,
+                            regime=kelly_rec.regime,
+                            timestamp=kelly_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Kelly Growth HMAC:** `{kelly_rec.hmac_signature[:16]}...` (Sealed: `{verify_kelly_hmac(kelly_sig_payload, kelly_rec.hmac_signature)}`)")
+                    except Exception as kelly_ex:
+                        st.info(f"Kelly growth sizing deferred: {kelly_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 20 price sessions to calibrate Kelly log-wealth sizing.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
