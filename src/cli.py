@@ -11373,6 +11373,46 @@ def kelly_growth_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def lo_mackinlay_vr_command(args: argparse.Namespace) -> None:
+    """CLI handler for Lo & MacKinlay (1988) Heteroskedasticity-Robust Variance Ratio."""
+    import json
+    from src.analytics.lo_mackinlay_variance_ratio import (
+        build_synthetic_vr_prices,
+        calculate_lo_mackinlay_variance_ratio,
+        persist_variance_ratio_record,
+    )
+
+    prices = build_synthetic_vr_prices(
+        rho=args.rho,
+        n_obs=args.n_obs,
+        vol_daily=args.vol_daily,
+        heteroskedastic=args.heteroskedastic,
+    )
+    receipt = calculate_lo_mackinlay_variance_ratio(
+        prices=prices,
+        lag_q=args.lag,
+        ticker=args.ticker,
+    )
+    persist_variance_ratio_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"LO & MACKINLAY (1988) VARIANCE RATIO RECEIPT — {receipt.ticker} (q={receipt.lag_q})")
+    print("=" * 80)
+    print(f"  Returns N / Lag Horizon q:      {receipt.n_returns} / {receipt.lag_q}")
+    print(f"  Variance Ratio VR(q) / Excess:  {receipt.variance_ratio:.4f} / {receipt.excess_variance_ratio:+.4f}")
+    print(f"  Homoskedastic z(q) / p-val:     {receipt.z_stat_homoskedastic:+.3f} / {receipt.p_value_homoskedastic:.4f}")
+    print(f"  Robust z*(q) / p-val (ARCH):    {receipt.z_stat_heteroskedastic:+.3f} / {receipt.p_value_heteroskedastic:.4f}")
+    print(f"  Phi(q) / Phi*(q):               {receipt.phi_homoskedastic:.6f} / {receipt.phi_heteroskedastic:.6f}")
+    print(f"  Random-Walk Regime:             {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -18336,6 +18376,54 @@ def main() -> None:
         help="Output Fractional Kelly growth receipt as JSON",
     )
 
+    # Lo & MacKinlay (1988) Variance Ratio parser
+    vr_parser = subparsers.add_parser(
+        "variance-ratio",
+        aliases=["lo-mackinlay", "lm-1988"],
+        help="Run Lo & MacKinlay heteroskedasticity-robust Variance Ratio test",
+    )
+    vr_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Asset or index ticker symbol (default: SPY)",
+    )
+    vr_parser.add_argument(
+        "--lag",
+        type=int,
+        default=5,
+        help="Overlapping lag horizon q in [2, 126] (default: 5)",
+    )
+    vr_parser.add_argument(
+        "--rho",
+        type=float,
+        default=0.0,
+        help="Synthetic AR(1) serial correlation coefficient (default: 0.0 random walk)",
+    )
+    vr_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=260,
+        dest="n_obs",
+        help="Number of synthetic 1-period log returns (default: 260)",
+    )
+    vr_parser.add_argument(
+        "--vol-daily",
+        type=float,
+        default=0.012,
+        dest="vol_daily",
+        help="Daily return volatility scale (default: 0.012)",
+    )
+    vr_parser.add_argument(
+        "--heteroskedastic",
+        action="store_true",
+        help="Simulate volatility clustering regimes",
+    )
+    vr_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Lo & MacKinlay Variance Ratio receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18698,6 +18786,8 @@ def main() -> None:
         market_timing_command(args)
     elif args.command in ("kelly-growth", "fractional-kelly", "kt-1956"):
         kelly_growth_command(args)
+    elif args.command in ("variance-ratio", "lo-mackinlay", "lm-1988"):
+        lo_mackinlay_vr_command(args)
 
 
 if __name__ == "__main__":

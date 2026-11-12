@@ -10376,6 +10376,68 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 20 price sessions to calibrate Kelly log-wealth sizing.")
 
+                st.divider()
+                st.subheader("🎲 Lo & MacKinlay (1988) Heteroskedasticity-Robust Variance Ratio")
+                st.caption("Overlapping q-period Variance Ratio VR(q) = sigma_c^2(q)/sigma_a^2 with ARCH-robust z*(q) test for Random Walk vs Momentum / Mean Reversion")
+
+                if df is not None and not df.empty and len(df) >= 24:
+                    try:
+                        from src.analytics.lo_mackinlay_variance_ratio import (
+                            _build_hmac_payload as build_vr_payload,
+                            calculate_lo_mackinlay_variance_ratio,
+                            verify_hmac_signature as verify_vr_hmac,
+                        )
+                        vr_lag = st.select_slider(
+                            "Variance Ratio Lag Horizon q (sessions)",
+                            options=[2, 5, 10, 21],
+                            value=5,
+                            key=f"vr_lag_{selected_ticker}",
+                        )
+                        vr_rec = calculate_lo_mackinlay_variance_ratio(
+                            prices=df["Close"].tolist(),
+                            lag_q=vr_lag,
+                            ticker=selected_ticker,
+                        )
+
+                        vrm1, vrm2, vrm3, vrm4 = st.columns(4)
+                        vrm1.metric(
+                            f"Variance Ratio VR({vr_rec.lag_q})",
+                            f"{vr_rec.variance_ratio:.3f}",
+                            delta=f"Excess {vr_rec.excess_variance_ratio:+.3f}",
+                        )
+                        vrm2.metric(
+                            "Robust z*(q) / p-val",
+                            f"{vr_rec.z_stat_heteroskedastic:+.2f}",
+                            delta=f"p = {vr_rec.p_value_heteroskedastic:.4f}",
+                        )
+                        vrm3.metric(
+                            "Homoskedastic z(q)",
+                            f"{vr_rec.z_stat_homoskedastic:+.2f}",
+                            delta=f"p = {vr_rec.p_value_homoskedastic:.4f}",
+                        )
+                        vrm4.metric(
+                            "Random-Walk Regime",
+                            f"N = {vr_rec.n_returns}",
+                            delta=vr_rec.regime,
+                        )
+
+                        vr_sig_payload = build_vr_payload(
+                            ticker=vr_rec.ticker,
+                            n_returns=vr_rec.n_returns,
+                            lag_q=vr_rec.lag_q,
+                            variance_ratio=vr_rec.variance_ratio,
+                            z_stat_homoskedastic=vr_rec.z_stat_homoskedastic,
+                            z_stat_heteroskedastic=vr_rec.z_stat_heteroskedastic,
+                            p_value_heteroskedastic=vr_rec.p_value_heteroskedastic,
+                            regime=vr_rec.regime,
+                            timestamp=vr_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Lo-MacKinlay VR HMAC:** `{vr_rec.hmac_signature[:16]}...` (Sealed: `{verify_vr_hmac(vr_sig_payload, vr_rec.hmac_signature)}`)")
+                    except Exception as vr_ex:
+                        st.info(f"Lo & MacKinlay variance ratio deferred: {vr_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 24 price sessions to compute Lo & MacKinlay Variance Ratio.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
