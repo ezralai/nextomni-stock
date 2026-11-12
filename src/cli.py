@@ -11906,6 +11906,44 @@ def haircut_sharpe_command(args: argparse.Namespace) -> None:
     )
 
 
+def lo_sharpe_command(args: argparse.Namespace) -> None:
+    """Run Andrew Lo (2002) Autocorrelation-Adjusted Sharpe Ratio Analysis."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.lo_autocorr_sharpe import (
+        build_synthetic_ar1_returns,
+        calculate_lo_autocorr_sharpe,
+        persist_lo_sharpe_record,
+    )
+
+    ticker = str(getattr(args, "ticker", "SPY")).strip().upper()
+    q_horizon = int(getattr(args, "q", 12))
+    rho1 = float(getattr(args, "rho1", 0.35))
+    n_obs = int(getattr(args, "n_obs", 300))
+
+    rets = build_synthetic_ar1_returns(n_obs=n_obs, rho1=rho1)
+    receipt = calculate_lo_autocorr_sharpe(
+        returns=rets,
+        q_horizon=q_horizon,
+        ticker=ticker,
+    )
+    persist_lo_sharpe_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n📉 Andrew Lo (2002) Autocorrelation-Adjusted Sharpe [{receipt.ticker}]"
+        f"\n  N={receipt.n_obs} | q={receipt.q_horizon} | ρ₁={receipt.lag1_autocorr:+.4f} | "
+        f"η(q)={receipt.eta_scaling_factor:.3f}"
+        f"\n  SR_naive(q)={receipt.sharpe_naive_q:.3f} vs SR_Lo(q)={receipt.sharpe_lo_q:.3f} "
+        f"(Inflation={receipt.inflation_pct:+.1f}%)"
+        f"\n  95% HAC CI: [{receipt.ci95_low:.3f}, {receipt.ci95_high:.3f}] (SE={receipt.se_lo_q:.3f})"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19402,6 +19440,40 @@ def main() -> None:
         help="Output Harvey-Liu Haircut Sharpe receipt as JSON",
     )
 
+    lo_sr_parser = subparsers.add_parser(
+        "lo-sharpe",
+        aliases=["lo-2002", "autocorr-sharpe", "lo-adjusted-sr"],
+        help="Compute Andrew Lo (2002) Autocorrelation-Adjusted & Asymptotic Sharpe Ratio",
+    )
+    lo_sr_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Strategy/asset ticker symbol (default: SPY)",
+    )
+    lo_sr_parser.add_argument(
+        "--q",
+        type=int,
+        default=12,
+        help="Time-aggregation horizon q (default: 12)",
+    )
+    lo_sr_parser.add_argument(
+        "--rho1",
+        type=float,
+        default=0.35,
+        help="Synthetic AR(1) lag-1 autocorrelation in (-0.95, 0.95) (default: 0.35)",
+    )
+    lo_sr_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=300,
+        help="Number of synthetic observations (default: 300)",
+    )
+    lo_sr_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Andrew Lo (2002) Sharpe receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19792,6 +19864,8 @@ def main() -> None:
         dcc_garch_command(args)
     elif args.command in ("haircut-sharpe", "harvey-liu", "hlz-2016", "bh-fdr-sharpe"):
         haircut_sharpe_command(args)
+    elif args.command in ("lo-sharpe", "lo-2002", "autocorr-sharpe", "lo-adjusted-sr"):
+        lo_sharpe_command(args)
 
 
 if __name__ == "__main__":

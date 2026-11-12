@@ -11001,6 +11001,36 @@ def render_dashboard() -> None:
                 except Exception as hlz_ex:
                     st.info(f"Harvey-Liu Haircut Sharpe deferred: {hlz_ex}")
 
+                st.divider()
+                st.markdown("#### 📉 Andrew Lo (2002) Autocorrelation-Adjusted Sharpe Ratio")
+                try:
+                    from src.analytics.lo_autocorr_sharpe import evaluate_lo_sharpe_profile
+                    lo_q = st.selectbox(
+                        "Aggregation Horizon q (Sessions)",
+                        options=[5, 12, 21, 63],
+                        index=2,
+                        key="lo_sharpe_q",
+                    )
+                    if len(prices) >= max(35, int(lo_q) + 12):
+                        lo_rec = evaluate_lo_sharpe_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                            q_horizon=int(lo_q),
+                        )
+                        lc1, lc2, lc3, lc4 = st.columns(4)
+                        lc1.metric("Naive / Lo(q) SR", f"{lo_rec.sharpe_naive_q:.2f} / {lo_rec.sharpe_lo_q:.2f}")
+                        lc2.metric("Lag-1 ρ₁ / η(q)", f"{lo_rec.lag1_autocorr:+.3f} / {lo_rec.eta_scaling_factor:.2f}")
+                        lc3.metric("Inflation % / SE", f"{lo_rec.inflation_pct:+.1f}% / {lo_rec.se_lo_q:.2f}")
+                        lc4.metric("Lo(2002) Regime", lo_rec.regime)
+                        st.caption(
+                            f"95% HAC CI [{lo_rec.ci95_low:.2f}, {lo_rec.ci95_high:.2f}] across {lo_rec.n_obs} returns | "
+                            f"HMAC `{lo_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 35 price sessions to compute Lo (2002) adjusted Sharpe.")
+                except Exception as lo_ex:
+                    st.info(f"Andrew Lo (2002) autocorrelation-adjusted Sharpe deferred: {lo_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
