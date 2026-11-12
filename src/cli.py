@@ -11174,6 +11174,44 @@ def modigliani_m2_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def malkiel_duration_command(args: argparse.Namespace) -> None:
+    """CLI handler for Macaulay (1938) & Malkiel (1962) Bond Duration & Convexity Engine."""
+    import json
+    from src.analytics.malkiel_bond_duration import (
+        calculate_malkiel_bond_duration,
+        persist_malkiel_duration_record,
+    )
+
+    receipt = calculate_malkiel_bond_duration(
+        coupon_rate=args.coupon,
+        yield_to_maturity=args.ytm,
+        maturity_years=args.maturity,
+        compounding_freq=args.freq,
+        shock_bps=args.shock_bps,
+        par_value=args.par,
+        ticker=args.ticker,
+    )
+    persist_malkiel_duration_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"MACAULAY & MALKIEL (1962) BOND DURATION AUDIT RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Par / Coupon / YTM / Maturity:  ${receipt.par_value:.2f} / {receipt.coupon_rate * 100:.2f}% / {receipt.yield_to_maturity * 100:.2f}% / {receipt.maturity_years:.1f}y ({receipt.compounding_freq}x)")
+    print(f"  Bond Clean Price / Status:      ${receipt.bond_price:.4f} ({receipt.par_status})")
+    print(f"  Macaulay / Modified Duration:   {receipt.macaulay_duration:.4f}y / {receipt.modified_duration:.4f}y (DV01: ${receipt.dv01:.4f})")
+    print(f"  Exact Analytical Convexity:     {receipt.convexity:.4f}")
+    print(f"  Shock (+/-{receipt.shock_bps:.0f} bps) Cut/Hike:   +${receipt.exact_gain_on_cut:.4f} / -${receipt.exact_loss_on_hike:.4f}")
+    print(f"  Malkiel Convexity Asymmetry:    +${receipt.malkiel_convexity_asymmetry:.4f}")
+    print(f"  Duration Regime:                {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17862,6 +17900,61 @@ def main() -> None:
         help="Output Modigliani M^2 RAP receipt as JSON",
     )
 
+    # Macaulay (1938) & Malkiel (1962) Bond Duration & Convexity parser
+    mbd_parser = subparsers.add_parser(
+        "bond-duration",
+        aliases=["malkiel-duration", "convexity-theorems"],
+        help="Compute Macaulay/Modified duration, DV01 & Malkiel convexity asymmetry",
+    )
+    mbd_parser.add_argument(
+        "--ticker",
+        default="TLT",
+        help="Bond ETF or fixed-income ticker symbol (default: TLT)",
+    )
+    mbd_parser.add_argument(
+        "--coupon",
+        type=float,
+        default=0.04,
+        help="Annual bond coupon rate (default: 0.04)",
+    )
+    mbd_parser.add_argument(
+        "--ytm",
+        type=float,
+        default=0.05,
+        help="Annual yield to maturity (default: 0.05)",
+    )
+    mbd_parser.add_argument(
+        "--maturity",
+        type=float,
+        default=10.0,
+        help="Time to maturity in years (default: 10.0)",
+    )
+    mbd_parser.add_argument(
+        "--freq",
+        type=int,
+        default=2,
+        choices=[1, 2, 4, 12],
+        help="Coupon compounding frequency per year (default: 2)",
+    )
+    mbd_parser.add_argument(
+        "--shock-bps",
+        type=float,
+        default=100.0,
+        dest="shock_bps",
+        help="Symmetric yield shock magnitude in bps (default: 100.0)",
+    )
+    mbd_parser.add_argument(
+        "--par",
+        type=float,
+        default=100.0,
+        help="Bond face par value (default: 100.0)",
+    )
+    mbd_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Malkiel bond duration receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18214,6 +18307,8 @@ def main() -> None:
         jorion_bayes_stein_command(args)
     elif args.command in ("m2-modigliani", "risk-adjusted-m2", "mm-rap"):
         modigliani_m2_command(args)
+    elif args.command in ("bond-duration", "malkiel-duration", "convexity-theorems"):
+        malkiel_duration_command(args)
 
 
 if __name__ == "__main__":

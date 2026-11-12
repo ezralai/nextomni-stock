@@ -10105,6 +10105,70 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Modigliani M^2 performance.")
 
+                st.divider()
+                st.subheader("📏 Macaulay (1938) & Malkiel (1962) Bond Duration & Convexity Engine")
+                st.caption("Discrete cash-flow PV, DV01 & Malkiel convexity asymmetry: downside vs upside repricing under parallel yield shocks")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.malkiel_bond_duration import (
+                            _build_hmac_payload as build_mbd_payload,
+                            evaluate_malkiel_duration_profile,
+                            verify_hmac_signature as verify_mbd_hmac,
+                        )
+                        mbd_col1, mbd_col2 = st.columns(2)
+                        with mbd_col1:
+                            mbd_cpn = st.slider(
+                                "Annual Bond Coupon Rate",
+                                min_value=0.00,
+                                max_value=0.12,
+                                value=0.045,
+                                step=0.005,
+                                key=f"mbd_cpn_{selected_ticker}",
+                            )
+                        with mbd_col2:
+                            mbd_mat = st.slider(
+                                "Bond Maturity (Years)",
+                                min_value=1.0,
+                                max_value=30.0,
+                                value=10.0,
+                                step=1.0,
+                                key=f"mbd_mat_{selected_ticker}",
+                            )
+
+                        mbd_rec = evaluate_malkiel_duration_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            coupon_rate=mbd_cpn,
+                            maturity_years=mbd_mat,
+                        )
+
+                        mbdm1, mbdm2, mbdm3, mbdm4 = st.columns(4)
+                        mbdm1.metric("Bond Price / Status", f"${mbd_rec.bond_price:.2f}", delta=mbd_rec.par_status)
+                        mbdm2.metric("Macaulay / Mod Duration", f"{mbd_rec.macaulay_duration:.2f}y", delta=f"Mod {mbd_rec.modified_duration:.2f}y")
+                        mbdm3.metric("Convexity / DV01", f"{mbd_rec.convexity:.1f}", delta=f"DV01 ${mbd_rec.dv01:.4f}")
+                        mbdm4.metric("Malkiel Asymmetry", f"+${mbd_rec.malkiel_convexity_asymmetry:.2f}", delta=mbd_rec.regime)
+
+                        mbd_sig_payload = build_mbd_payload(
+                            ticker=mbd_rec.ticker,
+                            par=mbd_rec.par_value,
+                            coupon=mbd_rec.coupon_rate,
+                            ytm=mbd_rec.yield_to_maturity,
+                            maturity=mbd_rec.maturity_years,
+                            freq=mbd_rec.compounding_freq,
+                            price=mbd_rec.bond_price,
+                            mac_dur=mbd_rec.macaulay_duration,
+                            mod_dur=mbd_rec.modified_duration,
+                            convexity=mbd_rec.convexity,
+                            regime=mbd_rec.regime,
+                            timestamp=mbd_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Malkiel Duration HMAC:** `{mbd_rec.hmac_signature[:16]}...` (Sealed: `{verify_mbd_hmac(mbd_sig_payload, mbd_rec.hmac_signature)}`)")
+                    except Exception as mbd_ex:
+                        st.info(f"Malkiel duration evaluation deferred: {mbd_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Malkiel bond duration.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
