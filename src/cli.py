@@ -11979,6 +11979,44 @@ def key_rate_immunization_command(args: argparse.Namespace) -> None:
     )
 
 
+def safety_first_command(args: argparse.Namespace) -> None:
+    """Run Roy (1952), Kataoka (1963) & Telser (1955) Safety-First Portfolio Selection."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.roy_safety_first import (
+        build_synthetic_safety_first_inputs,
+        persist_safety_first_record,
+        solve_safety_first_portfolio,
+    )
+
+    ticker = str(getattr(args, "ticker", "SPY")).strip().upper()
+    threshold = float(getattr(args, "threshold", -0.10))
+    alpha = float(getattr(args, "alpha", 0.05))
+
+    mu, sigma = build_synthetic_safety_first_inputs(n_assets=4)
+    receipt = solve_safety_first_portfolio(
+        expected_returns=mu,
+        cov_matrix=sigma,
+        threshold_return=threshold,
+        alpha_shortfall=alpha,
+        ticker=ticker,
+    )
+    persist_safety_first_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n🛡️ Roy (1952) / Kataoka / Telser Safety-First Portfolio [{receipt.ticker}]"
+        f"\n  Threshold R_L={receipt.threshold_return*100:+.2f}% | α={receipt.alpha_shortfall:.3f} | "
+        f"Roy SFR={receipt.roy_sfr:.3f} (P_shortfall={receipt.roy_shortfall_prob*100:.2f}%, Cheb={receipt.chebyshev_bound:.3f})"
+        f"\n  Kataoka Floor={receipt.kataoka_floor*100:+.2f}% | "
+        f"Telser Feasible={receipt.telser_feasible} (μ={receipt.telser_mean*100:+.2f}%, σ={receipt.telser_vol*100:.2f}%)"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19537,6 +19575,34 @@ def main() -> None:
         help="Output Ho (1992) KRD immunization receipt as JSON",
     )
 
+    roy_parser = subparsers.add_parser(
+        "safety-first",
+        aliases=["roy-1952", "kataoka", "telser-1955"],
+        help="Solve Roy (1952), Kataoka (1963) & Telser (1955) Safety-First Portfolios",
+    )
+    roy_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Portfolio/endowment ticker symbol (default: SPY)",
+    )
+    roy_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=-0.10,
+        help="Minimum disaster threshold return R_L (default: -0.10)",
+    )
+    roy_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.05,
+        help="Maximum shortfall probability alpha in (0, 0.5) (default: 0.05)",
+    )
+    roy_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Roy Safety-First receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19931,6 +19997,8 @@ def main() -> None:
         lo_sharpe_command(args)
     elif args.command in ("key-rate-duration", "krd-1992", "fisher-weil", "immunization"):
         key_rate_immunization_command(args)
+    elif args.command in ("safety-first", "roy-1952", "kataoka", "telser-1955"):
+        safety_first_command(args)
 
 
 if __name__ == "__main__":

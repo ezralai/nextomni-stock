@@ -11062,6 +11062,36 @@ def render_dashboard() -> None:
                 except Exception as krd_ex:
                     st.info(f"Ho (1992) Key-Rate Duration immunization deferred: {krd_ex}")
 
+                st.divider()
+                st.markdown("#### 🛡️ Roy (1952), Kataoka & Telser Safety-First Portfolio")
+                try:
+                    from src.analytics.roy_safety_first import evaluate_safety_first_profile
+                    sf_thresh = st.selectbox(
+                        "Disaster Return Threshold (R_L)",
+                        options=[-0.20, -0.10, -0.05, 0.0],
+                        index=1,
+                        key="roy_sf_threshold",
+                    )
+                    if len(prices) >= 25:
+                        sf_rec = evaluate_safety_first_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                            threshold_return=float(sf_thresh),
+                        )
+                        sc1, sc2, sc3, sc4 = st.columns(4)
+                        sc1.metric("Roy SFR / P(Shortfall)", f"{sf_rec.roy_sfr:.2f} / {sf_rec.roy_shortfall_prob*100:.1f}%")
+                        sc2.metric("Kataoka Floor (5%)", f"{sf_rec.kataoka_floor*100:+.2f}%")
+                        sc3.metric("Telser Mean / Feasible", f"{sf_rec.telser_mean*100:+.2f}% / {sf_rec.telser_feasible}")
+                        sc4.metric("Safety-First Regime", sf_rec.regime)
+                        st.caption(
+                            f"Chebyshev bound={sf_rec.chebyshev_bound:.3f} | Roy(μ={sf_rec.roy_mean*100:.1f}%, σ={sf_rec.roy_vol*100:.1f}%) | "
+                            f"HMAC `{sf_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for Roy Safety-First allocation.")
+                except Exception as sf_ex:
+                    st.info(f"Roy Safety-First allocation deferred: {sf_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
