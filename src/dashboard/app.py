@@ -10971,6 +10971,36 @@ def render_dashboard() -> None:
                 except Exception as dcc_ex:
                     st.info(f"Engle DCC-GARCH correlation model deferred: {dcc_ex}")
 
+                st.divider()
+                st.markdown("#### ✂️ Harvey & Liu (2015) Multiple-Testing Haircut Sharpe")
+                try:
+                    from src.analytics.harvey_liu_haircut_sharpe import evaluate_haircut_sharpe_profile
+                    hlz_trials = st.selectbox(
+                        "Backtested Strategy Trials (M)",
+                        options=[10, 50, 150, 300],
+                        index=1,
+                        key="hlz_n_trials",
+                    )
+                    if len(prices) >= 25:
+                        hlz_rec = evaluate_haircut_sharpe_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                            n_trials=int(hlz_trials),
+                        )
+                        hc1, hc2, hc3, hc4 = st.columns(4)
+                        hc1.metric("Observed / BHY SR", f"{hlz_rec.sharpe_observed:.2f} / {hlz_rec.sharpe_bhy:.2f}")
+                        hc2.metric("Bonf / Holm / BH SR", f"{hlz_rec.sharpe_bonferroni:.2f} / {hlz_rec.sharpe_holm:.2f} / {hlz_rec.sharpe_bh:.2f}")
+                        hc3.metric("BHY Haircut %", f"{hlz_rec.haircut_pct_bhy:.1f}%")
+                        hc4.metric("HLZ Regime", hlz_rec.regime)
+                        st.caption(
+                            f"t={hlz_rec.t_stat_raw:.2f} (p_raw={hlz_rec.p_value_raw:.4f}, p_BHY={hlz_rec.p_value_bhy:.4f}) "
+                            f"across M={hlz_rec.n_trials} trials | HMAC `{hlz_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions to compute Harvey-Liu Haircut Sharpe.")
+                except Exception as hlz_ex:
+                    st.info(f"Harvey-Liu Haircut Sharpe deferred: {hlz_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

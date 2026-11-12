@@ -11869,6 +11869,43 @@ def dcc_garch_command(args: argparse.Namespace) -> None:
     )
 
 
+def haircut_sharpe_command(args: argparse.Namespace) -> None:
+    """Run Harvey & Liu (2015) Multiple-Testing Haircut Sharpe Ratio Analysis."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.harvey_liu_haircut_sharpe import (
+        calculate_haircut_sharpe,
+        persist_haircut_sharpe_record,
+    )
+
+    ticker = str(getattr(args, "ticker", "SPY")).strip().upper()
+    sharpe = float(getattr(args, "sharpe", 1.85))
+    n_obs = int(getattr(args, "n_obs", 1260))
+    n_trials = int(getattr(args, "n_trials", 100))
+
+    receipt = calculate_haircut_sharpe(
+        sharpe_observed=sharpe,
+        n_obs=n_obs,
+        n_trials=n_trials,
+        ticker=ticker,
+    )
+    persist_haircut_sharpe_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n✂️ Harvey & Liu (2015) Haircut Sharpe [{receipt.ticker}]"
+        f"\n  N={receipt.n_obs} | M={receipt.n_trials} trials | "
+        f"SR_obs={receipt.sharpe_observed:.3f} (t={receipt.t_stat_raw:.2f}, p_raw={receipt.p_value_raw:.4e})"
+        f"\n  SR_BH={receipt.sharpe_bh:.3f} | SR_Holm={receipt.sharpe_holm:.3f} | "
+        f"SR_Bonf={receipt.sharpe_bonferroni:.3f} | SR_BHY={receipt.sharpe_bhy:.3f} "
+        f"(Haircut={receipt.haircut_pct_bhy:.1f}%)"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19331,6 +19368,40 @@ def main() -> None:
         help="Output DCC-GARCH(1,1) receipt as JSON",
     )
 
+    hlz_parser = subparsers.add_parser(
+        "haircut-sharpe",
+        aliases=["harvey-liu", "hlz-2016", "bh-fdr-sharpe"],
+        help="Compute Harvey & Liu (2015) Multiple-Testing Haircut Sharpe Ratio",
+    )
+    hlz_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Strategy/asset ticker symbol (default: SPY)",
+    )
+    hlz_parser.add_argument(
+        "--sharpe",
+        type=float,
+        default=1.85,
+        help="Observed annualized Sharpe ratio (default: 1.85)",
+    )
+    hlz_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=1260,
+        help="Number of daily observations (default: 1260)",
+    )
+    hlz_parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=100,
+        help="Number of backtested strategy trials M (default: 100)",
+    )
+    hlz_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Harvey-Liu Haircut Sharpe receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19719,6 +19790,8 @@ def main() -> None:
         gp_dynamic_command(args)
     elif args.command in ("dcc-garch", "dcc-2002", "dynamic-correlation", "engle-dcc"):
         dcc_garch_command(args)
+    elif args.command in ("haircut-sharpe", "harvey-liu", "hlz-2016", "bh-fdr-sharpe"):
+        haircut_sharpe_command(args)
 
 
 if __name__ == "__main__":
