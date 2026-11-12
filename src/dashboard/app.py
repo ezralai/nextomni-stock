@@ -10862,6 +10862,37 @@ def render_dashboard() -> None:
                 except Exception as var_ex:
                     st.info(f"Kupiec-Christoffersen VaR backtest deferred: {var_ex}")
 
+                st.divider()
+                st.markdown("#### 🌲 Black-Derman-Toy (1990) Lognormal Short-Rate Binomial Lattice")
+                try:
+                    from src.analytics.black_derman_toy_lattice import evaluate_bdt_lattice_profile
+                    bdt_steps = st.selectbox(
+                        "BDT Lattice Steps (Annualized)",
+                        options=[4, 6, 8, 12],
+                        index=2,
+                        key="bdt_lattice_steps",
+                    )
+                    if len(prices) >= 25:
+                        bdt_rec = evaluate_bdt_lattice_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                            n_steps=int(bdt_steps),
+                        )
+                        bc1, bc2, bc3, bc4 = st.columns(4)
+                        bc1.metric("r₀ / r_med(T)", f"{bdt_rec.short_rate_initial*100:.2f}% / {bdt_rec.terminal_rate_median*100:.2f}%")
+                        bc2.metric("Straight / Call Px", f"{bdt_rec.straight_bond_price:.2f} / {bdt_rec.callable_bond_price:.2f}")
+                        bc3.metric("Embedded Call / Err", f"{bdt_rec.embedded_call_value:.3f} / {bdt_rec.max_calibration_error:.1e}")
+                        bc4.metric("BDT Regime", bdt_rec.regime)
+                        st.caption(
+                            f"Terminal rate fan [{bdt_rec.terminal_rate_low*100:.2f}%, {bdt_rec.terminal_rate_high*100:.2f}%] | "
+                            f"Slope {bdt_rec.curve_slope_bps:+.1f} bps | Vol {bdt_rec.volatility*100:.1f}% | "
+                            f"HMAC `{bdt_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions to calibrate Black-Derman-Toy lattice.")
+                except Exception as bdt_ex:
+                    st.info(f"Black-Derman-Toy short-rate lattice deferred: {bdt_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

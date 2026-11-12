@@ -11706,6 +11706,54 @@ def var_backtest_command(args: argparse.Namespace) -> None:
     )
 
 
+def bdt_lattice_command(args: argparse.Namespace) -> None:
+    """Run Black-Derman-Toy (1990) Lognormal Short-Rate Binomial Lattice Calibration."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.black_derman_toy_lattice import (
+        build_synthetic_yield_curve,
+        calibrate_bdt_lattice,
+        persist_bdt_lattice_record,
+    )
+
+    ticker = str(getattr(args, "ticker", "UST")).strip().upper()
+    n_steps = int(getattr(args, "steps", 8))
+    base_rate = float(getattr(args, "base_rate", 0.04))
+    slope_bps = float(getattr(args, "slope_bps", 120.0))
+    vol = float(getattr(args, "vol", 0.16))
+    call_price = float(getattr(args, "call_price", 100.0))
+
+    curve = build_synthetic_yield_curve(
+        n_steps=n_steps,
+        base_rate=base_rate,
+        slope_bps=slope_bps,
+    )
+    receipt = calibrate_bdt_lattice(
+        spot_rates=curve,
+        volatilities=vol,
+        dt=1.0,
+        coupon_rate=base_rate + 0.01,
+        call_price=call_price,
+        ticker=ticker,
+    )
+    persist_bdt_lattice_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n🌲 Black-Derman-Toy (1990) Short-Rate Lattice [{receipt.ticker}]"
+        f"\n  Steps={receipt.n_steps} (dt={receipt.dt:.2f}y) | r0={receipt.short_rate_initial*100:.2f}% | "
+        f"Slope={receipt.curve_slope_bps:+.1f} bps | Vol={receipt.volatility*100:.1f}%"
+        f"\n  Terminal Rate Fan: [{receipt.terminal_rate_low*100:.2f}%, "
+        f"{receipt.terminal_rate_median*100:.2f}%, {receipt.terminal_rate_high*100:.2f}%]"
+        f"\n  Straight Px={receipt.straight_bond_price:.4f} | Callable Px={receipt.callable_bond_price:.4f} | "
+        f"Embedded Call={receipt.embedded_call_value:.4f} | MaxCalibErr={receipt.max_calibration_error:.2e}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19032,6 +19080,52 @@ def main() -> None:
         help="Output Kupiec-Christoffersen VaR backtest receipt as JSON",
     )
 
+    bdt_parser = subparsers.add_parser(
+        "bdt-lattice",
+        aliases=["black-derman-toy", "bdt-1990", "rate-lattice"],
+        help="Calibrate Black-Derman-Toy (1990) Lognormal Short-Rate Binomial Lattice",
+    )
+    bdt_parser.add_argument(
+        "--ticker",
+        default="UST",
+        help="Curve/instrument ticker symbol (default: UST)",
+    )
+    bdt_parser.add_argument(
+        "--steps",
+        type=int,
+        default=8,
+        help="Number of binomial maturity steps (default: 8)",
+    )
+    bdt_parser.add_argument(
+        "--base-rate",
+        type=float,
+        default=0.04,
+        help="Front-end annualized spot rate (default: 0.04)",
+    )
+    bdt_parser.add_argument(
+        "--slope-bps",
+        type=float,
+        default=120.0,
+        help="Yield curve slope from short to long end in bps (default: 120.0)",
+    )
+    bdt_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.16,
+        help="Annualized lognormal short-rate volatility (default: 0.16)",
+    )
+    bdt_parser.add_argument(
+        "--call-price",
+        type=float,
+        default=100.0,
+        help="Bermudan call strike price (default: 100.0)",
+    )
+    bdt_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Black-Derman-Toy lattice receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19412,6 +19506,8 @@ def main() -> None:
         erc_portfolio_command(args)
     elif args.command in ("var-backtest", "kupiec-pof", "christoffersen-cc"):
         var_backtest_command(args)
+    elif args.command in ("bdt-lattice", "black-derman-toy", "bdt-1990", "rate-lattice"):
+        bdt_lattice_command(args)
 
 
 if __name__ == "__main__":
