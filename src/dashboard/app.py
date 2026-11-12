@@ -10041,6 +10041,70 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Jorion Bayes-Stein shrinkage.")
 
+                st.divider()
+                st.subheader("⚖️ Modigliani & Modigliani (1997) M^2 Risk-Adjusted Performance")
+                st.caption("Volatility-matched M^2 = r_f + SR_p * sigma_m: cash/margin normalization & Treynor-Black squared Sharpe decomposition")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.modigliani_m2_rap import (
+                            _build_hmac_payload as build_m2_payload,
+                            evaluate_modigliani_m2_profile,
+                            verify_hmac_signature as verify_m2_hmac,
+                        )
+                        m2_col1, m2_col2 = st.columns(2)
+                        with m2_col1:
+                            m2_bm_ret = st.slider(
+                                "Benchmark Expected Return r_m",
+                                min_value=0.04,
+                                max_value=0.20,
+                                value=0.10,
+                                step=0.01,
+                                key=f"m2_rm_{selected_ticker}",
+                            )
+                        with m2_col2:
+                            m2_bm_vol = st.slider(
+                                "Benchmark Target Vol sigma_m",
+                                min_value=0.08,
+                                max_value=0.35,
+                                value=0.16,
+                                step=0.02,
+                                key=f"m2_vm_{selected_ticker}",
+                            )
+
+                        m2_rec = evaluate_modigliani_m2_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            benchmark_return_rm=m2_bm_ret,
+                            benchmark_vol_m=m2_bm_vol,
+                        )
+
+                        m2m1, m2m2, m2m3, m2m4 = st.columns(4)
+                        m2m1.metric("Modigliani M^2 Return", f"{m2_rec.m2_return * 100:.2f}%", delta=f"{m2_rec.m2_alpha_bps:+.0f} bps vs Rm")
+                        m2m2.metric("Risk-Match Leverage L*", f"{m2_rec.leverage_ratio:.2f}x", delta=f"Cash/Margin {m2_rec.cash_or_margin_weight * 100:+.1f}%")
+                        m2m3.metric("Appraisal / Optimal SR", f"{m2_rec.appraisal_ratio:+.2f}", delta=f"TB SR {m2_rec.treynor_black_sharpe:.2f}")
+                        m2m4.metric("Sharpe & Regime", f"{m2_rec.portfolio_sharpe:+.2f}", delta=m2_rec.regime)
+
+                        m2_sig_payload = build_m2_payload(
+                            ticker=m2_rec.ticker,
+                            rp=m2_rec.portfolio_return_rp,
+                            vol_p=m2_rec.portfolio_vol_p,
+                            rm=m2_rec.benchmark_return_rm,
+                            vol_m=m2_rec.benchmark_vol_m,
+                            rf=m2_rec.risk_free_rate_r,
+                            beta=m2_rec.portfolio_beta,
+                            m2_return=m2_rec.m2_return,
+                            m2_alpha_bps=m2_rec.m2_alpha_bps,
+                            appraisal_ratio=m2_rec.appraisal_ratio,
+                            regime=m2_rec.regime,
+                            timestamp=m2_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Modigliani M^2 HMAC:** `{m2_rec.hmac_signature[:16]}...` (Sealed: `{verify_m2_hmac(m2_sig_payload, m2_rec.hmac_signature)}`)")
+                    except Exception as m2_ex:
+                        st.info(f"Modigliani M^2 evaluation deferred: {m2_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Modigliani M^2 performance.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

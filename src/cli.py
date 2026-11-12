@@ -11136,6 +11136,44 @@ def jorion_bayes_stein_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def modigliani_m2_command(args: argparse.Namespace) -> None:
+    """CLI handler for Modigliani & Modigliani (1997) M^2 Risk-Adjusted Performance."""
+    import json
+    from src.analytics.modigliani_m2_rap import (
+        calculate_modigliani_m2,
+        persist_modigliani_m2_record,
+    )
+
+    receipt = calculate_modigliani_m2(
+        portfolio_return_rp=args.rp,
+        portfolio_vol_p=args.vol_p,
+        benchmark_return_rm=args.rm,
+        benchmark_vol_m=args.vol_m,
+        risk_free_rate_r=args.rf,
+        portfolio_beta=args.beta,
+        ticker=args.ticker,
+    )
+    persist_modigliani_m2_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"MODIGLIANI & MODIGLIANI (1997) M^2 RAP AUDIT RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  Portfolio Return / Vol:         {receipt.portfolio_return_rp * 100:.2f}% / {receipt.portfolio_vol_p * 100:.2f}% (SR: {receipt.portfolio_sharpe:+.3f})")
+    print(f"  Benchmark Return / Vol:         {receipt.benchmark_return_rm * 100:.2f}% / {receipt.benchmark_vol_m * 100:.2f}% (SR: {receipt.benchmark_sharpe:+.3f})")
+    print(f"  Risk-Match Leverage / Cash:     {receipt.leverage_ratio:.3f}x / {receipt.cash_or_margin_weight * 100:+.2f}%")
+    print(f"  M^2 Return / Alpha vs Rm:       {receipt.m2_return * 100:.2f}% / {receipt.m2_alpha_bps:+.1f} bps")
+    print(f"  Jensen Alpha / Appraisal AR:    {receipt.jensen_alpha * 100:+.2f}% / {receipt.appraisal_ratio:+.3f}")
+    print(f"  Treynor-Black Combined Sharpe:  {receipt.treynor_black_sharpe:.3f}")
+    print(f"  Performance Regime:             {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17769,6 +17807,61 @@ def main() -> None:
         help="Output Jorion Bayes-Stein shrinkage receipt as JSON",
     )
 
+    # Modigliani & Modigliani (1997) M^2 Risk-Adjusted Performance parser
+    m2_parser = subparsers.add_parser(
+        "m2-modigliani",
+        aliases=["risk-adjusted-m2", "mm-rap"],
+        help="Evaluate volatility-matched Modigliani M^2 & Treynor-Black Sharpe decomposition",
+    )
+    m2_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Fund, strategy, or equity ticker symbol (default: SPY)",
+    )
+    m2_parser.add_argument(
+        "--rp",
+        type=float,
+        default=0.14,
+        help="Portfolio annualized return r_p (default: 0.14)",
+    )
+    m2_parser.add_argument(
+        "--vol-p",
+        type=float,
+        default=0.20,
+        dest="vol_p",
+        help="Portfolio annualized volatility sigma_p (default: 0.20)",
+    )
+    m2_parser.add_argument(
+        "--rm",
+        type=float,
+        default=0.10,
+        help="Benchmark market return r_m (default: 0.10)",
+    )
+    m2_parser.add_argument(
+        "--vol-m",
+        type=float,
+        default=0.16,
+        dest="vol_m",
+        help="Benchmark market volatility sigma_m (default: 0.16)",
+    )
+    m2_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Risk-free benchmark rate r_f (default: 0.04)",
+    )
+    m2_parser.add_argument(
+        "--beta",
+        type=float,
+        default=1.0,
+        help="Portfolio beta relative to benchmark (default: 1.0)",
+    )
+    m2_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Modigliani M^2 RAP receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -18119,6 +18212,8 @@ def main() -> None:
         fundamental_law_command(args)
     elif args.command in ("bayes-stein", "jorion-1986", "shrinkage-weights"):
         jorion_bayes_stein_command(args)
+    elif args.command in ("m2-modigliani", "risk-adjusted-m2", "mm-rap"):
+        modigliani_m2_command(args)
 
 
 if __name__ == "__main__":
