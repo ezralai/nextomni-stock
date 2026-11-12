@@ -9908,6 +9908,68 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 15 price sessions to evaluate Duffie & Singleton credit spreads.")
 
+                st.divider()
+                st.subheader("🎯 Grinold (1989) & Clarke-de Silva-Thorley (2002) Fundamental Law Engine")
+                st.caption("Constrained active skill IR = TC * IC * sqrt(BR): quadratic breadth loss TC^2*BR & implementation alpha drag")
+
+                if df is not None and not df.empty and len(df) >= 15:
+                    try:
+                        from src.analytics.fundamental_law_active import (
+                            _build_hmac_payload as build_fl_payload,
+                            evaluate_fundamental_law_profile,
+                            verify_hmac_signature as verify_fl_hmac,
+                        )
+                        fl_col1, fl_col2 = st.columns(2)
+                        with fl_col1:
+                            fl_br = st.slider(
+                                "Decision Breadth BR (Independent Bets/Yr)",
+                                min_value=10.0,
+                                max_value=1000.0,
+                                value=250.0,
+                                step=10.0,
+                                key=f"fl_br_{selected_ticker}",
+                            )
+                        with fl_col2:
+                            fl_tc = st.slider(
+                                "Portfolio Transfer Coefficient (TC)",
+                                min_value=0.10,
+                                max_value=1.00,
+                                value=0.70,
+                                step=0.05,
+                                key=f"fl_tc_{selected_ticker}",
+                            )
+
+                        fl_rec = evaluate_fundamental_law_profile(
+                            prices=df["Close"].tolist(),
+                            ticker=selected_ticker,
+                            breadth_br=fl_br,
+                            transfer_coefficient_tc=fl_tc,
+                        )
+
+                        flm1, flm2, flm3, flm4 = st.columns(4)
+                        flm1.metric("Constrained / Unconstrained IR", f"{fl_rec.constrained_ir:.2f}", delta=f"Uncon {fl_rec.unconstrained_ir:.2f}")
+                        flm2.metric("Effective Breadth (TC^2*BR)", f"{fl_rec.effective_breadth:.1f}", delta=f"Loss {fl_rec.breadth_loss_pct * 100:.1f}%")
+                        flm3.metric("Active Alpha / Drag", f"{fl_rec.constrained_alpha * 100:.2f}%", delta=f"Drag {fl_rec.constraint_alpha_drag * 100:.2f}%")
+                        flm4.metric("Calibrated IC & Regime", f"{fl_rec.information_coefficient_ic:.3f}", delta=fl_rec.regime)
+
+                        fl_sig_payload = build_fl_payload(
+                            ticker=fl_rec.ticker,
+                            ic=fl_rec.information_coefficient_ic,
+                            breadth=fl_rec.breadth_br,
+                            tc=fl_rec.transfer_coefficient_tc,
+                            te=fl_rec.tracking_error_te,
+                            constrained_ir=fl_rec.constrained_ir,
+                            effective_breadth=fl_rec.effective_breadth,
+                            constrained_alpha=fl_rec.constrained_alpha,
+                            regime=fl_rec.regime,
+                            timestamp=fl_rec.timestamp,
+                        )
+                        st.caption(f"🛡️ **Fundamental Law HMAC:** `{fl_rec.hmac_signature[:16]}...` (Sealed: `{verify_fl_hmac(fl_sig_payload, fl_rec.hmac_signature)}`)")
+                    except Exception as fl_ex:
+                        st.info(f"Fundamental Law evaluation deferred: {fl_ex}")
+                else:
+                    st.info("ℹ️ Requires at least 15 price sessions to evaluate Fundamental Law metrics.")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

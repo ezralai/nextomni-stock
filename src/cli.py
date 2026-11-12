@@ -11059,6 +11059,41 @@ def duffie_singleton_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def fundamental_law_command(args: argparse.Namespace) -> None:
+    """CLI handler for Grinold (1989) & Clarke-de Silva-Thorley (2002) Fundamental Law."""
+    import json
+    from src.analytics.fundamental_law_active import (
+        calculate_fundamental_law,
+        persist_fundamental_law_record,
+    )
+
+    receipt = calculate_fundamental_law(
+        information_coefficient_ic=args.ic,
+        breadth_br=args.breadth,
+        transfer_coefficient_tc=args.tc,
+        tracking_error_te=args.te,
+        ticker=args.ticker,
+    )
+    persist_fundamental_law_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(receipt.to_dict(), indent=2))
+        return
+
+    print("\n" + "=" * 80)
+    print(f"FUNDAMENTAL LAW OF ACTIVE MANAGEMENT RECEIPT — {receipt.ticker}")
+    print("=" * 80)
+    print(f"  IC / Breadth (BR):              {receipt.information_coefficient_ic:+.4f} / {receipt.breadth_br:.1f}")
+    print(f"  Transfer Coefficient (TC):      {receipt.transfer_coefficient_tc:.2f} (Eff BR: {receipt.effective_breadth:.1f}, -{receipt.breadth_loss_pct * 100:.1f}%)")
+    print(f"  Unconstrained / Constrained IR: {receipt.unconstrained_ir:.3f} / {receipt.constrained_ir:.3f}")
+    print(f"  Tracking Error (TE):            {receipt.tracking_error_te * 100:.2f}%")
+    print(f"  Constrained Alpha / Drag:       {receipt.constrained_alpha * 100:+.2f}% / {receipt.constraint_alpha_drag * 100:+.2f}%")
+    print(f"  Active Skill Regime:            {receipt.regime}")
+    print(f"  HMAC Signature:                 {receipt.hmac_signature[:16]}... (Sealed)")
+    print(f"  Timestamp:                      {receipt.timestamp}")
+    print("=" * 80 + "\n")
+
+
 def main() -> None:
 
 
@@ -17602,6 +17637,47 @@ def main() -> None:
         help="Output Duffie & Singleton credit receipt as JSON",
     )
 
+    # Grinold (1989) & Clarke-de Silva-Thorley (2002) Fundamental Law parser
+    fl_parser = subparsers.add_parser(
+        "fundamental-law",
+        aliases=["grinold-kahn", "gk-1989"],
+        help="Evaluate active IR, transfer coefficient & effective breadth via Grinold-Kahn",
+    )
+    fl_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Benchmark or active strategy ticker symbol (default: SPY)",
+    )
+    fl_parser.add_argument(
+        "--ic",
+        type=float,
+        default=0.06,
+        help="Information Coefficient IC in [-1.0, 1.0] (default: 0.06)",
+    )
+    fl_parser.add_argument(
+        "--breadth",
+        type=float,
+        default=250.0,
+        help="Independent annual decision breadth BR >= 1 (default: 250.0)",
+    )
+    fl_parser.add_argument(
+        "--tc",
+        type=float,
+        default=0.70,
+        help="Transfer Coefficient TC in [0.0, 1.0] (default: 0.70)",
+    )
+    fl_parser.add_argument(
+        "--te",
+        type=float,
+        default=0.04,
+        help="Annualized active tracking error TE (default: 0.04)",
+    )
+    fl_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Fundamental Law active management receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -17948,6 +18024,8 @@ def main() -> None:
         fama_bliss_command(args)
     elif args.command in ("reduced-credit", "duffie-singleton", "ds-1999"):
         duffie_singleton_command(args)
+    elif args.command in ("fundamental-law", "grinold-kahn", "gk-1989"):
+        fundamental_law_command(args)
 
 
 if __name__ == "__main__":
