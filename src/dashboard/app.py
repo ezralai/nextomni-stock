@@ -10831,6 +10831,37 @@ def render_dashboard() -> None:
                 else:
                     st.info("ℹ️ Requires at least 25 price sessions to calibrate Equal Risk Contribution portfolio.")
 
+                st.divider()
+                st.markdown("#### 🛡️ Kupiec (1995) & Christoffersen (1998) Conditional Coverage VaR Backtest")
+                try:
+                    from src.analytics.kupiec_christoffersen_var import evaluate_var_backtest_profile
+                    var_alpha = st.selectbox(
+                        "VaR Tail Significance (α)",
+                        options=[0.01, 0.05, 0.10],
+                        index=1,
+                        key="kupiec_var_alpha",
+                    )
+                    if len(prices) >= 60:
+                        var_rec = evaluate_var_backtest_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                            alpha=float(var_alpha),
+                        )
+                        vc1, vc2, vc3, vc4 = st.columns(4)
+                        vc1.metric("Exceptions / Exp", f"{var_rec.n_exceptions} / {var_rec.expected_exceptions:.1f}")
+                        vc2.metric("LR_uc / LR_ind", f"{var_rec.lr_uc:.3f} / {var_rec.lr_ind:.3f}")
+                        vc3.metric("LR_cc (p-val)", f"{var_rec.lr_cc:.3f} ({var_rec.p_value_cc:.4f})")
+                        vc4.metric("Basel Zone / Regime", f"{var_rec.basel_zone} / {var_rec.regime}")
+                        st.caption(
+                            f"Empirical failure rate {var_rec.empirical_failure_rate:.4f} vs target {var_rec.alpha_target:.4f} | "
+                            f"π₀₁={var_rec.pi_01_after_ok:.4f}, π₁₁={var_rec.pi_11_after_breach:.4f} | "
+                            f"HMAC `{var_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 60 price sessions for rolling VaR conditional coverage backtest.")
+                except Exception as var_ex:
+                    st.info(f"Kupiec-Christoffersen VaR backtest deferred: {var_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

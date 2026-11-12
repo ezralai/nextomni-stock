@@ -11661,6 +11661,51 @@ def erc_portfolio_command(args: argparse.Namespace) -> None:
     print("=" * 80 + "\n")
 
 
+def var_backtest_command(args: argparse.Namespace) -> None:
+    """Run Kupiec (1995) POF & Christoffersen (1998) Conditional Coverage VaR Backtest."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.kupiec_christoffersen_var import (
+        build_synthetic_var_series,
+        calculate_var_backtest,
+        persist_var_backtest_record,
+    )
+
+    ticker = str(getattr(args, "ticker", "SPY")).strip().upper()
+    alpha = float(getattr(args, "alpha", 0.05))
+    n_obs = int(getattr(args, "n_obs", 250))
+    mode = str(getattr(args, "mode", "calibrated"))
+
+    returns, var_forecasts = build_synthetic_var_series(
+        n_obs=n_obs,
+        alpha=alpha,
+        mode=mode,
+    )
+    receipt = calculate_var_backtest(
+        returns=returns,
+        var_forecasts=var_forecasts,
+        alpha=alpha,
+        ticker=ticker,
+    )
+    persist_var_backtest_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n🛡️ Kupiec (1995) & Christoffersen (1998) VaR Backtest [{receipt.ticker}]"
+        f"\n  N={receipt.n_obs} | α={receipt.alpha_target:.4f} | "
+        f"Exceptions={receipt.n_exceptions} (Exp={receipt.expected_exceptions:.2f}) | "
+        f"FailRate={receipt.empirical_failure_rate:.4f}"
+        f"\n  π₀₁={receipt.pi_01_after_ok:.4f} | π₁₁={receipt.pi_11_after_breach:.4f}"
+        f"\n  LR_uc={receipt.lr_uc:.4f} (p={receipt.p_value_uc:.4f}) | "
+        f"LR_ind={receipt.lr_ind:.4f} (p={receipt.p_value_ind:.4f}) | "
+        f"LR_cc={receipt.lr_cc:.4f} (p={receipt.p_value_cc:.4f})"
+        f"\n  Basel Zone={receipt.basel_zone} | Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -18953,6 +18998,40 @@ def main() -> None:
         help="Output ERC Risk Parity receipt as JSON",
     )
 
+    var_bt_parser = subparsers.add_parser(
+        "var-backtest",
+        aliases=["kupiec-pof", "christoffersen-cc"],
+        help="Run Kupiec (1995) & Christoffersen (1998) Conditional Coverage VaR Backtest",
+    )
+    var_bt_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Ticker symbol to tag VaR backtest receipt (default: SPY)",
+    )
+    var_bt_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.05,
+        help="Target VaR tail significance level in (0, 0.5) (default: 0.05)",
+    )
+    var_bt_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=250,
+        help="Number of synthetic daily observations when running CLI test series (default: 250)",
+    )
+    var_bt_parser.add_argument(
+        "--mode",
+        choices=["calibrated", "excessive", "clustered"],
+        default="calibrated",
+        help="Synthetic backtest regime mode (default: calibrated)",
+    )
+    var_bt_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Kupiec-Christoffersen VaR backtest receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19331,6 +19410,8 @@ def main() -> None:
         copeland_galai_command(args)
     elif args.command in ("erc-portfolio", "risk-budget", "mrt-2010"):
         erc_portfolio_command(args)
+    elif args.command in ("var-backtest", "kupiec-pof", "christoffersen-cc"):
+        var_backtest_command(args)
 
 
 if __name__ == "__main__":
