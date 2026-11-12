@@ -10948,6 +10948,29 @@ def render_dashboard() -> None:
                 except Exception as gp_ex:
                     st.info(f"Gârleanu-Pedersen dynamic trading deferred: {gp_ex}")
 
+                st.divider()
+                st.markdown("#### 🔗 Engle (2002) Dynamic Conditional Correlation (DCC-GARCH)")
+                try:
+                    from src.analytics.dcc_garch import evaluate_dcc_profile
+                    if len(prices) >= 45:
+                        dcc_rec = evaluate_dcc_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                        )
+                        dc1, dc2, dc3, dc4 = st.columns(4)
+                        dc1.metric("Latest / Uncond ρ", f"{dcc_rec.latest_corr_mean:.3f} / {dcc_rec.unconditional_corr_mean:.3f}")
+                        dc2.metric("DCC (a + b)", f"{dcc_rec.a_dcc:.3f} + {dcc_rec.b_dcc:.3f} = {dcc_rec.dcc_persistence:.3f}")
+                        dc3.metric("ΔLogLik vs CCC", f"+{dcc_rec.loglik_gain:.2f}")
+                        dc4.metric("DCC Regime", dcc_rec.regime)
+                        st.caption(
+                            f"Dynamic ρ range [{dcc_rec.corr_min:.3f}, {dcc_rec.corr_max:.3f}] across {dcc_rec.n_obs} returns | "
+                            f"HMAC `{dcc_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 45 price sessions to fit DCC-GARCH(1,1).")
+                except Exception as dcc_ex:
+                    st.info(f"Engle DCC-GARCH correlation model deferred: {dcc_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

@@ -11836,6 +11836,39 @@ def gp_dynamic_command(args: argparse.Namespace) -> None:
     )
 
 
+def dcc_garch_command(args: argparse.Namespace) -> None:
+    """Run Engle (2002) Dynamic Conditional Correlation (DCC-GARCH(1,1)) Estimation."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.dcc_garch import (
+        build_synthetic_dcc_returns,
+        fit_dcc_garch,
+        persist_dcc_record,
+    )
+
+    ticker = str(getattr(args, "ticker", "SPY")).strip().upper()
+    n_obs = int(getattr(args, "n_obs", 220))
+    regime = str(getattr(args, "regime", "crisis_spike"))
+
+    rets = build_synthetic_dcc_returns(n_obs=n_obs, regime=regime)
+    receipt = fit_dcc_garch(returns=rets, ticker=ticker)
+    persist_dcc_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n🔗 Engle (2002) DCC-GARCH(1,1) [{receipt.ticker}]"
+        f"\n  N={receipt.n_obs} | Assets={receipt.n_assets} | "
+        f"a={receipt.a_dcc:.4f}, b={receipt.b_dcc:.4f} (a+b={receipt.dcc_persistence:.4f})"
+        f"\n  Latest ρ={receipt.latest_corr_mean:.4f} vs Uncond ρ̄={receipt.unconditional_corr_mean:.4f} "
+        f"[{receipt.corr_min:.3f}, {receipt.corr_max:.3f}]"
+        f"\n  LogLik(DCC)={receipt.dcc_loglik:.2f} vs CCC={receipt.ccc_loglik:.2f} (+{receipt.loglik_gain:.2f})"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19270,6 +19303,34 @@ def main() -> None:
         help="Output Gârleanu-Pedersen dynamic trading receipt as JSON",
     )
 
+    dcc_parser = subparsers.add_parser(
+        "dcc-garch",
+        aliases=["dcc-2002", "dynamic-correlation", "engle-dcc"],
+        help="Estimate Engle (2002) Dynamic Conditional Correlation (DCC-GARCH(1,1))",
+    )
+    dcc_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Portfolio/pair ticker symbol (default: SPY)",
+    )
+    dcc_parser.add_argument(
+        "--n-obs",
+        type=int,
+        default=220,
+        help="Number of synthetic return observations (default: 220)",
+    )
+    dcc_parser.add_argument(
+        "--regime",
+        choices=["crisis_spike", "calm", "low_corr"],
+        default="crisis_spike",
+        help="Synthetic correlation regime mode (default: crisis_spike)",
+    )
+    dcc_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output DCC-GARCH(1,1) receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19656,6 +19717,8 @@ def main() -> None:
         nss_curve_command(args)
     elif args.command in ("gp-trading", "gp-dynamic", "gp-2013", "dynamic-aim"):
         gp_dynamic_command(args)
+    elif args.command in ("dcc-garch", "dcc-2002", "dynamic-correlation", "engle-dcc"):
+        dcc_garch_command(args)
 
 
 if __name__ == "__main__":
