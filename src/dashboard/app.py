@@ -11092,6 +11092,37 @@ def render_dashboard() -> None:
                 except Exception as sf_ex:
                     st.info(f"Roy Safety-First allocation deferred: {sf_ex}")
 
+                st.divider()
+                st.markdown("#### ⏳ Samuelson (1969) & Merton (1969/1971) CRRA Lifetime Portfolio")
+                try:
+                    from src.analytics.merton_crra_allocation import evaluate_merton_crra_profile
+                    merton_gamma = st.selectbox(
+                        "Relative Risk Aversion (γ)",
+                        options=[1.0, 2.0, 3.0, 5.0, 10.0],
+                        index=2,
+                        key="merton_crra_gamma",
+                    )
+                    if len(prices) >= 25:
+                        m_rec = evaluate_merton_crra_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                            gamma_risk_aversion=float(merton_gamma),
+                        )
+                        mc1, mc2, mc3, mc4 = st.columns(4)
+                        mc1.metric("Total Equity / Myopic", f"{m_rec.total_risky_weight*100:.1f}% / {m_rec.merton_share_myopic*100:.1f}%")
+                        mc2.metric("Hedging Demand", f"{m_rec.hedging_demand*100:+.1f}%")
+                        mc3.metric("Opt c/W / Exp Growth", f"{m_rec.consumption_wealth_ratio*100:.2f}% / {m_rec.expected_growth_rate*100:+.2f}%")
+                        mc4.metric("CRRA Regime", m_rec.regime)
+                        st.caption(
+                            f"μ={m_rec.expected_return*100:.1f}%, σ={m_rec.volatility*100:.1f}%, rf={m_rec.risk_free_rate*100:.1f}% | "
+                            f"r_CE={m_rec.certainty_equivalent_return*100:.2f}% | "
+                            f"HMAC `{m_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for Merton CRRA lifetime allocation.")
+                except Exception as m_ex:
+                    st.info(f"Samuelson-Merton CRRA lifetime allocation deferred: {m_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

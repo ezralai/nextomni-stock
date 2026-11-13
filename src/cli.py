@@ -12017,6 +12017,47 @@ def safety_first_command(args: argparse.Namespace) -> None:
     )
 
 
+def merton_crra_command(args: argparse.Namespace) -> None:
+    """Run Samuelson (1969) & Merton (1969/1971) CRRA Lifetime Portfolio & Consumption."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.merton_crra_allocation import (
+        calculate_merton_crra_allocation,
+        persist_merton_crra_record,
+    )
+
+    ticker = str(getattr(args, "ticker", "SPY")).strip().upper()
+    mu = float(getattr(args, "mu", 0.09))
+    vol = float(getattr(args, "vol", 0.16))
+    rf = float(getattr(args, "rf", 0.04))
+    gamma = float(getattr(args, "gamma", 3.0))
+    rho = float(getattr(args, "rho", 0.03))
+    rho_state = float(getattr(args, "rho_state", -0.40))
+
+    receipt = calculate_merton_crra_allocation(
+        expected_return=mu,
+        volatility=vol,
+        risk_free_rate=rf,
+        gamma_risk_aversion=gamma,
+        time_discount_rate=rho,
+        state_correlation=rho_state,
+        ticker=ticker,
+    )
+    persist_merton_crra_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⏳ Samuelson (1969) & Merton (1969/1971) CRRA Portfolio [{receipt.ticker}]"
+        f"\n  μ={receipt.expected_return*100:.2f}% | σ={receipt.volatility*100:.2f}% | rf={receipt.risk_free_rate*100:.2f}% | γ={receipt.gamma_risk_aversion:.2f}"
+        f"\n  Myopic Share={receipt.merton_share_myopic*100:.2f}% | Hedging Demand={receipt.hedging_demand*100:+.2f}% | Total Weight={receipt.total_risky_weight*100:.2f}%"
+        f"\n  Optimal c/W={receipt.consumption_wealth_ratio*100:.2f}% | Growth Rate={receipt.expected_growth_rate*100:+.2f}% | r_CE={receipt.certainty_equivalent_return*100:.2f}%"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19603,6 +19644,58 @@ def main() -> None:
         help="Output Roy Safety-First receipt as JSON",
     )
 
+    merton_crra_parser = subparsers.add_parser(
+        "merton-share",
+        aliases=["merton-1969", "samuelson-merton", "crra-allocation"],
+        help="Compute Samuelson (1969) & Merton (1969/1971) CRRA Lifetime Portfolio & Consumption",
+    )
+    merton_crra_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Strategy/portfolio ticker symbol (default: SPY)",
+    )
+    merton_crra_parser.add_argument(
+        "--mu",
+        type=float,
+        default=0.09,
+        help="Annualized expected return (default: 0.09)",
+    )
+    merton_crra_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.16,
+        help="Annualized volatility (default: 0.16)",
+    )
+    merton_crra_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Annualized risk-free rate (default: 0.04)",
+    )
+    merton_crra_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=3.0,
+        help="CRRA relative risk aversion parameter (default: 3.0)",
+    )
+    merton_crra_parser.add_argument(
+        "--rho",
+        type=float,
+        default=0.03,
+        help="Subjective time discount rate (default: 0.03)",
+    )
+    merton_crra_parser.add_argument(
+        "--rho-state",
+        type=float,
+        default=-0.40,
+        help="Correlation between returns and state variable (default: -0.40)",
+    )
+    merton_crra_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Merton CRRA allocation receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -19999,6 +20092,8 @@ def main() -> None:
         key_rate_immunization_command(args)
     elif args.command in ("safety-first", "roy-1952", "kataoka", "telser-1955"):
         safety_first_command(args)
+    elif args.command in ("merton-share", "merton-1969", "samuelson-merton", "crra-allocation"):
+        merton_crra_command(args)
 
 
 if __name__ == "__main__":
