@@ -11454,6 +11454,28 @@ def render_dashboard() -> None:
                 except Exception as gh_ex:
                     st.info(f"Glosten-Harris spread decomposition deferred: {gh_ex}")
 
+                try:
+                    from src.analytics.lesmond_ogden_trzcinka_spread import evaluate_lot_from_prices
+                    st.markdown("---")
+                    st.subheader("🎯 Lesmond, Ogden & Trzcinka (1999) LOT Zero-Return Transaction Costs")
+                    st.caption("Limited Dependent Variable (LDV) maximum likelihood estimator extracting buy/sell cost thresholds from zero-return trade friction bands.")
+                    if len(hist_df) >= 26:
+                        close_vals = hist_df["close"].dropna().tolist()
+                        lot_rec = evaluate_lot_from_prices(close_vals, ticker=ticker)
+                        lot1, lot2, lot3, lot4 = st.columns(4)
+                        lot1.metric("Round-Trip Spread", f"{lot_rec.round_trip_spread_bps:.1f} bps", delta=f"{lot_rec.round_trip_spread_pct*100:.2f}%")
+                        lot2.metric("Buy Threshold (α₂)", f"+{lot_rec.buy_cost_bps:.1f} bps")
+                        lot3.metric("Sell Threshold (|α₁|)", f"-{lot_rec.sell_cost_bps:.1f} bps")
+                        lot4.metric("Zero-Return Days", f"{lot_rec.zero_return_count} ({lot_rec.zero_return_frequency*100:.1f}%)")
+                        st.caption(
+                            f"Regime: **{lot_rec.regime}** | Beta: `{lot_rec.market_beta:.2f}` | Idio σ: `{lot_rec.idiosyncratic_sigma*100:.2f}%` | "
+                            f"Log-Likelihood: `{lot_rec.log_likelihood:.1f}` | Sample N={lot_rec.sample_size} | HMAC `{lot_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 26 price sessions for LOT zero-return transaction cost estimation.")
+                except Exception as lot_ex:
+                    st.info(f"LOT transaction cost estimation deferred: {lot_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

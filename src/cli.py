@@ -12569,6 +12569,60 @@ def glosten_harris_command(args: argparse.Namespace) -> None:
     )
 
 
+def lot_command(args: argparse.Namespace) -> None:
+    """Run David A. Lesmond, Joseph P. Ogden & Charles A. Trzcinka (1999) LOT Transaction Cost Engine."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.lesmond_ogden_trzcinka_spread import (
+        calculate_lot_spread,
+        evaluate_lot_from_prices,
+        persist_lot_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 26:
+        prices = df["close"].values
+        receipt = evaluate_lot_from_prices(stock_prices=prices, ticker=args.ticker)
+    else:
+        np.random.seed(args.seed)
+        n = 150
+        r_m = np.random.normal(0.0004, 0.010, size=n)
+        e = np.random.normal(0.0, 0.012, size=n)
+        r_star = 1.10 * r_m + e
+        a1_val = -0.0050
+        a2_val = 0.0060
+        r_obs = np.zeros(n)
+        for t in range(n):
+            if r_star[t] < a1_val:
+                r_obs[t] = r_star[t] - a1_val
+            elif r_star[t] > a2_val:
+                r_obs[t] = r_star[t] - a2_val
+            else:
+                r_obs[t] = 0.0
+        receipt = calculate_lot_spread(
+            stock_returns=r_obs,
+            market_returns=r_m,
+            ticker=args.ticker,
+            derivation_mode="SYNTHETIC_FALLBACK",
+        )
+
+    persist_lot_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n🎯 Lesmond, Ogden & Trzcinka (1999) LOT Transaction Costs [{receipt.ticker}]"
+        f"\n  Round-Trip Spread={receipt.round_trip_spread_bps:.2f} bps ({receipt.round_trip_spread_pct*100:.3f}%) | Sample N={receipt.sample_size}"
+        f"\n  Buy Cost Threshold α₂=+{receipt.buy_cost_bps:.2f} bps | Sell Cost Threshold |α₁|=-{receipt.sell_cost_bps:.2f} bps"
+        f"\n  Zero-Return Days={receipt.zero_return_count} ({receipt.zero_return_frequency*100:.1f}%)"
+        f"\n  Market Beta={receipt.market_beta:.2f} | Idiosyncratic Risk σ={receipt.idiosyncratic_sigma*100:.2f}% | Log-Likelihood={receipt.log_likelihood:.2f}"
+        f"\n  Regime={receipt.regime} | Mode={receipt.derivation_mode} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20795,6 +20849,28 @@ def main() -> None:
         help="Output Glosten-Harris spread receipt as JSON",
     )
 
+    lot_parser = subparsers.add_parser(
+        "lot-spread",
+        aliases=["lot", "lot-1999", "zero-return-spread", "ldv-spread"],
+        help="Estimate Lesmond, Ogden & Trzcinka (1999) LOT Zero-Return Transaction Costs",
+    )
+    lot_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    lot_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for synthetic fallback generation (default: 42)",
+    )
+    lot_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output LOT spread receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21217,6 +21293,8 @@ def main() -> None:
         gkn_command(args)
     elif args.command in ("glosten-harris", "gh-1988", "size-spread", "volume-impact-spread"):
         glosten_harris_command(args)
+    elif args.command in ("lot-spread", "lot", "lot-1999", "zero-return-spread", "ldv-spread"):
+        lot_command(args)
 
 
 if __name__ == "__main__":
