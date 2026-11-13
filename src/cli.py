@@ -12297,6 +12297,50 @@ def cgarch_command(args: argparse.Namespace) -> None:
     )
 
 
+def huang_stoll_command(args: argparse.Namespace) -> None:
+    """Run Roger D. Huang & Hans R. Stoll (1997) Three-Way Spread Decomposition."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.huang_stoll_spread import (
+        calculate_huang_stoll_decomposition,
+        evaluate_huang_stoll_from_prices,
+        persist_huang_stoll_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 32:
+        receipt = evaluate_huang_stoll_from_prices(df["close"].values, ticker=args.ticker)
+    else:
+        np.random.seed(42)
+        n = 150
+        q = np.ones(n)
+        for t in range(1, n):
+            q[t] = q[t - 1] if np.random.rand() < 0.60 else -q[t - 1]
+        s_half = (args.spread * 100.0 / 10000.0) / 2.0
+        alpha_val = args.alpha
+        beta_val = args.beta
+        gamma_val = max(0.0, 1.0 - alpha_val - beta_val)
+        dp = np.zeros(n)
+        dp[2:] = s_half * q[2:] - gamma_val * s_half * q[1:-1] - beta_val * s_half * q[:-2] + np.random.normal(0, 0.001, size=n - 2)
+        receipt = calculate_huang_stoll_decomposition(dp, q, ticker=args.ticker, reference_price=100.0)
+    persist_huang_stoll_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ Huang & Stoll (1997) Three-Way Spread Decomposition [{receipt.ticker}]"
+        f"\n  Effective Spread={receipt.effective_spread_bps:.2f} bps | Sample N={receipt.sample_size}"
+        f"\n  Adverse Selection (α)={receipt.adverse_selection_pct*100:.1f}% ({receipt.adverse_spread_bps:.2f} bps)"
+        f"\n  Inventory Holding (β)={receipt.inventory_holding_pct*100:.1f}% ({receipt.inventory_spread_bps:.2f} bps)"
+        f"\n  Order Processing (γ)={receipt.order_processing_pct*100:.1f}% ({receipt.processing_spread_bps:.2f} bps)"
+        f"\n  Trade Continuation Prob π={receipt.trade_continuation_prob*100:.1f}% | R²={receipt.r_squared:.3f}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20319,6 +20363,40 @@ def main() -> None:
         help="Output Component GARCH receipt as JSON",
     )
 
+    huang_stoll_parser = subparsers.add_parser(
+        "huang-stoll",
+        aliases=["hs-1997", "spread-decomp", "three-way-spread"],
+        help="Estimate Roger D. Huang & Hans R. Stoll (1997) Three-Way Bid-Ask Spread Decomposition",
+    )
+    huang_stoll_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    huang_stoll_parser.add_argument(
+        "--spread",
+        type=float,
+        default=10.0,
+        help="Synthetic effective spread in basis points (default: 10.0 bps)",
+    )
+    huang_stoll_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.35,
+        help="Target adverse selection proportion alpha (default: 0.35)",
+    )
+    huang_stoll_parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.20,
+        help="Target inventory holding proportion beta (default: 0.20)",
+    )
+    huang_stoll_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Huang-Stoll spread receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20729,6 +20807,8 @@ def main() -> None:
         bates_opt_command(args)
     elif args.command in ("cgarch", "c-garch", "component-garch", "engle-lee"):
         cgarch_command(args)
+    elif args.command in ("huang-stoll", "hs-1997", "spread-decomp", "three-way-spread"):
+        huang_stoll_command(args)
 
 
 if __name__ == "__main__":

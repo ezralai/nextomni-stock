@@ -11298,6 +11298,34 @@ def render_dashboard() -> None:
                 except Exception as cg_ex:
                     st.info(f"Component GARCH calibration deferred: {cg_ex}")
 
+                try:
+                    from src.analytics.huang_stoll_spread import (
+                        calculate_huang_stoll_decomposition,
+                        evaluate_huang_stoll_from_prices,
+                        persist_huang_stoll_record,
+                    )
+                    st.markdown("---")
+                    st.markdown("#### ⚡ Roger D. Huang & Hans R. Stoll (1997) Three-Way Spread Decomposition")
+                    st.caption("Decomposes bid-ask spread into Adverse Selection (α), Inventory Holding (β), and Order Processing (γ).")
+                    if len(prices) >= 32:
+                        hc1, hc2, hc3, hc4 = st.columns(4)
+                        hs_rec = evaluate_huang_stoll_from_prices(prices, ticker=selected_ticker)
+                        persist_huang_stoll_record(hs_rec)
+
+                        hc1.metric("Effective Spread", f"{hs_rec.effective_spread_bps:.2f} bps")
+                        hc2.metric("Adverse Selection (α)", f"{hs_rec.adverse_selection_pct*100:.1f}%", delta=f"{hs_rec.adverse_spread_bps:.2f} bps")
+                        hc3.metric("Inventory / Processing", f"{hs_rec.inventory_holding_pct*100:.1f}% / {hs_rec.order_processing_pct*100:.1f}%")
+                        hc4.metric("Spread Regime", hs_rec.regime)
+                        st.caption(
+                            f"Trade continuation probability π={hs_rec.trade_continuation_prob*100:.1f}% | "
+                            f"Model R²={hs_rec.r_squared:.3f} | Sample N={hs_rec.sample_size} | "
+                            f"HMAC `{hs_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 32 price sessions for Huang-Stoll spread decomposition.")
+                except Exception as hs_ex:
+                    st.info(f"Huang-Stoll spread decomposition deferred: {hs_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
