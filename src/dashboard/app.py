@@ -11499,6 +11499,31 @@ def render_dashboard() -> None:
                 except Exception as fht_ex:
                     st.info(f"FHT spread estimation deferred: {fht_ex}")
 
+                try:
+                    from src.analytics.autoregressive_conditional_duration import evaluate_acd_from_prices
+                    st.markdown("---")
+                    st.subheader("⏱️ Engle & Russell (1998) ACD Point-Process Duration Engine")
+                    st.caption("Autoregressive Conditional Duration model forecasting transaction arrival rates, trading acceleration, and liquidity droughts.")
+                    if len(hist_df) >= 25:
+                        close_vals = hist_df["close"].dropna().tolist()
+                        vol_vals = hist_df["volume"].dropna().tolist() if "volume" in hist_df.columns else None
+                        acd_rec = evaluate_acd_from_prices(close_vals, volumes=vol_vals, ticker=ticker)
+                        ac1, ac2, ac3, ac4 = st.columns(4)
+                        ac1.metric("Trading Speed Ratio", f"{acd_rec.trading_speed_ratio:.2f}x", delta="Accelerated" if acd_rec.trading_speed_ratio > 1.0 else "Decelerated")
+                        ac2.metric("Current Hazard Rate", f"{acd_rec.current_hazard_rate:.3f} /period")
+                        ac3.metric("Duration Persistence (α+β)", f"{acd_rec.persistence:.3f}")
+                        ac4.metric("Shock Half-Life", f"{acd_rec.half_life_shocks:.1f} periods")
+                        st.caption(
+                            f"Regime: **{acd_rec.regime}** | Mean Duration: `{acd_rec.mean_duration:.2f}` | "
+                            f"Cond Duration: `{acd_rec.current_conditional_duration:.2f}` | Baseline ω: `{acd_rec.omega:.4f}` | "
+                            f"Shock α: `{acd_rec.alpha:.3f}` | Persistence β: `{acd_rec.beta:.3f}` | Mode: `{acd_rec.derivation_mode}` | "
+                            f"HMAC `{acd_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for ACD duration estimation.")
+                except Exception as acd_ex:
+                    st.info(f"ACD duration estimation deferred: {acd_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

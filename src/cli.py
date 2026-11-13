@@ -12668,6 +12668,59 @@ def fht_command(args: argparse.Namespace) -> None:
     )
 
 
+def acd_command(args: argparse.Namespace) -> None:
+    """Run Robert F. Engle & Jeffrey R. Russell (1998) ACD Duration Engine."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.autoregressive_conditional_duration import (
+        calculate_acd_model,
+        evaluate_acd_from_prices,
+        persist_acd_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 25:
+        prices = df["close"].values
+        volumes = df["volume"].values if "volume" in df.columns else None
+        receipt = evaluate_acd_from_prices(prices=prices, volumes=volumes, ticker=args.ticker)
+    else:
+        np.random.seed(args.seed)
+        n = 150
+        omega_val = 0.25
+        alpha_val = 0.12
+        beta_val = 0.76
+        x = np.empty(n)
+        psi = np.empty(n)
+        psi[0] = omega_val / (1.0 - alpha_val - beta_val)
+        eps = np.random.exponential(scale=1.0, size=n)
+        x[0] = psi[0] * eps[0]
+        for i in range(1, n):
+            psi[i] = omega_val + alpha_val * x[i - 1] + beta_val * psi[i - 1]
+            x[i] = psi[i] * eps[i]
+        receipt = calculate_acd_model(
+            durations=x,
+            ticker=args.ticker,
+            derivation_mode="SYNTHETIC_FALLBACK",
+        )
+
+    persist_acd_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⏱️ Engle & Russell (1998) ACD Duration Engine [{receipt.ticker}]"
+        f"\n  Trading Speed Ratio={receipt.trading_speed_ratio:.2f}x | Hazard Rate={receipt.current_hazard_rate:.4f} /period"
+        f"\n  Duration Persistence (α+β)={receipt.persistence:.4f} | Shock Half-Life={receipt.half_life_shocks:.1f} periods"
+        f"\n  Parameters: ω={receipt.omega:.6f} | α={receipt.alpha:.4f} | β={receipt.beta:.4f}"
+        f"\n  Mean Duration={receipt.mean_duration:.3f} | Current Cond Duration={receipt.current_conditional_duration:.3f}"
+        f"\n  Regime={receipt.regime} | Mode={receipt.derivation_mode} | Sample N={receipt.sample_size}"
+        f"\n  HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20944,6 +20997,28 @@ def main() -> None:
         help="Output FHT spread receipt as JSON",
     )
 
+    acd_parser = subparsers.add_parser(
+        "acd-duration",
+        aliases=["acd", "acd-1998", "trade-intensity", "point-process"],
+        help="Estimate Engle & Russell (1998) Autoregressive Conditional Duration (ACD) Model",
+    )
+    acd_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    acd_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for synthetic fallback generation (default: 42)",
+    )
+    acd_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output ACD duration receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21370,6 +21445,8 @@ def main() -> None:
         lot_command(args)
     elif args.command in ("fht-spread", "fht", "fht-2017", "closed-form-spread"):
         fht_command(args)
+    elif args.command in ("acd-duration", "acd", "acd-1998", "trade-intensity", "point-process"):
+        acd_command(args)
 
 
 if __name__ == "__main__":
