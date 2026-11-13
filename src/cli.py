@@ -12341,6 +12341,43 @@ def huang_stoll_command(args: argparse.Namespace) -> None:
     )
 
 
+def ekop_pin_command(args: argparse.Namespace) -> None:
+    """Run David Easley et al. (1996) EKOP Probability of Informed Trading (PIN) Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.ekop_pin import (
+        calculate_ekop_pin,
+        evaluate_ekop_pin_from_trades,
+        persist_ekop_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 20:
+        receipt = evaluate_ekop_pin_from_trades(df["close"].values, ticker=args.ticker)
+    else:
+        receipt = calculate_ekop_pin(
+            alpha=args.alpha,
+            delta=args.delta,
+            mu=args.mu,
+            epsilon=args.epsilon,
+            ticker=args.ticker,
+        )
+    persist_ekop_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ David Easley et al. (1996) EKOP PIN Microstructure [{receipt.ticker}]"
+        f"\n  Probability of Informed Trading (PIN)={receipt.pin*100:.2f}% | Sample N={receipt.sample_size}"
+        f"\n  Info Event Prob (α)={receipt.alpha*100:.1f}% | Bad News Prob (δ)={receipt.delta*100:.1f}%"
+        f"\n  Informed Intensity μ={receipt.mu:.1f} | Uninformed Intensity ε={receipt.epsilon:.1f}"
+        f"\n  Informed Share={receipt.informed_order_share*100:.1f}% | Daily Turnover={receipt.daily_order_turnover:.1f}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20397,6 +20434,46 @@ def main() -> None:
         help="Output Huang-Stoll spread receipt as JSON",
     )
 
+    ekop_pin_parser = subparsers.add_parser(
+        "ekop-pin",
+        aliases=["ekop", "pin-model", "informed-trading"],
+        help="Estimate David Easley et al. (1996) Probability of Informed Trading (PIN)",
+    )
+    ekop_pin_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    ekop_pin_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.30,
+        help="Information event probability alpha in [0, 1] (default: 0.30)",
+    )
+    ekop_pin_parser.add_argument(
+        "--delta",
+        type=float,
+        default=0.40,
+        help="Bad news conditional probability delta in [0, 1] (default: 0.40)",
+    )
+    ekop_pin_parser.add_argument(
+        "--mu",
+        type=float,
+        default=120.0,
+        help="Informed trader Poisson arrival intensity mu > 0 (default: 120.0)",
+    )
+    ekop_pin_parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=80.0,
+        help="Uninformed baseline Poisson arrival intensity epsilon > 0 (default: 80.0)",
+    )
+    ekop_pin_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output EKOP PIN receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20809,6 +20886,8 @@ def main() -> None:
         cgarch_command(args)
     elif args.command in ("huang-stoll", "hs-1997", "spread-decomp", "three-way-spread"):
         huang_stoll_command(args)
+    elif args.command in ("ekop-pin", "ekop", "pin-model", "informed-trading"):
+        ekop_pin_command(args)
 
 
 if __name__ == "__main__":

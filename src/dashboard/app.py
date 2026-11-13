@@ -11326,6 +11326,35 @@ def render_dashboard() -> None:
                 except Exception as hs_ex:
                     st.info(f"Huang-Stoll spread decomposition deferred: {hs_ex}")
 
+                try:
+                    from src.analytics.ekop_pin import (
+                        calculate_ekop_pin,
+                        evaluate_ekop_pin_from_trades,
+                        persist_ekop_record,
+                    )
+                    st.markdown("---")
+                    st.markdown("#### ⚡ David Easley et al. (1996) EKOP Probability of Informed Trading (PIN)")
+                    st.caption("Maximum likelihood estimation of structural information events (α), news direction (δ), and informed arrival rate (μ).")
+                    if len(prices) >= 20:
+                        ep1, ep2, ep3, ep4 = st.columns(4)
+                        ekop_rec = evaluate_ekop_pin_from_trades(prices, ticker=selected_ticker)
+                        persist_ekop_record(ekop_rec)
+
+                        ep1.metric("PIN Probability", f"{ekop_rec.pin*100:.2f}%")
+                        ep2.metric("Event Prob (α) / Bad News (δ)", f"{ekop_rec.alpha*100:.1f}% / {ekop_rec.delta*100:.1f}%")
+                        ep3.metric("Informed μ / Uninformed ε", f"{ekop_rec.mu:.1f} / {ekop_rec.epsilon:.1f}")
+                        ep4.metric("PIN Regime", ekop_rec.regime)
+                        st.caption(
+                            f"Informed order share={ekop_rec.informed_order_share*100:.1f}% | "
+                            f"Daily turnover={ekop_rec.daily_order_turnover:.1f} orders | "
+                            f"Log-Likelihood={ekop_rec.log_likelihood:.1f} | "
+                            f"HMAC `{ekop_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 20 price sessions for EKOP PIN calibration.")
+                except Exception as ekop_ex:
+                    st.info(f"EKOP PIN calibration deferred: {ekop_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
