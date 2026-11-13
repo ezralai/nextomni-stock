@@ -12721,6 +12721,55 @@ def acd_command(args: argparse.Namespace) -> None:
     )
 
 
+def avellaneda_stoikov_command(args: argparse.Namespace) -> None:
+    """Run Marco Avellaneda & Sasha Stoikov (2008) Optimal Market Making Engine."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.avellaneda_stoikov_market_making import (
+        calculate_avellaneda_stoikov,
+        evaluate_avellaneda_stoikov_from_prices,
+        persist_as_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 15:
+        prices = df["close"].values
+        receipt = evaluate_avellaneda_stoikov_from_prices(
+            prices=prices,
+            inventory=args.inventory,
+            risk_aversion=args.gamma,
+            kappa=args.kappa,
+            ticker=args.ticker,
+        )
+    else:
+        receipt = calculate_avellaneda_stoikov(
+            mid_price=args.price,
+            inventory=args.inventory,
+            volatility=args.volatility,
+            risk_aversion=args.gamma,
+            kappa=args.kappa,
+            ticker=args.ticker,
+            derivation_mode="PARAMETRIC_SYNTHETIC",
+        )
+
+    persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n🎯 Avellaneda & Stoikov (2008) Optimal Market Making [{receipt.ticker}]"
+        f"\n  Mid-Price=${receipt.mid_price:.2f} | Reservation Price r=${receipt.reservation_price:.2f} (Inventory Skew={receipt.inventory_skew_dollar:+.3f})"
+        f"\n  Optimal Limit Quotes: Bid=${receipt.optimal_bid_price:.2f} (Fill Prob={receipt.bid_fill_probability*100:.1f}%) | Ask=${receipt.optimal_ask_price:.2f} (Fill Prob={receipt.ask_fill_probability*100:.1f}%)"
+        f"\n  Optimal Spread=${receipt.optimal_spread_dollar:.3f} ({receipt.optimal_spread_bps:.1f} bps) | Current Inventory q={receipt.inventory_q}"
+        f"\n  Parameters: Volatility σ={receipt.volatility_sigma*100:.2f}% | Risk Aversion γ={receipt.risk_aversion_gamma:.2f} | Book Liquidity κ={receipt.order_intensity_kappa:.2f}"
+        f"\n  Inventory Risk Penalty=${receipt.inventory_risk_penalty:.4f} | Regime={receipt.regime}"
+        f"\n  HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -21019,6 +21068,52 @@ def main() -> None:
         help="Output ACD duration receipt as JSON",
     )
 
+    as_parser = subparsers.add_parser(
+        "avellaneda-stoikov",
+        aliases=["as-2008", "market-maker", "inventory-skew", "as-quotes"],
+        help="Calculate Avellaneda & Stoikov (2008) Optimal Market Making Quotes & Inventory Skew",
+    )
+    as_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    as_parser.add_argument(
+        "--inventory",
+        type=int,
+        default=0,
+        help="Current market maker inventory position q (default: 0)",
+    )
+    as_parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.10,
+        help="Inventory risk aversion coefficient gamma (default: 0.10)",
+    )
+    as_parser.add_argument(
+        "--kappa",
+        type=float,
+        default=1.50,
+        help="Order book liquidity decay parameter kappa (default: 1.50)",
+    )
+    as_parser.add_argument(
+        "--price",
+        type=float,
+        default=100.0,
+        help="Mid-price for fallback calibration (default: 100.0)",
+    )
+    as_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=0.015,
+        help="Daily volatility for fallback calibration (default: 0.015)",
+    )
+    as_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Avellaneda-Stoikov receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21447,6 +21542,8 @@ def main() -> None:
         fht_command(args)
     elif args.command in ("acd-duration", "acd", "acd-1998", "trade-intensity", "point-process"):
         acd_command(args)
+    elif args.command in ("avellaneda-stoikov", "as-2008", "market-maker", "inventory-skew", "as-quotes"):
+        avellaneda_stoikov_command(args)
 
 
 if __name__ == "__main__":

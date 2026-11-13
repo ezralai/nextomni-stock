@@ -11524,6 +11524,29 @@ def render_dashboard() -> None:
                 except Exception as acd_ex:
                     st.info(f"ACD duration estimation deferred: {acd_ex}")
 
+                try:
+                    from src.analytics.avellaneda_stoikov_market_making import evaluate_avellaneda_stoikov_from_prices
+                    st.markdown("---")
+                    st.subheader("🎯 Avellaneda & Stoikov (2008) Optimal Market Making & Inventory Risk")
+                    st.caption("Hamilton-Jacobi-Bellman (HJB) optimal limit quote placement and inventory indifference price for risk-averse market makers.")
+                    if len(hist_df) >= 15:
+                        close_vals = hist_df["close"].dropna().tolist()
+                        as_rec = evaluate_avellaneda_stoikov_from_prices(close_vals, inventory=0, ticker=ticker)
+                        as1, as2, as3, as4 = st.columns(4)
+                        as1.metric("Reservation Price (r)", f"${as_rec.reservation_price:.2f}", delta=f"{as_rec.inventory_skew_dollar:+.3f} skew")
+                        as2.metric("Optimal Bid Quote (r_b)", f"${as_rec.optimal_bid_price:.2f}", delta=f"{as_rec.bid_fill_probability*100:.1f}% fill prob")
+                        as3.metric("Optimal Ask Quote (r_a)", f"${as_rec.optimal_ask_price:.2f}", delta=f"{as_rec.ask_fill_probability*100:.1f}% fill prob")
+                        as4.metric("Optimal Spread", f"${as_rec.optimal_spread_dollar:.3f}", delta=f"{as_rec.optimal_spread_bps:.1f} bps")
+                        st.caption(
+                            f"Regime: **{as_rec.regime}** | Mid-Price: `${as_rec.mid_price:.2f}` | Volatility σ: `{as_rec.volatility_sigma*100:.2f}%` | "
+                            f"Risk Aversion γ: `{as_rec.risk_aversion_gamma:.2f}` | Liquidity κ: `{as_rec.order_intensity_kappa:.2f}` | "
+                            f"Risk Penalty: `${as_rec.inventory_risk_penalty:.4f}` | HMAC `{as_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 15 price sessions for Avellaneda-Stoikov market making estimation.")
+                except Exception as as_ex:
+                    st.info(f"Avellaneda-Stoikov evaluation deferred: {as_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
