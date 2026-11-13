@@ -12421,6 +12421,53 @@ def mrr_command(args: argparse.Namespace) -> None:
     )
 
 
+def hasbrouck_gibbs_command(args: argparse.Namespace) -> None:
+    """Run Joel Hasbrouck (2009) Bayesian Gibbs Sampler Effective Spread Engine."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.hasbrouck_gibbs_spread import (
+        run_hasbrouck_gibbs,
+        persist_hasbrouck_gibbs_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 20:
+        prices = df["close"].values
+    else:
+        np.random.seed(args.seed)
+        n = 150
+        u = np.random.normal(0, 0.10, size=n)
+        m = 100.0 + np.cumsum(u)
+        q = np.random.choice([-1.0, 1.0], size=n)
+        c_true = (args.spread * 100.0 / 10000.0) / 2.0
+        prices = m + c_true * q
+
+    receipt = run_hasbrouck_gibbs(
+        prices=prices,
+        iterations=args.iterations,
+        burn_in=args.burn_in,
+        seed=args.seed,
+        ticker=args.ticker,
+    )
+    persist_hasbrouck_gibbs_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    roll_str = "⚠️ Positive Cov (Roll Failed)" if receipt.positive_autocovariance_flag else f"${receipt.roll_spread_dollar:.4f}"
+    print(
+        f"\n🎲 Joel Hasbrouck (2009) Bayesian Gibbs Sampler Effective Spread [{receipt.ticker}]"
+        f"\n  Effective Spread=${receipt.effective_spread_dollar:.4f} ({receipt.effective_spread_bps:.2f} bps)"
+        f"\n  Posterior Half-Spread c=${receipt.posterior_c_mean:.4f} ± {receipt.posterior_c_std:.4f}"
+        f"\n  Benchmark Roll (1984) Spread={roll_str}"
+        f"\n  Fundamental Volatility σ_u=${receipt.posterior_sigma_u:.4f} | Sample N={receipt.sample_size}"
+        f"\n  MCMC Iterations={receipt.iterations} (Burn-in={receipt.burn_in}) | Regime={receipt.regime}"
+        f"\n  HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20551,6 +20598,46 @@ def main() -> None:
         help="Output MRR microstructure receipt as JSON",
     )
 
+    gibbs_parser = subparsers.add_parser(
+        "hasbrouck-gibbs",
+        aliases=["gibbs-spread", "hasbrouck-2009", "mcmc-spread"],
+        help="Estimate Joel Hasbrouck (2009) Bayesian Gibbs Sampler Effective Spread",
+    )
+    gibbs_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    gibbs_parser.add_argument(
+        "--spread",
+        type=float,
+        default=15.0,
+        help="Synthetic effective spread in basis points when fallback needed (default: 15.0 bps)",
+    )
+    gibbs_parser.add_argument(
+        "--iterations",
+        type=int,
+        default=500,
+        help="Total MCMC iterations (default: 500)",
+    )
+    gibbs_parser.add_argument(
+        "--burn-in",
+        type=int,
+        default=120,
+        help="Number of burn-in iterations to discard (default: 120)",
+    )
+    gibbs_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for MCMC reproducibility (default: 42)",
+    )
+    gibbs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Hasbrouck Gibbs receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20967,6 +21054,8 @@ def main() -> None:
         ekop_pin_command(args)
     elif args.command in ("mrr-model", "mrr", "mrr-1997", "order-flow-impact"):
         mrr_command(args)
+    elif args.command in ("hasbrouck-gibbs", "gibbs-spread", "hasbrouck-2009", "mcmc-spread"):
+        hasbrouck_gibbs_command(args)
 
 
 if __name__ == "__main__":

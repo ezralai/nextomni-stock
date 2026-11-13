@@ -11383,6 +11383,30 @@ def render_dashboard() -> None:
                 except Exception as mrr_ex:
                     st.info(f"MRR microstructure estimation deferred: {mrr_ex}")
 
+                try:
+                    from src.analytics.hasbrouck_gibbs_spread import run_hasbrouck_gibbs
+                    st.markdown("---")
+                    st.subheader("🎲 Hasbrouck (2009) Bayesian Gibbs Sampler Effective Spread")
+                    st.caption("Bayesian MCMC latent state-space effective spread model strictly resolving the Roll (1984) positive autocovariance breakdown.")
+                    if len(hist_df) >= 20:
+                        close_vals = hist_df["close"].dropna().tolist()
+                        gibbs_rec = run_hasbrouck_gibbs(close_vals, iterations=400, burn_in=100, ticker=ticker)
+                        gc1, gc2, gc3, gc4 = st.columns(4)
+                        gc1.metric("Effective Spread ($)", f"${gibbs_rec.effective_spread_dollar:.3f}")
+                        gc2.metric("Effective Spread (bps)", f"{gibbs_rec.effective_spread_bps:.1f} bps")
+                        gc3.metric("Posterior c (Mean ± SD)", f"${gibbs_rec.posterior_c_mean:.3f} ± {gibbs_rec.posterior_c_std:.3f}")
+                        cov_status = "⚠️ Pos Cov (Roll Failed)" if gibbs_rec.positive_autocovariance_flag else f"${gibbs_rec.roll_spread_dollar:.3f}"
+                        gc4.metric("Benchmark Roll Spread", cov_status)
+                        st.caption(
+                            f"Regime: **{gibbs_rec.regime}** | Fundamental σ_u: ${gibbs_rec.posterior_sigma_u:.3f} | "
+                            f"MCMC Iterations: {gibbs_rec.iterations} (Burn-in: {gibbs_rec.burn_in}) | "
+                            f"HMAC `{gibbs_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 20 price sessions for Hasbrouck Gibbs MCMC estimation.")
+                except Exception as hg_ex:
+                    st.info(f"Hasbrouck Gibbs spread estimation deferred: {hg_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
