@@ -12770,6 +12770,61 @@ def avellaneda_stoikov_command(args: argparse.Namespace) -> None:
     )
 
 
+def cont_stoikov_lob_command(args: argparse.Namespace) -> None:
+    """Run Rama Cont, Sasha Stoikov & Rishi Talreja (2010) Markovian LOB Queue Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.cont_stoikov_lob_queue import (
+        calculate_cont_stoikov_lob,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    bid = float(getattr(args, "bid", 500.0))
+    ask = float(getattr(args, "ask", 500.05))
+    bid_depth = float(getattr(args, "bid_depth", 250.0))
+    ask_depth = float(getattr(args, "ask_depth", 150.0))
+    lambda_limit = float(getattr(args, "lambda_limit", 5.0))
+    mu_market = float(getattr(args, "mu_market", 6.0))
+    theta_cancel = float(getattr(args, "theta_cancel", 3.0))
+    order_priority_k = int(getattr(args, "priority_k", 10))
+
+    receipt = calculate_cont_stoikov_lob(
+        best_bid=bid,
+        best_ask=ask,
+        bid_depth=bid_depth,
+        ask_depth=ask_depth,
+        lambda_limit=lambda_limit,
+        mu_market=mu_market,
+        theta_cancel=theta_cancel,
+        order_priority_k=order_priority_k,
+        ticker=ticker,
+    )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Cont, Stoikov & Talreja (2010) Markovian LOB Queue Dynamics")
+    print("=" * 72)
+    print(f"Ticker:               {receipt.ticker}")
+    print(f"Best Quotes:          Bid ${receipt.best_bid:.4f} | Ask ${receipt.best_ask:.4f} | Mid ${receipt.mid_price:.4f}")
+    print(f"Queue Depths:         Bid {receipt.bid_depth:.1f} shares | Ask {receipt.ask_depth:.1f} shares")
+    print(f"Order Imbalance (OIR):{receipt.order_imbalance_ratio:+.4f}")
+    print(f"P(Up-Tick | x, y):    {receipt.prob_up_tick*100:.2f}%")
+    print(f"P(Down-Tick | x, y):  {receipt.prob_down_tick*100:.2f}%")
+    print(f"E[Time to Move]:      {receipt.expected_duration_sec:.3f} s")
+    print(f"Priority-{receipt.order_priority_k} Fill P:    Bid {receipt.bid_fill_prob*100:.2f}% | Ask {receipt.ask_fill_prob*100:.2f}%")
+    print(f"Regime:               {receipt.regime}")
+    print(f"Derivation Mode:      {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:          {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -21114,6 +21169,76 @@ def main() -> None:
         help="Output Avellaneda-Stoikov receipt as JSON",
     )
 
+    # Subparser: cont-stoikov-lob (Rama Cont, Sasha Stoikov & Rishi Talreja 2010 Markovian LOB Queue Engine)
+    lob_parser = subparsers.add_parser(
+        "cont-stoikov-lob",
+        aliases=["lob-queue", "cont-2010", "orderbook-dynamics"],
+        help="Calculate Cont, Stoikov & Talreja (2010) Markovian LOB Queue Dynamics & Hit Probabilities",
+    )
+    lob_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    lob_parser.add_argument(
+        "--bid",
+        type=float,
+        default=500.0,
+        help="Best bid quote in dollars (default: 500.0)",
+    )
+    lob_parser.add_argument(
+        "--ask",
+        type=float,
+        default=500.05,
+        help="Best ask quote in dollars (default: 500.05)",
+    )
+    lob_parser.add_argument(
+        "--bid-depth",
+        type=float,
+        default=250.0,
+        help="Best bid queue volume x (default: 250.0)",
+    )
+    lob_parser.add_argument(
+        "--ask-depth",
+        type=float,
+        default=150.0,
+        help="Best ask queue volume y (default: 150.0)",
+    )
+    lob_parser.add_argument(
+        "--lambda-limit",
+        type=float,
+        default=5.0,
+        help="Limit order arrival intensity (default: 5.0)",
+    )
+    lob_parser.add_argument(
+        "--mu-market",
+        type=float,
+        default=6.0,
+        help="Market order execution intensity (default: 6.0)",
+    )
+    lob_parser.add_argument(
+        "--theta-cancel",
+        type=float,
+        default=3.0,
+        help="Cancellation intensity (default: 3.0)",
+    )
+    lob_parser.add_argument(
+        "--priority-k",
+        type=int,
+        default=10,
+        help="Order priority position in queue (default: 10)",
+    )
+    lob_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    lob_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Cont-Stoikov LOB receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21544,6 +21669,8 @@ def main() -> None:
         acd_command(args)
     elif args.command in ("avellaneda-stoikov", "as-2008", "market-maker", "inventory-skew", "as-quotes"):
         avellaneda_stoikov_command(args)
+    elif args.command in ("cont-stoikov-lob", "lob-queue", "cont-2010", "orderbook-dynamics"):
+        cont_stoikov_lob_command(args)
 
 
 if __name__ == "__main__":

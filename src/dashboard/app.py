@@ -11547,6 +11547,45 @@ def render_dashboard() -> None:
                 except Exception as as_ex:
                     st.info(f"Avellaneda-Stoikov evaluation deferred: {as_ex}")
 
+                # Cont, Stoikov & Talreja (2010) Markovian LOB Queue Dynamics
+                st.markdown("---")
+                st.subheader("⚡ Cont, Stoikov & Talreja (2010) Markovian Limit Order Book (LOB) Queue Dynamics")
+                try:
+                    from src.analytics.cont_stoikov_lob_queue import (
+                        calculate_cont_stoikov_lob,
+                        persist_as_record,
+                    )
+                    c_lob1, c_lob2, c_lob3, c_lob4 = st.columns(4)
+                    with c_lob1:
+                        lob_bid_p = st.number_input("Best Bid ($)", value=float(round(hist_df['close'].iloc[-1] - 0.02, 2)), step=0.01, key="lob_bid_p")
+                    with c_lob2:
+                        lob_ask_p = st.number_input("Best Ask ($)", value=float(round(hist_df['close'].iloc[-1] + 0.02, 2)), step=0.01, key="lob_ask_p")
+                    with c_lob3:
+                        lob_bid_q = st.number_input("Bid Depth (x)", value=250.0, step=10.0, key="lob_bid_q")
+                    with c_lob4:
+                        lob_ask_q = st.number_input("Ask Depth (y)", value=150.0, step=10.0, key="lob_ask_q")
+
+                    lob_rec = calculate_cont_stoikov_lob(
+                        best_bid=lob_bid_p,
+                        best_ask=lob_ask_p,
+                        bid_depth=lob_bid_q,
+                        ask_depth=lob_ask_q,
+                        ticker=ticker_input,
+                    )
+
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("P(Up-Tick | x, y)", f"{lob_rec.prob_up_tick*100:.1f}%")
+                    m2.metric("P(Down-Tick | x, y)", f"{lob_rec.prob_down_tick*100:.1f}%")
+                    m3.metric("E[Time to Move]", f"{lob_rec.expected_duration_sec:.2f}s")
+                    m4.metric("Order Imbalance (OIR)", f"{lob_rec.order_imbalance_ratio:+.2f}")
+
+                    st.caption(
+                        f"Regime: **{lob_rec.regime}** | Priority-10 Bid Fill P: `{lob_rec.bid_fill_prob*100:.2f}%` | "
+                        f"Priority-10 Ask Fill P: `{lob_rec.ask_fill_prob*100:.2f}%` | HMAC `{lob_rec.hmac_signature[:16]}…`"
+                    )
+                except Exception as lob_ex:
+                    st.info(f"Cont-Stoikov LOB evaluation deferred: {lob_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
