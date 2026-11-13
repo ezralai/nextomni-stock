@@ -11241,6 +11241,34 @@ def render_dashboard() -> None:
                 except Exception as dup_ex:
                     st.info(f"Dupire local volatility extraction deferred: {dup_ex}")
 
+                try:
+                    from src.analytics.bates_jump_diffusion import (
+                        calculate_bates_option_price,
+                        evaluate_bates_profile_from_prices,
+                        persist_bates_record,
+                    )
+                    st.markdown("---")
+                    st.markdown("#### ⚡ David S. Bates (1996) Stochastic Volatility Jump-Diffusion (SVJ) Engine")
+                    st.caption("Pricing contingent claims under continuous mean-reverting variance and compound Poisson jumps.")
+                    if len(prices) >= 25:
+                        bc1, bc2, bc3, bc4 = st.columns(4)
+                        bates_rec = evaluate_bates_profile_from_prices(prices, ticker=selected_ticker, time_to_maturity=0.50, risk_free_rate=0.04)
+                        persist_bates_record(bates_rec)
+
+                        bc1.metric("Bates Call / Put", f"${bates_rec.bates_call_price:.2f} / ${bates_rec.bates_put_price:.2f}")
+                        bc2.metric("Heston Call / Jump Prem", f"${bates_rec.heston_benchmark_call:.2f} / ${bates_rec.jump_contribution:+.2f}")
+                        bc3.metric("Feller Ratio (2κθ/σ²)", f"{bates_rec.feller_ratio:.2f}x ({'✓' if bates_rec.feller_satisfied else '⚠️'})")
+                        bc4.metric("Bates Regime", bates_rec.regime)
+                        st.caption(
+                            f"SV Parameters: V0={bates_rec.v0:.4f}, κ={bates_rec.kappa:.2f}, θ={bates_rec.theta:.4f}, σ_v={bates_rec.sigma_v:.2f}, ρ={bates_rec.rho:+.2f} | "
+                            f"Jump Parameters: λ={bates_rec.lambda_jump:.2f}, μ_J={bates_rec.mu_jump:+.2f}, σ_J={bates_rec.sigma_jump:.2f} | "
+                            f"HMAC `{bates_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for Bates SVJ pricing.")
+                except Exception as bates_ex:
+                    st.info(f"Bates SVJ pricing deferred: {bates_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

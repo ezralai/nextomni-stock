@@ -12207,6 +12207,47 @@ def dupire_vol_command(args: argparse.Namespace) -> None:
     )
 
 
+def bates_opt_command(args: argparse.Namespace) -> None:
+    """Run David S. Bates (1996) Stochastic Volatility Jump-Diffusion Option Pricing."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.bates_jump_diffusion import (
+        calculate_bates_option_price,
+        persist_bates_record,
+    )
+
+    receipt = calculate_bates_option_price(
+        spot_price=args.spot,
+        strike_price=args.strike,
+        time_to_maturity=args.ttm,
+        risk_free_rate=args.rf,
+        dividend_yield=args.div,
+        v0=args.v0,
+        kappa=args.kappa,
+        theta=args.theta,
+        sigma_v=args.sigma_v,
+        rho=args.rho,
+        lambda_jump=args.lambda_jump,
+        mu_jump=args.mu_jump,
+        sigma_jump=args.sigma_jump,
+        ticker=args.ticker,
+    )
+    persist_bates_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ David S. Bates (1996) SVJ Option Pricing [{receipt.ticker}]"
+        f"\n  Spot=${receipt.spot_price:.2f} | Strike=${receipt.strike_price:.2f} | T={receipt.time_to_maturity:.2f}y | rf={receipt.risk_free_rate*100:.2f}% | q={receipt.dividend_yield*100:.2f}%"
+        f"\n  Bates Call=${receipt.bates_call_price:.4f} | Bates Put=${receipt.bates_put_price:.4f} | Heston Call=${receipt.heston_benchmark_call:.4f}"
+        f"\n  Jump Contribution=${receipt.jump_contribution:+.4f} | Feller Ratio={receipt.feller_ratio:.2f}x ({'Satisfied' if receipt.feller_satisfied else 'Violated'})"
+        f"\n  SV: V0={receipt.v0:.4f}, κ={receipt.kappa:.2f}, θ={receipt.theta:.4f}, σ_v={receipt.sigma_v:.2f}, ρ={receipt.rho:+.2f}"
+        f"\n  Jumps: λ={receipt.lambda_jump:.2f}, μ_J={receipt.mu_jump:+.2f}, σ_J={receipt.sigma_jump:.2f} | Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20089,6 +20130,100 @@ def main() -> None:
         help="Output Dupire local volatility receipt as JSON",
     )
 
+    bates_opt_parser = subparsers.add_parser(
+        "bates-opt",
+        aliases=["bates", "bates-1996", "svj-model"],
+        help="Price options under David S. Bates (1996) Stochastic Volatility Jump-Diffusion",
+    )
+    bates_opt_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    bates_opt_parser.add_argument(
+        "--spot",
+        type=float,
+        default=100.0,
+        help="Underlying spot price (default: 100.0)",
+    )
+    bates_opt_parser.add_argument(
+        "--strike",
+        type=float,
+        default=100.0,
+        help="Evaluation strike price (default: 100.0)",
+    )
+    bates_opt_parser.add_argument(
+        "--v0",
+        type=float,
+        default=0.04,
+        help="Initial stochastic variance V0 (default: 0.04)",
+    )
+    bates_opt_parser.add_argument(
+        "--kappa",
+        type=float,
+        default=2.0,
+        help="Mean-reversion rate kappa (default: 2.0)",
+    )
+    bates_opt_parser.add_argument(
+        "--theta",
+        type=float,
+        default=0.04,
+        help="Long-term variance theta (default: 0.04)",
+    )
+    bates_opt_parser.add_argument(
+        "--sigma-v",
+        type=float,
+        default=0.30,
+        help="Volatility of variance sigma_v (default: 0.30)",
+    )
+    bates_opt_parser.add_argument(
+        "--rho",
+        type=float,
+        default=-0.50,
+        help="Correlation between asset and variance rho in (-1, 1) (default: -0.50)",
+    )
+    bates_opt_parser.add_argument(
+        "--lambda-jump",
+        type=float,
+        default=0.50,
+        help="Annual Poisson jump arrival rate lambda (default: 0.50)",
+    )
+    bates_opt_parser.add_argument(
+        "--mu-jump",
+        type=float,
+        default=-0.05,
+        help="Mean log-jump size mu_J (default: -0.05)",
+    )
+    bates_opt_parser.add_argument(
+        "--sigma-jump",
+        type=float,
+        default=0.15,
+        help="Standard deviation of log-jump size sigma_J (default: 0.15)",
+    )
+    bates_opt_parser.add_argument(
+        "--ttm",
+        type=float,
+        default=0.50,
+        help="Time to expiration in years (default: 0.50)",
+    )
+    bates_opt_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Annualized risk-free rate (default: 0.04)",
+    )
+    bates_opt_parser.add_argument(
+        "--div",
+        type=float,
+        default=0.0,
+        help="Continuous dividend yield (default: 0.0)",
+    )
+    bates_opt_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Bates SVJ receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20495,6 +20630,8 @@ def main() -> None:
         sabr_vol_command(args)
     elif args.command in ("dupire-vol", "dupire", "dupire-1994", "local-vol"):
         dupire_vol_command(args)
+    elif args.command in ("bates-opt", "bates", "bates-1996", "svj-model"):
+        bates_opt_command(args)
 
 
 if __name__ == "__main__":
