@@ -12101,6 +12101,43 @@ def variance_swap_command(args: argparse.Namespace) -> None:
     )
 
 
+def kou_jump_command(args: argparse.Namespace) -> None:
+    """Run Steven G. Kou (2002) Double Exponential Jump-Diffusion Option Pricing."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.kou_double_exponential_jump import (
+        calculate_kou_option_price,
+        persist_kou_record,
+    )
+
+    receipt = calculate_kou_option_price(
+        spot_price=args.spot,
+        strike_price=args.strike,
+        time_to_maturity=args.ttm,
+        risk_free_rate=args.rf,
+        diffusion_vol=args.vol,
+        jump_intensity=args.lambda_jump,
+        prob_up_jump=args.p_up,
+        eta1_up=args.eta1,
+        eta2_down=args.eta2,
+        ticker=args.ticker,
+    )
+    persist_kou_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ Steven G. Kou (2002) Jump-Diffusion Option Pricing [{receipt.ticker}]"
+        f"\n  Spot=${receipt.spot_price:.2f} | Strike=${receipt.strike_price:.2f} | T={receipt.time_to_maturity:.2f}y | rf={receipt.risk_free_rate*100:.2f}%"
+        f"\n  Kou Call=${receipt.kou_call_price:.4f} | Kou Put=${receipt.kou_put_price:.4f} | BS Call=${receipt.bs_benchmark_call:.4f}"
+        f"\n  Jump Premium=${receipt.jump_premium:+.4f} | ATM Skew={receipt.atm_skew*100:+.2f}%"
+        f"\n  Jump λ={receipt.jump_intensity:.2f} | p_up={receipt.prob_up_jump*100:.1f}% | η_up={receipt.eta1_up:.1f} | η_down={receipt.eta2_down:.1f}"
+        f"\n  Compensated Drift ζ={receipt.compensated_drift:+.4f} | Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19797,6 +19834,76 @@ def main() -> None:
         help="Output Carr-Madan variance swap receipt as JSON",
     )
 
+    kou_jump_parser = subparsers.add_parser(
+        "kou-jump",
+        aliases=["kou-2002", "double-exponential", "kou-model"],
+        help="Price options under Steven G. Kou (2002) Double Exponential Jump-Diffusion",
+    )
+    kou_jump_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Option/asset ticker symbol (default: SPY)",
+    )
+    kou_jump_parser.add_argument(
+        "--spot",
+        type=float,
+        default=100.0,
+        help="Underlying spot price (default: 100.0)",
+    )
+    kou_jump_parser.add_argument(
+        "--strike",
+        type=float,
+        default=100.0,
+        help="Option strike price (default: 100.0)",
+    )
+    kou_jump_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.16,
+        help="Continuous diffusion volatility sigma (default: 0.16)",
+    )
+    kou_jump_parser.add_argument(
+        "--lambda-jump",
+        type=float,
+        default=0.75,
+        help="Annual Poisson jump arrival intensity lambda (default: 0.75)",
+    )
+    kou_jump_parser.add_argument(
+        "--p-up",
+        type=float,
+        default=0.35,
+        help="Probability of upward jump p in [0, 1] (default: 0.35)",
+    )
+    kou_jump_parser.add_argument(
+        "--eta1",
+        type=float,
+        default=10.0,
+        help="Upward jump exponential decay rate eta1 > 1 (default: 10.0)",
+    )
+    kou_jump_parser.add_argument(
+        "--eta2",
+        type=float,
+        default=5.0,
+        help="Downward jump exponential decay rate eta2 > 0 (default: 5.0)",
+    )
+    kou_jump_parser.add_argument(
+        "--ttm",
+        type=float,
+        default=0.50,
+        help="Time to maturity in years (default: 0.50)",
+    )
+    kou_jump_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Annualized risk-free rate (default: 0.04)",
+    )
+    kou_jump_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Kou jump-diffusion receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20197,6 +20304,8 @@ def main() -> None:
         merton_crra_command(args)
     elif args.command in ("variance-swap", "carr-madan", "cm-1999", "var-swap"):
         variance_swap_command(args)
+    elif args.command in ("kou-jump", "kou-2002", "double-exponential", "kou-model"):
+        kou_jump_command(args)
 
 
 if __name__ == "__main__":

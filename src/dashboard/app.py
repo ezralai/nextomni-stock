@@ -11155,6 +11155,36 @@ def render_dashboard() -> None:
                 except Exception as vs_ex:
                     st.info(f"Carr-Madan variance swap pricing deferred: {vs_ex}")
 
+                try:
+                    from src.analytics.kou_double_exponential_jump import (
+                        calculate_kou_option_price,
+                        evaluate_kou_jump_profile,
+                        persist_kou_record,
+                    )
+                    st.markdown("---")
+                    st.markdown("#### ⚡ Steven G. Kou (2002) Double Exponential Jump-Diffusion Option Pricing")
+                    st.caption("Pricing European contingent claims under asymmetric memoryless double-exponential jump risk.")
+                    if len(prices) >= 30:
+                        kc1, kc2, kc3, kc4 = st.columns(4)
+                        k_spot = float(prices[-1])
+                        kou_rec = evaluate_kou_jump_profile(prices, ticker=selected_ticker, time_to_maturity=0.50, risk_free_rate=0.04)
+                        persist_kou_record(kou_rec)
+
+                        kc1.metric("Kou Call / Put", f"${kou_rec.kou_call_price:.2f} / ${kou_rec.kou_put_price:.2f}")
+                        kc2.metric("BS Call / Jump Prem", f"${kou_rec.bs_benchmark_call:.2f} / ${kou_rec.jump_premium:+.2f}")
+                        kc3.metric("Jump λ / Up Prob (p)", f"{kou_rec.jump_intensity:.2f} / {kou_rec.prob_up_jump*100:.1f}%")
+                        kc4.metric("Kou Regime", kou_rec.regime)
+                        st.caption(
+                            f"Compensated drift ζ={kou_rec.compensated_drift:+.4f} | "
+                            f"Decay rates: η_up={kou_rec.eta1_up:.1f}, η_down={kou_rec.eta2_down:.1f} | "
+                            f"ATM Skew={kou_rec.atm_skew*100:+.2f}% | "
+                            f"HMAC `{kou_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 30 price sessions for Kou jump-diffusion estimation.")
+                except Exception as kou_ex:
+                    st.info(f"Kou jump-diffusion pricing deferred: {kou_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
