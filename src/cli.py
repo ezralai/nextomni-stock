@@ -12468,6 +12468,47 @@ def hasbrouck_gibbs_command(args: argparse.Namespace) -> None:
     )
 
 
+def gkn_command(args: argparse.Namespace) -> None:
+    """Run Thomas J. George, Gautam Kaul & M. Nimalendran (1991) GKN Spread Decomposition."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.gkn_spread_decomposition import (
+        calculate_gkn_spread,
+        persist_gkn_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 15:
+        prices = df["close"].values
+        receipt = calculate_gkn_spread(prices, ticker=args.ticker)
+    else:
+        np.random.seed(args.seed)
+        n = 150
+        u = np.random.normal(0, 0.001, size=n)
+        m = 100.0 * np.exp(np.cumsum(u))
+        q = np.random.choice([-1.0, 1.0], size=n)
+        s0_prop = (args.spread * 100.0 / 10000.0) / 100.0
+        p = m * (1.0 + 0.5 * s0_prop * q)
+        receipt = calculate_gkn_spread(p, quote_midpoints=m, ticker=args.ticker)
+
+    persist_gkn_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚖️ George, Kaul & Nimalendran (1991) GKN Spread Decomposition [{receipt.ticker}]"
+        f"\n  Effective Spread={receipt.total_effective_spread_bps:.2f} bps | Sample N={receipt.sample_size}"
+        f"\n  Order Processing Friction s₀={receipt.order_processing_spread_bps:.2f} bps ({receipt.order_processing_ratio*100:.1f}%)"
+        f"\n  Adverse Selection Impact sᵢ={receipt.adverse_selection_spread_bps:.2f} bps ({receipt.adverse_selection_ratio*100:.1f}%)"
+        f"\n  Naive Roll Benchmark={receipt.roll_spread_bps:.2f} bps | Roll Bias Corrected={receipt.roll_bias_bps:+.2f} bps"
+        f"\n  Expected Return Autocovariance={receipt.expected_return_autocovariance:.6e} | Derivation Mode={receipt.derivation_mode}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20638,6 +20679,34 @@ def main() -> None:
         help="Output Hasbrouck Gibbs receipt as JSON",
     )
 
+    gkn_parser = subparsers.add_parser(
+        "gkn-spread",
+        aliases=["gkn", "gkn-1991", "spread-purged"],
+        help="Estimate George, Kaul & Nimalendran (1991) GKN Spread Decomposition",
+    )
+    gkn_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    gkn_parser.add_argument(
+        "--spread",
+        type=float,
+        default=18.0,
+        help="Synthetic effective spread in basis points when fallback needed (default: 18.0 bps)",
+    )
+    gkn_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for synthetic fallback generation (default: 42)",
+    )
+    gkn_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output GKN spread receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21056,6 +21125,8 @@ def main() -> None:
         mrr_command(args)
     elif args.command in ("hasbrouck-gibbs", "gibbs-spread", "hasbrouck-2009", "mcmc-spread"):
         hasbrouck_gibbs_command(args)
+    elif args.command in ("gkn-spread", "gkn", "gkn-1991", "spread-purged"):
+        gkn_command(args)
 
 
 if __name__ == "__main__":

@@ -11407,6 +11407,29 @@ def render_dashboard() -> None:
                 except Exception as hg_ex:
                     st.info(f"Hasbrouck Gibbs spread estimation deferred: {hg_ex}")
 
+                try:
+                    from src.analytics.gkn_spread_decomposition import calculate_gkn_spread
+                    st.markdown("---")
+                    st.subheader("⚖️ George, Kaul & Nimalendran (1991) GKN Spread Decomposition")
+                    st.caption("Econometric return-difference spread decomposition purging time-varying expected return bias to isolate order processing vs adverse selection.")
+                    if len(hist_df) >= 15:
+                        close_vals = hist_df["close"].dropna().tolist()
+                        gkn_rec = calculate_gkn_spread(close_vals, ticker=ticker)
+                        gk1, gk2, gk3, gk4 = st.columns(4)
+                        gk1.metric("Effective Spread", f"{gkn_rec.total_effective_spread_bps:.1f} bps")
+                        gk2.metric("Order Processing (s₀)", f"{gkn_rec.order_processing_spread_bps:.1f} bps", delta=f"{gkn_rec.order_processing_ratio*100:.1f}%")
+                        gk3.metric("Adverse Selection (sᵢ)", f"{gkn_rec.adverse_selection_spread_bps:.1f} bps", delta=f"{gkn_rec.adverse_selection_ratio*100:.1f}%")
+                        gk4.metric("Roll Bias Corrected", f"{gkn_rec.roll_bias_bps:+.1f} bps")
+                        st.caption(
+                            f"Regime: **{gkn_rec.regime}** | Mode: `{gkn_rec.derivation_mode}` | "
+                            f"Expected Return Autocovariance: `{gkn_rec.expected_return_autocovariance:.6e}` | "
+                            f"HMAC `{gkn_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 15 price sessions for GKN spread decomposition.")
+                except Exception as gkn_ex:
+                    st.info(f"GKN spread decomposition deferred: {gkn_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
