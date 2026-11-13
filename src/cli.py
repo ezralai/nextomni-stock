@@ -12509,6 +12509,66 @@ def gkn_command(args: argparse.Namespace) -> None:
     )
 
 
+def glosten_harris_command(args: argparse.Namespace) -> None:
+    """Run Lawrence R. Glosten & Lawrence E. Harris (1988) Trade-Size Dependent Spread Decomposition."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.glosten_harris_spread import (
+        calculate_glosten_harris_spread,
+        evaluate_glosten_harris_from_prices,
+        persist_glosten_harris_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 20:
+        prices = df["close"].values
+        volumes = df["volume"].values if "volume" in df.columns else None
+        receipt = evaluate_glosten_harris_from_prices(
+            prices=prices,
+            volumes=volumes,
+            ticker=args.ticker,
+            benchmark_volume=args.benchmark_volume,
+        )
+    else:
+        np.random.seed(args.seed)
+        n = 150
+        q = np.random.choice([-1.0, 1.0], size=n)
+        v = np.random.uniform(0.5, 3.0, size=n)
+        dq = q[1:] - q[:-1]
+        dqv = (q[1:] * v[1:]) - (q[:-1] * v[:-1])
+        c0_val = 0.05
+        c1_val = 0.02
+        z0_val = 0.04
+        z1_val = 0.03
+        dp = c0_val * dq + c1_val * dqv + z0_val * q[1:] + z1_val * (q[1:] * v[1:]) + np.random.normal(0, 0.005, size=n - 1)
+        receipt = calculate_glosten_harris_spread(
+            price_changes=dp,
+            trade_indicators=q,
+            trade_volumes=v,
+            ticker=args.ticker,
+            reference_price=100.0,
+            benchmark_volume=args.benchmark_volume,
+        )
+
+    persist_glosten_harris_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n📦 Glosten & Harris (1988) Trade-Size Dependent Spread Decomposition [{receipt.ticker}]"
+        f"\n  Effective Spread=${receipt.effective_spread_dollar:.4f} ({receipt.effective_spread_bps:.2f} bps) at V={receipt.benchmark_volume:.1f}"
+        f"\n  Transitory Friction Spread=${receipt.transitory_spread_dollar:.4f} ({receipt.order_processing_ratio*100:.1f}%)"
+        f"\n  Adverse Selection Spread=${receipt.adverse_spread_dollar:.4f} ({receipt.adverse_selection_ratio*100:.1f}%)"
+        f"\n  Fixed Components: c₀=${receipt.c0_fixed_transitory:.4f} | z₀=${receipt.z0_fixed_adverse:.4f}"
+        f"\n  Variable Components: c₁=${receipt.c1_variable_transitory:.4f} | z₁=${receipt.z1_variable_adverse:.4f}"
+        f"\n  Model Fit R²={receipt.r_squared:.3f} | Sample N={receipt.sample_size} | Mode={receipt.derivation_mode}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20707,6 +20767,34 @@ def main() -> None:
         help="Output GKN spread receipt as JSON",
     )
 
+    gh_parser = subparsers.add_parser(
+        "glosten-harris",
+        aliases=["gh-1988", "size-spread", "volume-impact-spread"],
+        help="Estimate Glosten & Harris (1988) Trade-Size Dependent Spread Decomposition",
+    )
+    gh_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    gh_parser.add_argument(
+        "--benchmark-volume",
+        type=float,
+        default=1.0,
+        help="Benchmark order size/volume for effective spread evaluation (default: 1.0)",
+    )
+    gh_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for fallback generation (default: 42)",
+    )
+    gh_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Glosten-Harris spread receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21127,6 +21215,8 @@ def main() -> None:
         hasbrouck_gibbs_command(args)
     elif args.command in ("gkn-spread", "gkn", "gkn-1991", "spread-purged"):
         gkn_command(args)
+    elif args.command in ("glosten-harris", "gh-1988", "size-spread", "volume-impact-spread"):
+        glosten_harris_command(args)
 
 
 if __name__ == "__main__":

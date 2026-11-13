@@ -11430,6 +11430,30 @@ def render_dashboard() -> None:
                 except Exception as gkn_ex:
                     st.info(f"GKN spread decomposition deferred: {gkn_ex}")
 
+                try:
+                    from src.analytics.glosten_harris_spread import evaluate_glosten_harris_from_prices
+                    st.markdown("---")
+                    st.subheader("📦 Glosten & Harris (1988) Trade-Size Dependent Spread Decomposition")
+                    st.caption("Structural spread decomposition isolating fixed vs variable (order-volume dependent) transitory friction and adverse selection.")
+                    if len(hist_df) >= 20:
+                        close_vals = hist_df["close"].dropna().tolist()
+                        vol_vals = hist_df["volume"].dropna().tolist() if "volume" in hist_df.columns else None
+                        gh_rec = evaluate_glosten_harris_from_prices(close_vals, volumes=vol_vals, ticker=ticker)
+                        gh1, gh2, gh3, gh4 = st.columns(4)
+                        gh1.metric("Effective Spread (V_bench)", f"${gh_rec.effective_spread_dollar:.3f}", delta=f"{gh_rec.effective_spread_bps:.1f} bps")
+                        gh2.metric("Transitory Spread", f"${gh_rec.transitory_spread_dollar:.3f}", delta=f"{gh_rec.order_processing_ratio*100:.1f}%")
+                        gh3.metric("Adverse Selection", f"${gh_rec.adverse_spread_dollar:.3f}", delta=f"{gh_rec.adverse_selection_ratio*100:.1f}%")
+                        gh4.metric("Model Fit (R²)", f"{gh_rec.r_squared:.3f}")
+                        st.caption(
+                            f"Regime: **{gh_rec.regime}** | Fixed c₀: `${gh_rec.c0_fixed_transitory:.4f}` | Var c₁: `${gh_rec.c1_variable_transitory:.4f}` | "
+                            f"Fixed z₀: `${gh_rec.z0_fixed_adverse:.4f}` | Var z₁: `${gh_rec.z1_variable_adverse:.4f}` | "
+                            f"Benchmark V: `{gh_rec.benchmark_volume:.1f}` | HMAC `{gh_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 20 price sessions for Glosten-Harris trade-size decomposition.")
+                except Exception as gh_ex:
+                    st.info(f"Glosten-Harris spread decomposition deferred: {gh_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
