@@ -12623,6 +12623,51 @@ def lot_command(args: argparse.Namespace) -> None:
     )
 
 
+def fht_command(args: argparse.Namespace) -> None:
+    """Run Kingsley Y. L. Fong, Craig W. Holden & Charles A. Trzcinka (2017) FHT Closed-Form Spread Engine."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.fht_closed_form_spread import (
+        calculate_fht_spread,
+        evaluate_fht_from_prices,
+        persist_fht_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 15:
+        prices = df["close"].values
+        receipt = evaluate_fht_from_prices(prices=prices, ticker=args.ticker)
+    else:
+        np.random.seed(args.seed)
+        n = 150
+        r = np.random.normal(0.0002, 0.012, size=n)
+        n_zeros = int(n * args.zero_ratio)
+        if n_zeros > 0:
+            zero_idx = np.random.choice(n, size=n_zeros, replace=False)
+            r[zero_idx] = 0.0
+        receipt = calculate_fht_spread(
+            stock_returns=r,
+            ticker=args.ticker,
+            derivation_mode="SYNTHETIC_FALLBACK",
+        )
+
+    persist_fht_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ Fong, Holden & Trzcinka (2017) FHT Closed-Form Spread [{receipt.ticker}]"
+        f"\n  Effective Spread={receipt.effective_spread_bps:.2f} bps ({receipt.effective_spread_pct*100:.3f}%) | Half-Spread c={receipt.half_spread_bps:.2f} bps"
+        f"\n  Zero-Return Days={receipt.zero_return_count} ({receipt.zero_return_frequency*100:.1f}%) | Probit Quantile Φ⁻¹={receipt.probit_quantile:.4f}"
+        f"\n  Return Volatility σ={receipt.return_volatility_pct:.2f}% | Benchmark Roll Spread={receipt.roll_spread_bps:.2f} bps"
+        f"\n  Regime={receipt.regime} | Mode={receipt.derivation_mode} | Sample N={receipt.sample_size}"
+        f"\n  HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20871,6 +20916,34 @@ def main() -> None:
         help="Output LOT spread receipt as JSON",
     )
 
+    fht_parser = subparsers.add_parser(
+        "fht-spread",
+        aliases=["fht", "fht-2017", "closed-form-spread"],
+        help="Estimate Fong, Holden & Trzcinka (2017) FHT Closed-Form Spread",
+    )
+    fht_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    fht_parser.add_argument(
+        "--zero-ratio",
+        type=float,
+        default=0.20,
+        help="Target zero return fraction for synthetic fallback (default: 0.20)",
+    )
+    fht_parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for synthetic fallback generation (default: 42)",
+    )
+    fht_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output FHT spread receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21295,6 +21368,8 @@ def main() -> None:
         glosten_harris_command(args)
     elif args.command in ("lot-spread", "lot", "lot-1999", "zero-return-spread", "ldv-spread"):
         lot_command(args)
+    elif args.command in ("fht-spread", "fht", "fht-2017", "closed-form-spread"):
+        fht_command(args)
 
 
 if __name__ == "__main__":

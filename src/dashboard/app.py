@@ -11476,6 +11476,29 @@ def render_dashboard() -> None:
                 except Exception as lot_ex:
                     st.info(f"LOT transaction cost estimation deferred: {lot_ex}")
 
+                try:
+                    from src.analytics.fht_closed_form_spread import evaluate_fht_from_prices
+                    st.markdown("---")
+                    st.subheader("⚡ Fong, Holden & Trzcinka (2017) FHT Closed-Form Spread")
+                    st.caption("Analytical closed-form simplification of the LOT (1999) LDV model mapping zero returns and volatility directly to effective spread.")
+                    if len(hist_df) >= 15:
+                        close_vals = hist_df["close"].dropna().tolist()
+                        fht_rec = evaluate_fht_from_prices(close_vals, ticker=ticker)
+                        f1, f2, f3, f4 = st.columns(4)
+                        f1.metric("Effective Spread", f"{fht_rec.effective_spread_bps:.1f} bps", delta=f"{fht_rec.effective_spread_pct*100:.2f}%")
+                        f2.metric("Half-Spread (c)", f"{fht_rec.half_spread_bps:.1f} bps")
+                        f3.metric("Zero-Return Days", f"{fht_rec.zero_return_count} ({fht_rec.zero_return_frequency*100:.1f}%)")
+                        f4.metric("Probit Quantile Φ⁻¹", f"{fht_rec.probit_quantile:.3f}")
+                        st.caption(
+                            f"Regime: **{fht_rec.regime}** | Volatility: `{fht_rec.return_volatility_pct:.2f}%` | "
+                            f"Benchmark Roll: `{fht_rec.roll_spread_bps:.1f} bps` | Sample N={fht_rec.sample_size} | "
+                            f"HMAC `{fht_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 15 price sessions for FHT closed-form spread estimation.")
+                except Exception as fht_ex:
+                    st.info(f"FHT spread estimation deferred: {fht_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
