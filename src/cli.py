@@ -12378,6 +12378,49 @@ def ekop_pin_command(args: argparse.Namespace) -> None:
     )
 
 
+def mrr_command(args: argparse.Namespace) -> None:
+    """Run Madhavan, Richardson & Roomans (1997) MRR Microstructure Engine."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.mrr_microstructure import (
+        calculate_mrr_microstructure,
+        evaluate_mrr_from_prices,
+        persist_mrr_record,
+    )
+
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 32:
+        receipt = evaluate_mrr_from_prices(df["close"].values, ticker=args.ticker)
+    else:
+        np.random.seed(42)
+        n = 150
+        rho_val = (args.autocorr + 1.0) / 2.0
+        x = np.ones(n)
+        for t in range(1, n):
+            x[t] = x[t - 1] if np.random.rand() < rho_val else -x[t - 1]
+        s_half = (args.spread * 100.0 / 10000.0) / 2.0
+        theta_val = s_half * args.theta_ratio
+        phi0_val = max(0.0, s_half - theta_val)
+        dp = np.zeros(n)
+        dp[1:] = (theta_val + phi0_val) * x[1:] - (args.autocorr * theta_val + phi0_val) * x[:-1] + np.random.normal(0, 0.001, size=n - 1)
+        receipt = calculate_mrr_microstructure(dp, x, ticker=args.ticker, reference_price=100.0)
+    persist_mrr_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ Madhavan, Richardson & Roomans (1997) MRR Microstructure [{receipt.ticker}]"
+        f"\n  Effective Spread={receipt.effective_spread_bps:.2f} bps | Sample N={receipt.sample_size}"
+        f"\n  Information Asymmetry Impact θ=${receipt.theta_dollar:.4f} ({receipt.adverse_selection_ratio*100:.1f}%)"
+        f"\n  Order Processing Friction φ0=${receipt.phi0_dollar:.4f} ({receipt.order_processing_ratio*100:.1f}%)"
+        f"\n  Order Autocorrelation φ={receipt.order_autocorrelation_phi:+.3f} (Continuation ρ={receipt.continuation_prob_rho*100:.1f}%) | R²={receipt.r_squared:.3f}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20474,6 +20517,40 @@ def main() -> None:
         help="Output EKOP PIN receipt as JSON",
     )
 
+    mrr_parser = subparsers.add_parser(
+        "mrr-model",
+        aliases=["mrr", "mrr-1997", "order-flow-impact"],
+        help="Estimate Madhavan, Richardson & Roomans (1997) MRR Microstructure Model",
+    )
+    mrr_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    mrr_parser.add_argument(
+        "--spread",
+        type=float,
+        default=12.0,
+        help="Synthetic effective spread in basis points (default: 12.0 bps)",
+    )
+    mrr_parser.add_argument(
+        "--theta-ratio",
+        type=float,
+        default=0.40,
+        help="Target adverse selection fraction theta / (theta + phi0) (default: 0.40)",
+    )
+    mrr_parser.add_argument(
+        "--autocorr",
+        type=float,
+        default=0.25,
+        help="Target order flow autocorrelation phi in (-1, 1) (default: 0.25)",
+    )
+    mrr_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output MRR microstructure receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20888,6 +20965,8 @@ def main() -> None:
         huang_stoll_command(args)
     elif args.command in ("ekop-pin", "ekop", "pin-model", "informed-trading"):
         ekop_pin_command(args)
+    elif args.command in ("mrr-model", "mrr", "mrr-1997", "order-flow-impact"):
+        mrr_command(args)
 
 
 if __name__ == "__main__":

@@ -11355,6 +11355,34 @@ def render_dashboard() -> None:
                 except Exception as ekop_ex:
                     st.info(f"EKOP PIN calibration deferred: {ekop_ex}")
 
+                try:
+                    from src.analytics.mrr_microstructure import (
+                        calculate_mrr_microstructure,
+                        evaluate_mrr_from_prices,
+                        persist_mrr_record,
+                    )
+                    st.markdown("---")
+                    st.markdown("#### ⚡ Madhavan, Richardson & Roomans (1997) MRR Microstructure Engine")
+                    st.caption("Structural price revision conditioned on unexpected order flow innovations (x_t - φ x_{t-1}).")
+                    if len(prices) >= 32:
+                        mc1, mc2, mc3, mc4 = st.columns(4)
+                        mrr_rec = evaluate_mrr_from_prices(prices, ticker=selected_ticker)
+                        persist_mrr_record(mrr_rec)
+
+                        mc1.metric("Effective Spread", f"{mrr_rec.effective_spread_bps:.2f} bps")
+                        mc2.metric("Adverse Selection Ratio", f"{mrr_rec.adverse_selection_ratio*100:.1f}%", delta=f"${mrr_rec.theta_dollar:.4f} impact")
+                        mc3.metric("Order Processing Ratio", f"{mrr_rec.order_processing_ratio*100:.1f}%", delta=f"${mrr_rec.phi0_dollar:.4f} cost")
+                        mc4.metric("MRR Regime", mrr_rec.regime)
+                        st.caption(
+                            f"Order flow autocorrelation φ={mrr_rec.order_autocorrelation_phi:+.3f} (ρ={mrr_rec.continuation_prob_rho*100:.1f}%) | "
+                            f"Model R²={mrr_rec.r_squared:.3f} | Sample N={mrr_rec.sample_size} | "
+                            f"HMAC `{mrr_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 32 price sessions for MRR microstructure estimation.")
+                except Exception as mrr_ex:
+                    st.info(f"MRR microstructure estimation deferred: {mrr_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
