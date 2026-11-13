@@ -11586,6 +11586,27 @@ def render_dashboard() -> None:
                 except Exception as lob_ex:
                     st.info(f"Cont-Stoikov LOB evaluation deferred: {lob_ex}")
 
+                # Bruno Biais, Pierre Hillion & Chester Spatt (1995) LOB Order Flow Transition Dynamics
+                st.markdown("---")
+                st.subheader("🔄 Biais, Hillion & Spatt (1995) LOB Order Flow Dynamics & Diagonal Clustering")
+                try:
+                    from src.analytics.biais_hillion_spatt_lob import (
+                        evaluate_bhs_from_event_stream,
+                    )
+                    bhs_rec = evaluate_bhs_from_event_stream(ticker=ticker_input)
+                    bhs_col1, bhs_col2, bhs_col3, bhs_col4 = st.columns(4)
+                    bhs_col1.metric("Diagonal Persistence", f"{bhs_rec.diagonal_persistence_ratio:.2f}x")
+                    bhs_col2.metric("Replenishment Ratio", f"{bhs_rec.liquidity_replenishment_ratio:.2f}")
+                    bhs_col3.metric("Order Flow Entropy", f"{bhs_rec.shannon_entropy_bits:.2f} bits")
+                    bhs_col4.metric("Clustering Intensity", f"{bhs_rec.clustering_intensity*100:.1f}%")
+
+                    st.caption(
+                        f"Regime: **{bhs_rec.regime}** | Sample Events: `{bhs_rec.sample_events}` | "
+                        f"Mode: `{bhs_rec.derivation_mode}` | HMAC `{bhs_rec.hmac_signature[:16]}…`"
+                    )
+                except Exception as bhs_ex:
+                    st.info(f"Biais-Hillion-Spatt LOB evaluation deferred: {bhs_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

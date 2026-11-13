@@ -12825,6 +12825,46 @@ def cont_stoikov_lob_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def bhs_order_flow_command(args: argparse.Namespace) -> None:
+    """Run Bruno Biais, Pierre Hillion & Chester Spatt (1995) LOB Order Flow Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.biais_hillion_spatt_lob import (
+        calculate_bhs_transition_matrix,
+        evaluate_bhs_from_event_stream,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    events_raw = getattr(args, "events", None)
+    if events_raw:
+        ev_list = [x.strip() for x in events_raw.split(",") if x.strip()]
+        receipt = calculate_bhs_transition_matrix(ev_list, ticker=ticker)
+    else:
+        receipt = evaluate_bhs_from_event_stream(ticker=ticker)
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Biais, Hillion & Spatt (1995) LOB Order Flow Transition Dynamics")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Sample Events:             {receipt.sample_events}")
+    print(f"Diagonal Persistence (DPR):{receipt.diagonal_persistence_ratio:.4f}x")
+    print(f"Liquidity Replenishment:   {receipt.liquidity_replenishment_ratio:.4f}")
+    print(f"Order Flow Entropy:        {receipt.shannon_entropy_bits:.4f} bits")
+    print(f"Clustering Intensity:      {receipt.clustering_intensity*100:.2f}%")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -21239,6 +21279,34 @@ def main() -> None:
         help="Output Cont-Stoikov LOB receipt as JSON",
     )
 
+    # Subparser: bhs-order-flow (Bruno Biais, Pierre Hillion & Chester Spatt 1995 LOB Order Flow Engine)
+    bhs_parser = subparsers.add_parser(
+        "bhs-order-flow",
+        aliases=["bhs-1995", "order-flow-transitions", "lob-markov"],
+        help="Calculate Biais, Hillion & Spatt (1995) LOB Order Flow Transition Dynamics & Diagonal Effect",
+    )
+    bhs_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    bhs_parser.add_argument(
+        "--events",
+        type=str,
+        default=None,
+        help="Comma-separated stream of event codes (MB, MS, LB, LS, CB, CS)",
+    )
+    bhs_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    bhs_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output BHS order flow receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21671,6 +21739,8 @@ def main() -> None:
         avellaneda_stoikov_command(args)
     elif args.command in ("cont-stoikov-lob", "lob-queue", "cont-2010", "orderbook-dynamics"):
         cont_stoikov_lob_command(args)
+    elif args.command in ("bhs-order-flow", "bhs-1995", "order-flow-transitions", "lob-markov"):
+        bhs_order_flow_command(args)
 
 
 if __name__ == "__main__":
