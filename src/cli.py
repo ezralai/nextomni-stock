@@ -12171,6 +12171,42 @@ def sabr_vol_command(args: argparse.Namespace) -> None:
     )
 
 
+def dupire_vol_command(args: argparse.Namespace) -> None:
+    """Run Bruno Dupire (1994) Non-Parametric Local Volatility Surface Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.dupire_local_volatility import (
+        calculate_dupire_local_volatility,
+        persist_dupire_record,
+    )
+
+    receipt = calculate_dupire_local_volatility(
+        spot_price=args.spot,
+        strike_price=args.strike,
+        time_to_maturity=args.ttm,
+        risk_free_rate=args.rf,
+        dividend_yield=args.div,
+        atm_vol=args.vol,
+        skew_slope=args.skew,
+        vol_of_vol=args.vol_of_vol,
+        ticker=args.ticker,
+    )
+    persist_dupire_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ Bruno Dupire (1994) Local Volatility Surface [{receipt.ticker}]"
+        f"\n  Spot=${receipt.spot_price:.2f} | Strike=${receipt.strike_price:.2f} | T={receipt.time_to_maturity:.2f}y | rf={receipt.risk_free_rate*100:.2f}% | q={receipt.dividend_yield*100:.2f}%"
+        f"\n  Local Vol σ_loc={receipt.local_vol*100:.2f}% | Implied Vol σ_imp={receipt.implied_vol*100:.2f}% | Ratio={receipt.local_implied_ratio:.3f}x"
+        f"\n  dC/dT={receipt.dC_dT:.6f} | d²C/dK²={receipt.d2C_dK2:.8f} | RND Density ϕ(K)={receipt.risk_neutral_density:.5f}"
+        f"\n  Arbitrage Checks: Calendar={receipt.calendar_arbitrage_free} | Butterfly={receipt.butterfly_arbitrage_free}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19989,6 +20025,70 @@ def main() -> None:
         help="Output SABR volatility smile receipt as JSON",
     )
 
+    dupire_vol_parser = subparsers.add_parser(
+        "dupire-vol",
+        aliases=["dupire", "dupire-1994", "local-vol"],
+        help="Compute Bruno Dupire (1994) Non-Parametric Local Volatility Surface",
+    )
+    dupire_vol_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    dupire_vol_parser.add_argument(
+        "--spot",
+        type=float,
+        default=100.0,
+        help="Underlying spot price (default: 100.0)",
+    )
+    dupire_vol_parser.add_argument(
+        "--strike",
+        type=float,
+        default=100.0,
+        help="Evaluation strike price (default: 100.0)",
+    )
+    dupire_vol_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.20,
+        help="ATM implied volatility level (default: 0.20)",
+    )
+    dupire_vol_parser.add_argument(
+        "--skew",
+        type=float,
+        default=-0.15,
+        help="Implied volatility skew slope (default: -0.15)",
+    )
+    dupire_vol_parser.add_argument(
+        "--vol-of-vol",
+        type=float,
+        default=0.25,
+        help="Implied volatility smile curvature (default: 0.25)",
+    )
+    dupire_vol_parser.add_argument(
+        "--ttm",
+        type=float,
+        default=0.50,
+        help="Time to expiration in years (default: 0.50)",
+    )
+    dupire_vol_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Annualized risk-free rate (default: 0.04)",
+    )
+    dupire_vol_parser.add_argument(
+        "--div",
+        type=float,
+        default=0.0,
+        help="Continuous dividend yield (default: 0.0)",
+    )
+    dupire_vol_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Dupire local volatility receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20393,6 +20493,8 @@ def main() -> None:
         kou_jump_command(args)
     elif args.command in ("sabr-vol", "sabr", "sabr-2002", "hagan-sabr"):
         sabr_vol_command(args)
+    elif args.command in ("dupire-vol", "dupire", "dupire-1994", "local-vol"):
+        dupire_vol_command(args)
 
 
 if __name__ == "__main__":

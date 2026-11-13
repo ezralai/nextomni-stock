@@ -11213,6 +11213,34 @@ def render_dashboard() -> None:
                 except Exception as sabr_ex:
                     st.info(f"SABR volatility smile pricing deferred: {sabr_ex}")
 
+                try:
+                    from src.analytics.dupire_local_volatility import (
+                        calculate_dupire_local_volatility,
+                        evaluate_dupire_profile_from_prices,
+                        persist_dupire_record,
+                    )
+                    st.markdown("---")
+                    st.markdown("#### ⚡ Bruno Dupire (1994) Non-Parametric Local Volatility Surface Engine")
+                    st.caption("State-dependent diffusion σ_loc(S, t) reconstructed via Breeden-Litzenberger risk-neutral density.")
+                    if len(prices) >= 25:
+                        dc1, dc2, dc3, dc4 = st.columns(4)
+                        dupire_rec = evaluate_dupire_profile_from_prices(prices, ticker=selected_ticker, time_to_maturity=0.50, risk_free_rate=0.04)
+                        persist_dupire_record(dupire_rec)
+
+                        dc1.metric("Local / Implied Vol", f"{dupire_rec.local_vol*100:.2f}% / {dupire_rec.implied_vol*100:.2f}%")
+                        dc2.metric("Local/Implied Ratio", f"{dupire_rec.local_implied_ratio:.3f}x")
+                        dc3.metric("RND Density ϕ(K)", f"{dupire_rec.risk_neutral_density:.5f}")
+                        dc4.metric("Dupire Regime", dupire_rec.regime)
+                        st.caption(
+                            f"Time slope dC/dT={dupire_rec.dC_dT:.4f} | Curvature d²C/dK²={dupire_rec.d2C_dK2:.6f} | "
+                            f"Arbitrage checks: Calendar={dupire_rec.calendar_arbitrage_free}, Butterfly={dupire_rec.butterfly_arbitrage_free} | "
+                            f"HMAC `{dupire_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for Dupire local volatility extraction.")
+                except Exception as dup_ex:
+                    st.info(f"Dupire local volatility extraction deferred: {dup_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
