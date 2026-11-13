@@ -12058,6 +12058,49 @@ def merton_crra_command(args: argparse.Namespace) -> None:
     )
 
 
+def variance_swap_command(args: argparse.Namespace) -> None:
+    """Run Carr & Madan (1999) Variance Swap Fair Strike Pricing & VRP Analysis."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.carr_madan_variance_swap import (
+        calculate_carr_madan_variance_swap,
+        persist_variance_swap_record,
+    )
+
+    ticker = str(getattr(args, "ticker", "SPY")).strip().upper()
+    spot = float(getattr(args, "spot", 100.0))
+    ttm = float(getattr(args, "ttm", 0.25))
+    rf = float(getattr(args, "rf", 0.04))
+    vol = float(getattr(args, "vol", 0.20))
+    skew = float(getattr(args, "skew", -0.15))
+    real_vol = float(getattr(args, "realized_vol", 0.17))
+    n_strikes = int(getattr(args, "n_strikes", 200))
+
+    receipt = calculate_carr_madan_variance_swap(
+        spot_price=spot,
+        time_to_maturity=ttm,
+        risk_free_rate=rf,
+        atm_implied_vol=vol,
+        vol_skew_slope=skew,
+        realized_vol=real_vol,
+        n_strikes=n_strikes,
+        ticker=ticker,
+    )
+    persist_variance_swap_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ Carr & Madan (1999) Variance Swap Fair Strike [{receipt.ticker}]"
+        f"\n  Spot={receipt.spot_price:.2f} | T={receipt.time_to_maturity:.2f}y | rf={receipt.risk_free_rate*100:.2f}%"
+        f"\n  Fair Strike Vol σ_swap={receipt.fair_vol_strike*100:.2f}% | Fair K_var={receipt.fair_variance_strike:.6f}"
+        f"\n  Realized Vol={receipt.realized_vol*100:.2f}% | VRP={receipt.vol_risk_premium*100:+.2f}% | Put/Call Ratio={receipt.put_call_variance_ratio:.3f}"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19696,6 +19739,64 @@ def main() -> None:
         help="Output Merton CRRA allocation receipt as JSON",
     )
 
+    var_swap_parser = subparsers.add_parser(
+        "variance-swap",
+        aliases=["carr-madan", "cm-1999", "var-swap"],
+        help="Compute Carr & Madan (1999) Static Replication Variance Swap Fair Strike",
+    )
+    var_swap_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Option/asset ticker symbol (default: SPY)",
+    )
+    var_swap_parser.add_argument(
+        "--spot",
+        type=float,
+        default=100.0,
+        help="Underlying spot price (default: 100.0)",
+    )
+    var_swap_parser.add_argument(
+        "--vol",
+        type=float,
+        default=0.20,
+        help="ATM implied volatility (default: 0.20)",
+    )
+    var_swap_parser.add_argument(
+        "--skew",
+        type=float,
+        default=-0.15,
+        help="Implied volatility skew slope (default: -0.15)",
+    )
+    var_swap_parser.add_argument(
+        "--realized-vol",
+        type=float,
+        default=0.17,
+        help="Expected or historical realized volatility (default: 0.17)",
+    )
+    var_swap_parser.add_argument(
+        "--ttm",
+        type=float,
+        default=0.25,
+        help="Time to swap maturity in years (default: 0.25)",
+    )
+    var_swap_parser.add_argument(
+        "--rf",
+        type=float,
+        default=0.04,
+        help="Annualized risk-free rate (default: 0.04)",
+    )
+    var_swap_parser.add_argument(
+        "--n-strikes",
+        type=int,
+        default=200,
+        help="Number of discrete numerical quadrature strikes (default: 200)",
+    )
+    var_swap_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Carr-Madan variance swap receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20094,6 +20195,8 @@ def main() -> None:
         safety_first_command(args)
     elif args.command in ("merton-share", "merton-1969", "samuelson-merton", "crra-allocation"):
         merton_crra_command(args)
+    elif args.command in ("variance-swap", "carr-madan", "cm-1999", "var-swap"):
+        variance_swap_command(args)
 
 
 if __name__ == "__main__":

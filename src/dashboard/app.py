@@ -11123,6 +11123,38 @@ def render_dashboard() -> None:
                 except Exception as m_ex:
                     st.info(f"Samuelson-Merton CRRA lifetime allocation deferred: {m_ex}")
 
+                st.divider()
+                st.markdown("#### ⚡ Carr & Madan (1999) Variance Swap Fair Strike & VRP")
+                try:
+                    from src.analytics.carr_madan_variance_swap import evaluate_variance_swap_profile
+                    var_ttm = st.selectbox(
+                        "Variance Swap Tenor (Years)",
+                        options=[0.0833, 0.25, 0.50, 1.0],
+                        index=1,
+                        format_func=lambda x: f"{int(x*12)} Months" if x < 1.0 else "1 Year",
+                        key="carr_madan_ttm",
+                    )
+                    if len(prices) >= 25:
+                        vs_rec = evaluate_variance_swap_profile(
+                            prices["close"].values,
+                            ticker=symbol,
+                            time_to_maturity=float(var_ttm),
+                        )
+                        vc1, vc2, vc3, vc4 = st.columns(4)
+                        vc1.metric("Fair Vol / Realized Vol", f"{vs_rec.fair_vol_strike*100:.2f}% / {vs_rec.realized_vol*100:.2f}%")
+                        vc2.metric("Fair K_var / ATM Vol", f"{vs_rec.fair_variance_strike:.4f} / {vs_rec.atm_implied_vol*100:.2f}%")
+                        vc3.metric("VRP (Implied - Real)", f"{vs_rec.vol_risk_premium*100:+.2f}%")
+                        vc4.metric("Variance Swap Regime", vs_rec.regime)
+                        st.caption(
+                            f"OTM Put/Call ratio={vs_rec.put_call_variance_ratio:.2f} across {vs_rec.n_strikes} strikes | "
+                            f"Skew slope={vs_rec.vol_skew_slope:+.2f} | "
+                            f"HMAC `{vs_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for Variance Swap fair strike pricing.")
+                except Exception as vs_ex:
+                    st.info(f"Carr-Madan variance swap pricing deferred: {vs_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
