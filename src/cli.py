@@ -12138,6 +12138,39 @@ def kou_jump_command(args: argparse.Namespace) -> None:
     )
 
 
+def sabr_vol_command(args: argparse.Namespace) -> None:
+    """Run Patrick S. Hagan et al. (2002) SABR Stochastic Volatility Smile Evaluation."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.sabr_stochastic_volatility import (
+        calculate_sabr_profile,
+        persist_sabr_record,
+    )
+
+    receipt = calculate_sabr_profile(
+        forward_price=args.forward,
+        time_to_maturity=args.ttm,
+        alpha=args.alpha,
+        beta=args.beta,
+        rho=args.rho,
+        nu=args.nu,
+        ticker=args.ticker,
+    )
+    persist_sabr_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ Patrick S. Hagan et al. (2002) SABR Volatility Smile [{receipt.ticker}]"
+        f"\n  Forward F={receipt.forward_price:.2f} | T={receipt.time_to_maturity:.2f}y | α={receipt.alpha:.4f} | β={receipt.beta:.2f} | ρ={receipt.rho:+.2f} | ν={receipt.nu:.2f}"
+        f"\n  ATM Vol σ_ATM={receipt.atm_vol*100:.2f}% | 10% OTM Put Vol={receipt.otm_put_vol*100:.2f}% | 10% OTM Call Vol={receipt.otm_call_vol*100:.2f}%"
+        f"\n  Skew Slope={receipt.skew_slope*100:+.2f}% | Smile Convexity={receipt.smile_convexity*100:+.2f}%"
+        f"\n  Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -19904,6 +19937,58 @@ def main() -> None:
         help="Output Kou jump-diffusion receipt as JSON",
     )
 
+    sabr_vol_parser = subparsers.add_parser(
+        "sabr-vol",
+        aliases=["sabr", "sabr-2002", "hagan-sabr"],
+        help="Evaluate Patrick S. Hagan et al. (2002) SABR Stochastic Volatility Smile",
+    )
+    sabr_vol_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    sabr_vol_parser.add_argument(
+        "--forward",
+        type=float,
+        default=100.0,
+        help="Forward price F_0 (default: 100.0)",
+    )
+    sabr_vol_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.20,
+        help="Initial volatility level alpha > 0 (default: 0.20)",
+    )
+    sabr_vol_parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.50,
+        help="CEV elasticity parameter beta in [0, 1] (default: 0.50)",
+    )
+    sabr_vol_parser.add_argument(
+        "--rho",
+        type=float,
+        default=-0.30,
+        help="Correlation between asset and volatility rho in (-1, 1) (default: -0.30)",
+    )
+    sabr_vol_parser.add_argument(
+        "--nu",
+        type=float,
+        default=0.40,
+        help="Volatility of volatility nu >= 0 (default: 0.40)",
+    )
+    sabr_vol_parser.add_argument(
+        "--ttm",
+        type=float,
+        default=0.50,
+        help="Time to option maturity in years (default: 0.50)",
+    )
+    sabr_vol_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output SABR volatility smile receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20306,6 +20391,8 @@ def main() -> None:
         variance_swap_command(args)
     elif args.command in ("kou-jump", "kou-2002", "double-exponential", "kou-model"):
         kou_jump_command(args)
+    elif args.command in ("sabr-vol", "sabr", "sabr-2002", "hagan-sabr"):
+        sabr_vol_command(args)
 
 
 if __name__ == "__main__":

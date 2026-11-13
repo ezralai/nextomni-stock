@@ -11185,6 +11185,34 @@ def render_dashboard() -> None:
                 except Exception as kou_ex:
                     st.info(f"Kou jump-diffusion pricing deferred: {kou_ex}")
 
+                try:
+                    from src.analytics.sabr_stochastic_volatility import (
+                        calculate_sabr_profile,
+                        evaluate_sabr_from_history,
+                        persist_sabr_record,
+                    )
+                    st.markdown("---")
+                    st.markdown("#### ⚡ Patrick S. Hagan et al. (2002) SABR Stochastic Volatility Smile Engine")
+                    st.caption("Asymptotic Black-76 implied volatility smile expansion under stochastic alpha, beta, and rho.")
+                    if len(prices) >= 25:
+                        sc1, sc2, sc3, sc4 = st.columns(4)
+                        sabr_rec = evaluate_sabr_from_history(prices, ticker=selected_ticker, time_to_maturity=0.50, beta=0.50)
+                        persist_sabr_record(sabr_rec)
+
+                        sc1.metric("ATM Vol σ_ATM", f"{sabr_rec.atm_vol*100:.2f}%")
+                        sc2.metric("OTM Put / Call Vol", f"{sabr_rec.otm_put_vol*100:.2f}% / {sabr_rec.otm_call_vol*100:.2f}%")
+                        sc3.metric("Skew Slope / Convexity", f"{sabr_rec.skew_slope*100:+.2f}% / {sabr_rec.smile_convexity*100:.2f}%")
+                        sc4.metric("SABR Regime", sabr_rec.regime)
+                        st.caption(
+                            f"Parameters: α={sabr_rec.alpha:.4f}, β={sabr_rec.beta:.2f}, ρ={sabr_rec.rho:+.2f}, ν={sabr_rec.nu:.2f} | "
+                            f"Forward F={sabr_rec.forward_price:.2f} | "
+                            f"HMAC `{sabr_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for SABR smile estimation.")
+                except Exception as sabr_ex:
+                    st.info(f"SABR volatility smile pricing deferred: {sabr_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
