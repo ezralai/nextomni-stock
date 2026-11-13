@@ -12248,6 +12248,55 @@ def bates_opt_command(args: argparse.Namespace) -> None:
     )
 
 
+def cgarch_command(args: argparse.Namespace) -> None:
+    """Run Robert F. Engle & Gary G.J. Lee (1999) Component GARCH Two-Scale Volatility Engine."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.component_garch import (
+        calculate_component_garch,
+        evaluate_component_garch_profile,
+        persist_component_garch_record,
+    )
+    df = get_observations(args.ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 25:
+        prices = df["close"].values
+        receipt = evaluate_component_garch_profile(
+            prices,
+            ticker=args.ticker,
+            omega=args.omega,
+            rho=args.rho,
+            phi=args.phi,
+            alpha=args.alpha,
+            beta=args.beta,
+        )
+    else:
+        np.random.seed(42)
+        sim_returns = np.random.normal(0.0004, 0.012, size=150)
+        receipt = calculate_component_garch(
+            sim_returns,
+            omega=args.omega or 0.0001,
+            rho=args.rho,
+            phi=args.phi,
+            alpha=args.alpha,
+            beta=args.beta,
+            ticker=args.ticker,
+        )
+    persist_component_garch_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print(
+        f"\n⚡ Engle & Lee (1999) Component GARCH Two-Scale Volatility [{receipt.ticker}]"
+        f"\n  Sample N={receipt.sample_size} | Total Vol={receipt.latest_total_vol*100:.2f}% | Permanent Vol={receipt.latest_permanent_vol*100:.2f}%"
+        f"\n  Transitory Half-Life={receipt.transitory_half_life:.1f}d | Permanent Half-Life={receipt.permanent_half_life:.1f}d"
+        f"\n  Parameters: ω={receipt.omega:.6f}, ρ={receipt.rho:.4f}, φ={receipt.phi:.4f}, α={receipt.alpha:.4f}, β={receipt.beta:.4f}"
+        f"\n  Log-Likelihood={receipt.log_likelihood:.2f} | AIC={receipt.aic:.2f} | Regime={receipt.regime} | HMAC={receipt.hmac_signature[:16]}..."
+    )
+
+
 def main() -> None:
 
 
@@ -20224,6 +20273,52 @@ def main() -> None:
         help="Output Bates SVJ receipt as JSON",
     )
 
+    cgarch_parser = subparsers.add_parser(
+        "cgarch",
+        aliases=["c-garch", "component-garch", "engle-lee"],
+        help="Evaluate Robert F. Engle & Gary G.J. Lee (1999) Component GARCH Two-Scale Volatility",
+    )
+    cgarch_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    cgarch_parser.add_argument(
+        "--omega",
+        type=float,
+        default=0.0001,
+        help="Baseline permanent baseline variance omega (default: 0.0001)",
+    )
+    cgarch_parser.add_argument(
+        "--rho",
+        type=float,
+        default=0.98,
+        help="Permanent component persistence rho in (0, 1) (default: 0.98)",
+    )
+    cgarch_parser.add_argument(
+        "--phi",
+        type=float,
+        default=0.04,
+        help="Permanent component shock sensitivity phi >= 0 (default: 0.04)",
+    )
+    cgarch_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.06,
+        help="Transitory component shock reaction alpha >= 0 (default: 0.06)",
+    )
+    cgarch_parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.70,
+        help="Transitory component decay persistence beta (default: 0.70)",
+    )
+    cgarch_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Component GARCH receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -20632,6 +20727,8 @@ def main() -> None:
         dupire_vol_command(args)
     elif args.command in ("bates-opt", "bates", "bates-1996", "svj-model"):
         bates_opt_command(args)
+    elif args.command in ("cgarch", "c-garch", "component-garch", "engle-lee"):
+        cgarch_command(args)
 
 
 if __name__ == "__main__":

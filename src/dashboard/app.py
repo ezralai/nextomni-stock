@@ -11269,6 +11269,35 @@ def render_dashboard() -> None:
                 except Exception as bates_ex:
                     st.info(f"Bates SVJ pricing deferred: {bates_ex}")
 
+                try:
+                    from src.analytics.component_garch import (
+                        calculate_component_garch,
+                        evaluate_component_garch_profile,
+                        persist_component_garch_record,
+                    )
+                    st.markdown("---")
+                    st.markdown("#### ⚡ Engle & Lee (1999) Component GARCH (C-GARCH) Two-Scale Volatility Engine")
+                    st.caption("Decomposes conditional variance into permanent trend baseline q_t and transitory shock (h_t - q_t).")
+                    if len(prices) >= 25:
+                        gc1, gc2, gc3, gc4 = st.columns(4)
+                        cgarch_rec = evaluate_component_garch_profile(prices, ticker=selected_ticker)
+                        persist_component_garch_record(cgarch_rec)
+
+                        gc1.metric("Total Vol σ_t", f"{cgarch_rec.latest_total_vol*100:.2f}%")
+                        gc2.metric("Permanent Vol q_t", f"{cgarch_rec.latest_permanent_vol*100:.2f}%")
+                        gc3.metric("Transitory / Perm Half-Life", f"{cgarch_rec.transitory_half_life:.1f}d / {cgarch_rec.permanent_half_life:.1f}d")
+                        gc4.metric("C-GARCH Regime", cgarch_rec.regime)
+                        st.caption(
+                            f"Parameters: ω={cgarch_rec.omega:.6f}, ρ={cgarch_rec.rho:.4f}, φ={cgarch_rec.phi:.4f}, α={cgarch_rec.alpha:.4f}, β={cgarch_rec.beta:.4f} | "
+                            f"Permanent variance ratio={cgarch_rec.permanent_variance_ratio*100:.1f}% | "
+                            f"Log-Likelihood={cgarch_rec.log_likelihood:.1f} | "
+                            f"HMAC `{cgarch_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("ℹ️ Requires at least 25 price sessions for Component GARCH calibration.")
+                except Exception as cg_ex:
+                    st.info(f"Component GARCH calibration deferred: {cg_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
