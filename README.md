@@ -154,7 +154,7 @@ stock/
 
 ---
 
-## Setup & Installations
+## Setup & Installation
 
 ### Prerequisites
 - Python 3.12 (Recommended for macOS binary wheel support)
