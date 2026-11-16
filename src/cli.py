@@ -12865,6 +12865,64 @@ def bhs_order_flow_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def bouchaud_propagator_command(args: argparse.Namespace) -> None:
+    """Run Bouchaud, Gefen, Potters & Wyart (2004) Transient Market Impact Propagator Engine."""
+    import json
+    from dataclasses import asdict
+    import numpy as np
+    from src.analytics.bouchaud_propagator_impact import (
+        calculate_bouchaud_propagator,
+        evaluate_bouchaud_propagator_from_prices,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    max_lags = int(getattr(args, "lags", 15))
+
+    df = get_observations(ticker)
+    if df is not None and not df.empty and "close" in df.columns and len(df) >= 30:
+        receipt = evaluate_bouchaud_propagator_from_prices(
+            prices=df["close"].tolist(),
+            ticker=ticker,
+            max_lags=max_lags,
+        )
+    else:
+        rng = np.random.default_rng(42)
+        syn_prices = 100.0 + np.cumsum(rng.normal(0, 0.05, size=200))
+        syn_signs = np.where(rng.random(200) > 0.5, 1, -1)
+        receipt = calculate_bouchaud_propagator(
+            prices=syn_prices,
+            signed_trades=syn_signs,
+            ticker=ticker,
+            max_lags=max_lags,
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Bouchaud et al. (2004) Transient Market Impact Propagator Model")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Sample Observations:       {receipt.sample_trades}")
+    print(f"Propagator Decay (β):      {receipt.beta_propagator_decay:.4f}")
+    print(f"Order Flow Memory (γ):     {receipt.gamma_order_flow:.4f}")
+    print(f"Theoretical Balance β*:    {receipt.theoretical_beta_balance:.4f}  [(1 - γ) / 2]")
+    print(f"Efficiency Balance Gap:    {receipt.efficiency_gap:.4f}")
+    print(f"Instantaneous Impact (Γ₀): ${receipt.gamma_0_instantaneous:.6f}")
+    print(f"Resilience Half-Life:      {receipt.resilience_half_life:.2f} trades")
+    print(f"Permanent/Transient Ratio: {receipt.permanent_to_transient_ratio*100:.2f}%")
+    print(f"Peak Response:             ${receipt.peak_response_dollar:.4f}")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -21307,6 +21365,34 @@ def main() -> None:
         help="Output BHS order flow receipt as JSON",
     )
 
+    # Subparser: bouchaud-propagator (Bouchaud, Gefen, Potters & Wyart 2004 Transient Impact Engine)
+    bouchaud_parser = subparsers.add_parser(
+        "bouchaud-propagator",
+        aliases=["propagator-impact", "bgpw-2004", "transient-impact"],
+        help="Calculate Bouchaud et al. (2004) Transient Market Impact & Power-Law Propagator Kernel",
+    )
+    bouchaud_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    bouchaud_parser.add_argument(
+        "--lags",
+        type=int,
+        default=15,
+        help="Maximum lag horizon for propagator evaluation (default: 15)",
+    )
+    bouchaud_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    bouchaud_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Bouchaud Propagator receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21741,6 +21827,8 @@ def main() -> None:
         cont_stoikov_lob_command(args)
     elif args.command in ("bhs-order-flow", "bhs-1995", "order-flow-transitions", "lob-markov"):
         bhs_order_flow_command(args)
+    elif args.command in ("bouchaud-propagator", "propagator-impact", "bgpw-2004", "transient-impact"):
+        bouchaud_propagator_command(args)
 
 
 if __name__ == "__main__":

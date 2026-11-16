@@ -11607,6 +11607,32 @@ def render_dashboard() -> None:
                 except Exception as bhs_ex:
                     st.info(f"Biais-Hillion-Spatt LOB evaluation deferred: {bhs_ex}")
 
+                # Jean-Philippe Bouchaud et al. (2004) Transient Market Impact & Power-Law Propagator
+                st.markdown("---")
+                st.subheader("📉 Bouchaud et al. (2004) Transient Market Impact & Propagator Kernel")
+                try:
+                    from src.analytics.bouchaud_propagator_impact import (
+                        evaluate_bouchaud_propagator_from_prices,
+                    )
+                    bouch_rec = evaluate_bouchaud_propagator_from_prices(
+                        prices=hist_df['close'].tolist(),
+                        ticker=ticker_input,
+                        max_lags=15,
+                    )
+                    b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+                    b_col1.metric("Propagator Decay β", f"{bouch_rec.beta_propagator_decay:.3f}")
+                    b_col2.metric("Order Memory γ", f"{bouch_rec.gamma_order_flow:.3f}")
+                    b_col3.metric("Resilience Half-Life", f"{bouch_rec.resilience_half_life:.1f} trades")
+                    b_col4.metric("Efficiency Gap", f"{bouch_rec.efficiency_gap:.3f}")
+
+                    st.caption(
+                        f"Regime: **{bouch_rec.regime}** | Balance β* = (1-γ)/2: `{bouch_rec.theoretical_beta_balance:.3f}` | "
+                        f"Instant Impact Γ₀: `${bouch_rec.gamma_0_instantaneous:.4f}` | Perm/Trans Ratio: `{bouch_rec.permanent_to_transient_ratio*100:.1f}%` | "
+                        f"HMAC `{bouch_rec.hmac_signature[:16]}…`"
+                    )
+                except Exception as bouch_ex:
+                    st.info(f"Bouchaud Propagator evaluation deferred: {bouch_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
