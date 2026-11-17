@@ -11816,6 +11816,40 @@ def render_dashboard() -> None:
                 except Exception as shar_ex:
                     st.info(f"Patton-Sheppard SHAR evaluation deferred: {shar_ex}")
 
+                # Gatheral, Jaisson & Rosenbaum (2018) Rough Fractional Volatility Engine
+                st.markdown("---")
+                st.subheader("🌊 Gatheral, Jaisson & Rosenbaum (2018) Rough Volatility (Hurst H < 1/2)")
+                try:
+                    from src.analytics.gatheral_rough_volatility import (
+                        evaluate_rough_vol_from_prices,
+                    )
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 40:
+                        rough_rec = evaluate_rough_vol_from_prices(
+                            close_prices,
+                            ticker=ticker_input,
+                        )
+                        r_col1, r_col2, r_col3, r_col4 = st.columns(4)
+                        r_col1.metric("Hurst Parameter H", f"{rough_rec.hurst_exponent_h:.4f}")
+                        r_col2.metric("Hölder Regularity α", f"{rough_rec.holder_regularity_alpha:.4f}")
+                        r_col3.metric("Structure Scaling ζ₁", f"{rough_rec.zeta_q1:.4f}")
+                        r_col4.metric("Structure Scaling ζ₂", f"{rough_rec.zeta_q2:.4f}")
+
+                        r_col5, r_col6, r_col7, r_col8 = st.columns(4)
+                        r_col5.metric("Vol of Vol ν", f"{rough_rec.volatility_of_volatility_nu:.2f}")
+                        r_col6.metric("Annualized Vol", f"{rough_rec.mean_annualized_volatility:.2%}")
+                        r_col7.metric("Scaling Law R²", f"{rough_rec.structure_function_r2:.3f}")
+                        r_col8.metric("Sub-diffusive Rough", "YES" if rough_rec.hurst_exponent_h < 0.5 else "NO")
+
+                        st.caption(
+                            f"Regime: **{rough_rec.regime}** | Samples: `{rough_rec.sample_sessions}` | "
+                            f"Derivation: `{rough_rec.derivation_mode}` | HMAC `{rough_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for Gatheral rough volatility estimation (minimum 40 sessions required).")
+                except Exception as rough_ex:
+                    st.info(f"Gatheral rough volatility evaluation deferred: {rough_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

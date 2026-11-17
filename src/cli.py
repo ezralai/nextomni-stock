@@ -13323,6 +13323,65 @@ def patton_sheppard_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def gatheral_rough_vol_command(args: argparse.Namespace) -> None:
+    """Run Gatheral, Jaisson & Rosenbaum (2018) Rough Volatility & Hurst Parameter Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.gatheral_rough_volatility import (
+        calculate_gatheral_rough_volatility,
+        evaluate_rough_vol_from_prices,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    df = get_observations(ticker)
+
+    if df is not None and not df.empty and "close" in df.columns and len(df["close"].dropna()) >= 40:
+        prices = df["close"].dropna().values
+        receipt = evaluate_rough_vol_from_prices(
+            prices=prices,
+            ticker=ticker,
+            window=int(getattr(args, "window", 5)),
+        )
+    else:
+        import numpy as np
+        np.random.seed(42)
+        white_noise = np.random.normal(0, 0.1, 150)
+        kernel = np.array([(k + 1.0) ** (-0.35) for k in range(40)])
+        log_vol = np.convolve(white_noise, kernel, mode="same")
+        vol_series = 0.16 * np.exp(log_vol - np.mean(log_vol))
+        receipt = calculate_gatheral_rough_volatility(
+            volatility_series=vol_series,
+            ticker=ticker,
+            derivation_mode="FRACTIONAL_RIEMANN_LIOUVILLE_SYNTHETIC",
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Gatheral, Jaisson & Rosenbaum (2018) Rough Volatility (Hurst H < 1/2)")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Sample Sessions:           {receipt.sample_sessions}")
+    print(f"Hurst Parameter H:         {receipt.hurst_exponent_h:.4f}")
+    print(f"Hölder Regularity α:       {receipt.holder_regularity_alpha:.4f}")
+    print(f"Structure Scaling ζ₁:      {receipt.zeta_q1:.4f}")
+    print(f"Structure Scaling ζ₂:      {receipt.zeta_q2:.4f}")
+    print(f"Scaling Law Fit R²:        {receipt.structure_function_r2:.4f}")
+    print(f"Vol of Vol (ν):            {receipt.volatility_of_volatility_nu:.4f}")
+    print(f"Mean Annualized Vol:       {receipt.mean_annualized_volatility*100:.2f}%")
+    print(f"Sub-diffusive Rough:       {'YES (H < 0.5)' if receipt.hurst_exponent_h < 0.5 else 'NO (Diffusive/Persistent)'}")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -22048,6 +22107,34 @@ def main() -> None:
         help="Output Patton-Sheppard SHAR receipt as JSON",
     )
 
+    # Subparser: gatheral-rough-vol (Gatheral, Jaisson & Rosenbaum 2018 Rough Volatility Engine)
+    rough_parser = subparsers.add_parser(
+        "gatheral-rough-vol",
+        aliases=["rough-volatility", "gatheral-2018", "rbergomi-roughness"],
+        help="Calculate Gatheral, Jaisson & Rosenbaum (2018) Rough Fractional Volatility and Hurst Parameter",
+    )
+    rough_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    rough_parser.add_argument(
+        "--window",
+        type=int,
+        default=5,
+        help="Rolling volatility estimation window (default: 5 sessions)",
+    )
+    rough_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    rough_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Gatheral Rough Volatility receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -22496,6 +22583,8 @@ def main() -> None:
         andersen_har_j_command(args)
     elif args.command in ("patton-sheppard", "realized-semivariance", "good-bad-vol", "shar-model"):
         patton_sheppard_command(args)
+    elif args.command in ("gatheral-rough-vol", "rough-volatility", "gatheral-2018", "rbergomi-roughness"):
+        gatheral_rough_vol_command(args)
 
 
 if __name__ == "__main__":
