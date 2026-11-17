@@ -11781,6 +11781,41 @@ def render_dashboard() -> None:
                 except Exception as har_j_ex:
                     st.info(f"Andersen HAR-RV-J evaluation deferred: {har_j_ex}")
 
+                # Andrew J. Patton & Kevin Sheppard (2015) Realized Semivariance SHAR Asymmetry
+                st.markdown("---")
+                st.subheader("⚖️ Patton & Sheppard (2015) Realized Semivariance (Good/Bad Volatility)")
+                try:
+                    from src.analytics.patton_sheppard_realized_semivariance import (
+                        evaluate_semivariance_from_prices,
+                    )
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 35:
+                        shar_rec = evaluate_semivariance_from_prices(
+                            close_prices,
+                            ticker=ticker_input,
+                            use_log=True,
+                        )
+                        ps_col1, ps_col2, ps_col3, ps_col4 = st.columns(4)
+                        ps_col1.metric("Good Vol β⁺ (Upside)", f"{shar_rec.beta_positive_semivar:.3f}")
+                        ps_col2.metric("Bad Vol β⁻ (Downside)", f"{shar_rec.beta_negative_semivar:.3f}")
+                        ps_col3.metric("Asymmetry Ratio β⁻/β⁺", f"{shar_rec.asymmetry_ratio:.2f}x")
+                        ps_col4.metric("Downside Share RS⁻/RV", f"{shar_rec.downside_variance_share*100:.1f}%", f"+{shar_rec.bad_volatility_premium_bps:.0f} bps prem")
+
+                        ps_col5, ps_col6, ps_col7, ps_col8 = st.columns(4)
+                        ps_col5.metric("1D Forecast Vol", f"{shar_rec.forecast_1d_ann_vol:.2%}")
+                        ps_col6.metric("5D Forecast Vol", f"{shar_rec.forecast_5d_ann_vol:.2%}")
+                        ps_col7.metric("Weekly β(w)", f"{shar_rec.beta_weekly_rv:.3f}")
+                        ps_col8.metric("Monthly β(m)", f"{shar_rec.beta_monthly_rv:.3f}")
+
+                        st.caption(
+                            f"Regime: **{shar_rec.regime}** | Total Persistence: `{shar_rec.total_persistence:.3f}` | "
+                            f"R²: `{shar_rec.r_squared:.3f}` | HMAC `{shar_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for Patton-Sheppard SHAR model (minimum 35 sessions required).")
+                except Exception as shar_ex:
+                    st.info(f"Patton-Sheppard SHAR evaluation deferred: {shar_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
