@@ -13120,6 +13120,69 @@ def farmer_patelli_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def corsi_har_command(args: argparse.Namespace) -> None:
+    """Run Fulvio Corsi (2009) Heterogeneous Autoregressive Realized Volatility Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.corsi_har_realized_volatility import (
+        calculate_corsi_har_rv,
+        evaluate_corsi_har_from_prices,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    df = get_observations(ticker)
+
+    use_log = not getattr(args, "linear", False)
+
+    if df is not None and not df.empty and "close" in df.columns and len(df["close"].dropna()) >= 30:
+        prices = df["close"].dropna().values
+        receipt = evaluate_corsi_har_from_prices(
+            prices=prices,
+            ticker=ticker,
+            use_log=use_log,
+        )
+    else:
+        import numpy as np
+        np.random.seed(42)
+        base_rv = (0.16 / np.sqrt(252)) ** 2
+        noise = np.random.lognormal(mean=0.0, sigma=0.4, size=100)
+        rv_series = base_rv * noise
+        receipt = calculate_corsi_har_rv(
+            daily_rv_series=rv_series,
+            ticker=ticker,
+            use_log=use_log,
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Fulvio Corsi (2009) Heterogeneous Autoregressive Realized Volatility (HAR-RV)")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Sample Sessions:           {receipt.sample_sessions}")
+    print(f"Daily Component β_d:       {receipt.beta_daily:.4f}")
+    print(f"Weekly Component β_w:      {receipt.beta_weekly:.4f}")
+    print(f"Monthly Component β_m:     {receipt.beta_monthly:.4f}")
+    print(f"Intercept α:               {receipt.intercept:.6f}")
+    print(f"R-Squared (Fit):           {receipt.r_squared:.4f}")
+    print(f"Cascade Persistence:       {receipt.persistence:.4f}")
+    print(f"Volatility Half-Life:      {receipt.half_life_sessions:.1f} sessions")
+    print(f"1-Day Forecast Ann. Vol:   {receipt.forecast_1d_ann_vol*100:.2f}%")
+    print(f"5-Day Forecast Ann. Vol:   {receipt.forecast_5d_ann_vol*100:.2f}%")
+    print(f"22-Day Forecast Ann. Vol:  {receipt.forecast_22d_ann_vol*100:.2f}%")
+    print(f"Historical Mean Ann. Vol:  {receipt.historical_mean_ann_vol*100:.2f}%")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -21764,6 +21827,33 @@ def main() -> None:
         help="Output Farmer-Patelli-Zovko receipt as JSON",
     )
 
+    # Subparser: corsi-har-rv (Fulvio Corsi 2009 HAR-RV Cascade Engine)
+    har_parser = subparsers.add_parser(
+        "corsi-har-rv",
+        aliases=["har-rv", "corsi-2009", "realized-vol-cascade"],
+        help="Calculate Fulvio Corsi (2009) Heterogeneous Autoregressive Realized Volatility Cascade",
+    )
+    har_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    har_parser.add_argument(
+        "--linear",
+        action="store_true",
+        help="Use linear RV specification instead of log-RV",
+    )
+    har_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    har_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Corsi HAR-RV receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -22206,6 +22296,8 @@ def main() -> None:
         almgren_thum_command(args)
     elif args.command in ("farmer-patelli", "zero-intelligence-lob", "fpz-2005", "lob-liquidity-profile"):
         farmer_patelli_command(args)
+    elif args.command in ("corsi-har-rv", "har-rv", "corsi-2009", "realized-vol-cascade"):
+        corsi_har_command(args)
 
 
 if __name__ == "__main__":

@@ -11711,6 +11711,41 @@ def render_dashboard() -> None:
                 except Exception as fpz_ex:
                     st.info(f"Farmer-Patelli-Zovko evaluation deferred: {fpz_ex}")
 
+                # Fulvio Corsi (2009) Heterogeneous Autoregressive Realized Volatility (HAR-RV) Cascade
+                st.markdown("---")
+                st.subheader("📈 Fulvio Corsi (2009) Heterogeneous Autoregressive Realized Volatility (HAR-RV)")
+                try:
+                    from src.analytics.corsi_har_realized_volatility import (
+                        evaluate_corsi_har_from_prices,
+                    )
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 30:
+                        har_rec = evaluate_corsi_har_from_prices(
+                            close_prices,
+                            ticker=ticker_input,
+                            use_log=True,
+                        )
+                        har_col1, har_col2, har_col3, har_col4 = st.columns(4)
+                        har_col1.metric("Daily β (1D)", f"{har_rec.beta_daily:.3f}")
+                        har_col2.metric("Weekly β (5D)", f"{har_rec.beta_weekly:.3f}")
+                        har_col3.metric("Monthly β (22D)", f"{har_rec.beta_monthly:.3f}")
+                        har_col4.metric("Cascade Persistence", f"{har_rec.persistence:.3f}", f"{har_rec.half_life_sessions:.1f}d half-life")
+
+                        har_col5, har_col6, har_col7, har_col8 = st.columns(4)
+                        har_col5.metric("1D Forecast Vol", f"{har_rec.forecast_1d_ann_vol:.2%}")
+                        har_col6.metric("5D Forecast Vol", f"{har_rec.forecast_5d_ann_vol:.2%}")
+                        har_col7.metric("22D Forecast Vol", f"{har_rec.forecast_22d_ann_vol:.2%}")
+                        har_col8.metric("R² Fit", f"{har_rec.r_squared:.3f}")
+
+                        st.caption(
+                            f"Regime: **{har_rec.regime}** | Hist Mean Vol: `{har_rec.historical_mean_ann_vol:.2%}` | "
+                            f"Derivation: `{har_rec.derivation_mode}` | HMAC `{har_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for Corsi HAR-RV cascade (minimum 30 sessions required).")
+                except Exception as har_ex:
+                    st.info(f"Corsi HAR-RV evaluation deferred: {har_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
