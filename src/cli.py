@@ -12985,6 +12985,75 @@ def kyle_obizhaeva_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def almgren_thum_command(args: argparse.Namespace) -> None:
+    """Run Robert Almgren, Chee Thum, Emmanuel Hauptmann & Hong Li (2005) Metaorder Impact Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.almgren_thum_metaorder import (
+        calculate_almgren_thum_impact,
+        evaluate_almgren_thum_from_order,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    df = get_observations(ticker)
+
+    order_shares = float(getattr(args, "order_shares", 50000.0))
+    horizon_days = float(getattr(args, "horizon_days", 1.0))
+    risk_aversion = float(getattr(args, "risk_aversion", 1e-6))
+
+    if df is not None and not df.empty and "close" in df.columns and "volume" in df.columns and len(df) >= 20:
+        receipt = evaluate_almgren_thum_from_order(
+            prices=df["close"].tolist(),
+            volumes=df["volume"].tolist(),
+            order_shares=order_shares,
+            ticker=ticker,
+            horizon_days=horizon_days,
+            risk_aversion=risk_aversion,
+        )
+    else:
+        price = float(getattr(args, "price", 100.0))
+        adv = float(getattr(args, "adv", 1000000.0))
+        volatility = float(getattr(args, "volatility", 0.02))
+        receipt = calculate_almgren_thum_impact(
+            price=price,
+            order_shares=order_shares,
+            adv_shares=adv,
+            daily_volatility=volatility,
+            horizon_days=horizon_days,
+            risk_aversion=risk_aversion,
+            ticker=ticker,
+            derivation_mode="PARAMETRIC_SYNTHETIC",
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Almgren, Thum, Hauptmann & Li (2005) Metaorder Market Impact Engine")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Price:                     ${receipt.price:.2f}")
+    print(f"Metaorder Size:            {receipt.order_shares:,.0f} shares ({receipt.order_shares/receipt.adv_shares*100:.2f}% ADV)")
+    print(f"Average Daily Volume (V):  {receipt.adv_shares:,.0f} shares")
+    print(f"Daily Volatility (σ):      {receipt.daily_volatility*100:.2f}%")
+    print(f"Execution Horizon (T):     {receipt.horizon_days:.2f} trading days")
+    print(f"Permanent Impact:          {receipt.permanent_impact_bps:.2f} bps")
+    print(f"Temporary Impact:          {receipt.temporary_impact_bps:.2f} bps")
+    print(f"Expected Shortfall (IS):   {receipt.expected_shortfall_bps:.2f} bps  (${receipt.expected_shortfall_dollar:,.2f})")
+    print(f"Timing Risk Variance:      ${receipt.variance_shortfall_dollar:,.2f}")
+    print(f"Optimal Horizon T*:        {receipt.optimal_horizon_days:.2f} trading days")
+    print(f"Optimal Participation:     {receipt.optimal_participation_pct:.2f}% of ADV")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -21507,6 +21576,64 @@ def main() -> None:
         help="Output Kyle-Obizhaeva Invariance receipt as JSON",
     )
 
+    # Subparser: almgren-thum (Almgren, Thum, Hauptmann & Li 2005 Metaorder Impact Engine)
+    ath_parser = subparsers.add_parser(
+        "almgren-thum",
+        aliases=["metaorder-impact", "ath-2005", "nonlinear-execution"],
+        help="Calculate Almgren, Thum, Hauptmann & Li (2005) Metaorder Market Impact & Implementation Shortfall",
+    )
+    ath_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    ath_parser.add_argument(
+        "--order-shares",
+        type=float,
+        default=50000.0,
+        help="Target metaorder size in shares (default: 50000.0)",
+    )
+    ath_parser.add_argument(
+        "--horizon-days",
+        type=float,
+        default=1.0,
+        help="Planned execution duration in trading days (default: 1.0)",
+    )
+    ath_parser.add_argument(
+        "--risk-aversion",
+        type=float,
+        default=1e-6,
+        help="Trader CARA risk aversion parameter lambda (default: 1e-6)",
+    )
+    ath_parser.add_argument(
+        "--price",
+        type=float,
+        default=100.0,
+        help="Stock price for fallback calibration (default: 100.0)",
+    )
+    ath_parser.add_argument(
+        "--adv",
+        type=float,
+        default=1000000.0,
+        help="ADV shares for fallback calibration (default: 1000000.0)",
+    )
+    ath_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=0.02,
+        help="Daily volatility for fallback calibration (default: 0.02)",
+    )
+    ath_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    ath_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Almgren-Thum receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21945,6 +22072,8 @@ def main() -> None:
         bouchaud_propagator_command(args)
     elif args.command in ("kyle-obizhaeva", "microstructure-invariance", "kyle-2016", "invariance-laws"):
         kyle_obizhaeva_command(args)
+    elif args.command in ("almgren-thum", "metaorder-impact", "ath-2005", "nonlinear-execution"):
+        almgren_thum_command(args)
 
 
 if __name__ == "__main__":

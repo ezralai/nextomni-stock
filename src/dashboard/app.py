@@ -11659,6 +11659,34 @@ def render_dashboard() -> None:
                 except Exception as ko_ex:
                     st.info(f"Kyle-Obizhaeva Invariance evaluation deferred: {ko_ex}")
 
+                # Robert Almgren, Chee Thum, Emmanuel Hauptmann & Hong Li (2005) Metaorder Market Impact
+                st.markdown("---")
+                st.subheader("🎯 Almgren-Thum-Hauptmann-Li (2005) Empirical Metaorder Impact & Execution Horizon")
+                try:
+                    from src.analytics.almgren_thum_metaorder import (
+                        evaluate_almgren_thum_from_order,
+                    )
+                    ath_order_shares = float(hist_df['volume'].iloc[-20:].mean() * 0.05)
+                    ath_rec = evaluate_almgren_thum_from_order(
+                        prices=hist_df['close'].tolist(),
+                        volumes=hist_df['volume'].tolist(),
+                        order_shares=ath_order_shares,
+                        ticker=ticker_input,
+                        horizon_days=1.0,
+                    )
+                    ath_col1, ath_col2, ath_col3, ath_col4 = st.columns(4)
+                    ath_col1.metric("Expected Slippage", f"{ath_rec.expected_shortfall_bps:.2f} bps", f"${ath_rec.expected_shortfall_dollar:,.0f}")
+                    ath_col2.metric("Permanent Impact", f"{ath_rec.permanent_impact_bps:.2f} bps")
+                    ath_col3.metric("Temporary Impact", f"{ath_rec.temporary_impact_bps:.2f} bps")
+                    ath_col4.metric("Optimal Horizon T*", f"{ath_rec.optimal_horizon_days:.2f} days", f"POV {ath_rec.optimal_participation_pct:.1f}%")
+
+                    st.caption(
+                        f"Regime: **{ath_rec.regime}** | Metaorder: `{ath_rec.order_shares:,.0f}` shares (5% ADV) | "
+                        f"Timing Variance: `${ath_rec.variance_shortfall_dollar:,.0f}` | HMAC `{ath_rec.hmac_signature[:16]}…`"
+                    )
+                except Exception as ath_ex:
+                    st.info(f"Almgren-Thum Metaorder evaluation deferred: {ath_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
