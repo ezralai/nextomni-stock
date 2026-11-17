@@ -12923,6 +12923,68 @@ def bouchaud_propagator_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def kyle_obizhaeva_command(args: argparse.Namespace) -> None:
+    """Run Albert S. Kyle & Anna A. Obizhaeva (2016) Market Microstructure Invariance Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.kyle_obizhaeva_invariance import (
+        calculate_kyle_obizhaeva_invariance,
+        evaluate_kyle_obizhaeva_from_market_data,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    df = get_observations(ticker)
+
+    if df is not None and not df.empty and "close" in df.columns and "volume" in df.columns and len(df) >= 20:
+        receipt = evaluate_kyle_obizhaeva_from_market_data(
+            prices=df["close"].tolist(),
+            volumes=df["volume"].tolist(),
+            ticker=ticker,
+            actual_spread_bps=getattr(args, "spread_bps", None),
+        )
+    else:
+        price = float(getattr(args, "price", 100.0))
+        volume = float(getattr(args, "volume", 1e8))
+        volatility = float(getattr(args, "volatility", 0.02))
+        receipt = calculate_kyle_obizhaeva_invariance(
+            price=price,
+            daily_volume_dollar=volume,
+            daily_volatility=volatility,
+            actual_spread_bps=getattr(args, "spread_bps", None),
+            actual_trades=getattr(args, "trades", None),
+            ticker=ticker,
+            derivation_mode="PARAMETRIC_SYNTHETIC",
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Kyle & Obizhaeva (2016) Market Microstructure Invariance Scaling Laws")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Price:                     ${receipt.price:.2f}")
+    print(f"Daily Dollar Volume:       ${receipt.daily_volume_dollar:,.2f}")
+    print(f"Daily Volatility:          {receipt.daily_volatility*100:.2f}%")
+    print(f"Business Risk Velocity W:  ${receipt.business_risk_w:,.2f}")
+    print(f"Invariant Trades N*:       {receipt.invariant_trades_n:,.1f} trades/day")
+    print(f"Invariant Bet Size Q*:     ${receipt.invariant_trade_size_dollar:,.2f}")
+    print(f"Invariant Spread S*:       {receipt.invariant_spread_bps:.2f} bps")
+    print(f"Invariant Market Depth D*: ${receipt.invariant_depth_dollar:,.2f}")
+    print(f"Observed Spread:           {receipt.actual_spread_bps:.2f} bps")
+    print(f"Friction Ratio:            {receipt.friction_ratio:.4f}x")
+    print(f"Algorithmic Slicing:       {receipt.slicing_intensity:.4f}x")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -21393,6 +21455,58 @@ def main() -> None:
         help="Output Bouchaud Propagator receipt as JSON",
     )
 
+    # Subparser: kyle-obizhaeva (Albert S. Kyle & Anna A. Obizhaeva 2016 Invariance Engine)
+    kyle_parser = subparsers.add_parser(
+        "kyle-obizhaeva",
+        aliases=["microstructure-invariance", "kyle-2016", "invariance-laws"],
+        help="Calculate Kyle & Obizhaeva (2016) Market Microstructure Invariance Scaling Laws & Friction Ratio",
+    )
+    kyle_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    kyle_parser.add_argument(
+        "--price",
+        type=float,
+        default=100.0,
+        help="Current stock price for fallback calibration (default: 100.0)",
+    )
+    kyle_parser.add_argument(
+        "--volume",
+        type=float,
+        default=1e8,
+        help="Daily dollar volume for fallback calibration (default: 1e8)",
+    )
+    kyle_parser.add_argument(
+        "--volatility",
+        type=float,
+        default=0.02,
+        help="Daily returns volatility for fallback calibration (default: 0.02)",
+    )
+    kyle_parser.add_argument(
+        "--spread-bps",
+        type=float,
+        default=None,
+        help="Observed bid-ask spread in basis points (optional)",
+    )
+    kyle_parser.add_argument(
+        "--trades",
+        type=int,
+        default=None,
+        help="Observed daily trade count (optional)",
+    )
+    kyle_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    kyle_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Kyle-Obizhaeva Invariance receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -21829,6 +21943,8 @@ def main() -> None:
         bhs_order_flow_command(args)
     elif args.command in ("bouchaud-propagator", "propagator-impact", "bgpw-2004", "transient-impact"):
         bouchaud_propagator_command(args)
+    elif args.command in ("kyle-obizhaeva", "microstructure-invariance", "kyle-2016", "invariance-laws"):
+        kyle_obizhaeva_command(args)
 
 
 if __name__ == "__main__":

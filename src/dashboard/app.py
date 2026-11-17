@@ -11633,6 +11633,32 @@ def render_dashboard() -> None:
                 except Exception as bouch_ex:
                     st.info(f"Bouchaud Propagator evaluation deferred: {bouch_ex}")
 
+                # Albert S. Kyle & Anna A. Obizhaeva (2016) Market Microstructure Invariance
+                st.markdown("---")
+                st.subheader("⚖️ Kyle & Obizhaeva (2016) Market Microstructure Invariance Scaling Laws")
+                try:
+                    from src.analytics.kyle_obizhaeva_invariance import (
+                        evaluate_kyle_obizhaeva_from_market_data,
+                    )
+                    kyle_rec = evaluate_kyle_obizhaeva_from_market_data(
+                        prices=hist_df['close'].tolist(),
+                        volumes=hist_df['volume'].tolist(),
+                        ticker=ticker_input,
+                    )
+                    ko_col1, ko_col2, ko_col3, ko_col4 = st.columns(4)
+                    ko_col1.metric("Invariant Spread S*", f"{kyle_rec.invariant_spread_bps:.2f} bps")
+                    ko_col2.metric("Business Velocity W", f"${kyle_rec.business_risk_w:,.0f}")
+                    ko_col3.metric("Invariant Trades N*", f"{kyle_rec.invariant_trades_n:,.0f}/day")
+                    ko_col4.metric("Avg Bet Size Q*", f"${kyle_rec.invariant_trade_size_dollar:,.0f}")
+
+                    st.caption(
+                        f"Regime: **{kyle_rec.regime}** | Friction Ratio: `{kyle_rec.friction_ratio:.2f}x` | "
+                        f"Market Depth D*: `${kyle_rec.invariant_depth_dollar:,.0f}` | "
+                        f"HMAC `{kyle_rec.hmac_signature[:16]}…`"
+                    )
+                except Exception as ko_ex:
+                    st.info(f"Kyle-Obizhaeva Invariance evaluation deferred: {ko_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
