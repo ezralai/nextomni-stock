@@ -13054,6 +13054,72 @@ def almgren_thum_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def farmer_patelli_command(args: argparse.Namespace) -> None:
+    """Run J. Doyne Farmer, Paolo Patelli & Ilija I. Zovko (2005) Zero-Intelligence LOB Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.farmer_patelli_zovko_lob import (
+        calculate_fpz_liquidity_profile,
+        evaluate_fpz_from_order_book,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    df = get_observations(ticker)
+
+    price = float(df["close"].iloc[-1]) if (df is not None and not df.empty and "close" in df.columns) else float(getattr(args, "price", 100.0))
+
+    bids_arg = getattr(args, "bid_depths", None)
+    asks_arg = getattr(args, "ask_depths", None)
+
+    if bids_arg and asks_arg:
+        bids = [float(x.strip()) for x in bids_arg.split(",") if x.strip()]
+        asks = [float(x.strip()) for x in asks_arg.split(",") if x.strip()]
+        receipt = calculate_fpz_liquidity_profile(
+            mid_price=price,
+            bid_depths=bids,
+            ask_depths=asks,
+            actual_spread=getattr(args, "spread", None),
+            ticker=ticker,
+        )
+    else:
+        receipt = evaluate_fpz_from_order_book(
+            mid_price=price,
+            bid_depth_touch=float(getattr(args, "touch_bid", 250.0)),
+            ask_depth_touch=float(getattr(args, "touch_ask", 200.0)),
+            actual_spread=getattr(args, "spread", None),
+            ticker=ticker,
+            num_levels=int(getattr(args, "levels", 5)),
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Farmer, Patelli & Zovko (2005) Zero-Intelligence LOB Liquidity Profile")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Mid Price:                 ${receipt.mid_price:.2f}")
+    print(f"Levels Analyzed:           {receipt.levels_analyzed}")
+    print(f"Cumulative Depth Profile δ:{receipt.depth_exponent_delta:.4f}")
+    print(f"Placement Density Exp μ:   {receipt.placement_exponent_mu:.4f}")
+    print(f"Total Cumulative Depth:    {receipt.cumulative_depth_total:,.1f} shares")
+    print(f"Touch Depth Share:         {receipt.touch_depth_ratio*100:.2f}%")
+    print(f"ZI Equilibrium Spread:     {receipt.zi_equilibrium_spread_bps:.2f} bps")
+    print(f"Actual Observed Spread:    {receipt.actual_spread_bps:.2f} bps")
+    print(f"ZI Spread Friction Ratio:  {receipt.zi_spread_ratio:.4f}x")
+    print(f"ZI Implied Volatility:     {receipt.zi_implied_volatility*100:.3f}%")
+    print(f"Book Depth Elasticity:     {receipt.book_elasticity:.4f}")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -21634,6 +21700,70 @@ def main() -> None:
         help="Output Almgren-Thum receipt as JSON",
     )
 
+    # Subparser: farmer-patelli (Farmer, Patelli & Zovko 2005 Zero-Intelligence LOB Engine)
+    fpz_parser = subparsers.add_parser(
+        "farmer-patelli",
+        aliases=["zero-intelligence-lob", "fpz-2005", "lob-liquidity-profile"],
+        help="Calculate Farmer, Patelli & Zovko (2005) Zero-Intelligence Order Book & Power-Law Liquidity Profile",
+    )
+    fpz_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    fpz_parser.add_argument(
+        "--price",
+        type=float,
+        default=100.0,
+        help="Mid-price for fallback calibration (default: 100.0)",
+    )
+    fpz_parser.add_argument(
+        "--touch-bid",
+        type=float,
+        default=250.0,
+        help="Best bid depth in shares (default: 250.0)",
+    )
+    fpz_parser.add_argument(
+        "--touch-ask",
+        type=float,
+        default=200.0,
+        help="Best ask depth in shares (default: 200.0)",
+    )
+    fpz_parser.add_argument(
+        "--levels",
+        type=int,
+        default=5,
+        help="Number of book levels to analyze (default: 5)",
+    )
+    fpz_parser.add_argument(
+        "--bid-depths",
+        type=str,
+        default=None,
+        help="Comma-separated bid depths by level (e.g. '200,300,400,500')",
+    )
+    fpz_parser.add_argument(
+        "--ask-depths",
+        type=str,
+        default=None,
+        help="Comma-separated ask depths by level (e.g. '220,310,390,490')",
+    )
+    fpz_parser.add_argument(
+        "--spread",
+        type=float,
+        default=None,
+        help="Observed spread in dollars (optional)",
+    )
+    fpz_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    fpz_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Farmer-Patelli-Zovko receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -22074,6 +22204,8 @@ def main() -> None:
         kyle_obizhaeva_command(args)
     elif args.command in ("almgren-thum", "metaorder-impact", "ath-2005", "nonlinear-execution"):
         almgren_thum_command(args)
+    elif args.command in ("farmer-patelli", "zero-intelligence-lob", "fpz-2005", "lob-liquidity-profile"):
+        farmer_patelli_command(args)
 
 
 if __name__ == "__main__":

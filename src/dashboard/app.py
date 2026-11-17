@@ -11687,6 +11687,30 @@ def render_dashboard() -> None:
                 except Exception as ath_ex:
                     st.info(f"Almgren-Thum Metaorder evaluation deferred: {ath_ex}")
 
+                # J. Doyne Farmer, Paolo Patelli & Ilija I. Zovko (2005) Zero-Intelligence Order Book Profile
+                st.markdown("---")
+                st.subheader("📚 Farmer, Patelli & Zovko (2005) Zero-Intelligence LOB Liquidity Profile")
+                try:
+                    from src.analytics.farmer_patelli_zovko_lob import (
+                        evaluate_fpz_from_order_book,
+                    )
+                    fpz_rec = evaluate_fpz_from_order_book(
+                        mid_price=float(hist_df['close'].iloc[-1]),
+                        ticker=ticker_input,
+                    )
+                    fpz_col1, fpz_col2, fpz_col3, fpz_col4 = st.columns(4)
+                    fpz_col1.metric("Depth Exponent δ", f"{fpz_rec.depth_exponent_delta:.3f}")
+                    fpz_col2.metric("Placement Exponent μ", f"{fpz_rec.placement_exponent_mu:.3f}")
+                    fpz_col3.metric("ZI Spread S*", f"{fpz_rec.zi_equilibrium_spread_bps:.2f} bps")
+                    fpz_col4.metric("Touch Depth Share", f"{fpz_rec.touch_depth_ratio*100:.1f}%")
+
+                    st.caption(
+                        f"Regime: **{fpz_rec.regime}** | Total 5-Level Depth: `{fpz_rec.cumulative_depth_total:,.0f}` shares | "
+                        f"ZI Implied Vol: `{fpz_rec.zi_implied_volatility*100:.3f}%` | HMAC `{fpz_rec.hmac_signature[:16]}…`"
+                    )
+                except Exception as fpz_ex:
+                    st.info(f"Farmer-Patelli-Zovko evaluation deferred: {fpz_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
