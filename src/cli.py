@@ -13183,6 +13183,75 @@ def corsi_har_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def andersen_har_j_command(args: argparse.Namespace) -> None:
+    """Run Andersen, Bollerslev & Diebold (2007) HAR-RV-J Volatility & Jump Cascade Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.andersen_har_rv_jump import (
+        calculate_andersen_har_rv_j,
+        evaluate_har_j_from_prices,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    df = get_observations(ticker)
+
+    use_log = not getattr(args, "linear", False)
+
+    if df is not None and not df.empty and "close" in df.columns and len(df["close"].dropna()) >= 35:
+        prices = df["close"].dropna().values
+        receipt = evaluate_har_j_from_prices(
+            prices=prices,
+            ticker=ticker,
+            use_log=use_log,
+        )
+    else:
+        import numpy as np
+        np.random.seed(42)
+        base_rv = (0.16 / np.sqrt(252)) ** 2
+        noise = np.random.lognormal(mean=0.0, sigma=0.35, size=100)
+        rv_series = base_rv * noise
+        jumps = np.zeros(100)
+        jumps[np.random.choice(100, 10, replace=False)] = 2.0 * base_rv
+        receipt = calculate_andersen_har_rv_j(
+            daily_rv=rv_series,
+            daily_jumps=jumps,
+            ticker=ticker,
+            use_log=use_log,
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Andersen, Bollerslev & Diebold (2007) HAR-RV-J Volatility & Jump Cascade")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Sample Sessions:           {receipt.sample_sessions}")
+    print(f"Continuous Daily β_C(d):   {receipt.beta_continuous_daily:.4f}")
+    print(f"Continuous Weekly β_C(w):  {receipt.beta_continuous_weekly:.4f}")
+    print(f"Continuous Monthly β_C(m): {receipt.beta_continuous_monthly:.4f}")
+    print(f"Jump Component β_J:        {receipt.beta_jump:.4f}")
+    print(f"Intercept α:               {receipt.intercept:.6f}")
+    print(f"R-Squared (Fit):           {receipt.r_squared:.4f}")
+    print(f"Continuous Persistence:    {receipt.continuous_persistence:.4f}")
+    print(f"Total Persistence:         {receipt.total_persistence:.4f}")
+    print(f"Mean Jump Ratio J/RV:      {receipt.jump_ratio_mean*100:.2f}%")
+    print(f"Jump Frequency:            {receipt.jump_frequency_pct:.1f}%")
+    print(f"1-Day Forecast Ann. Vol:   {receipt.forecast_1d_ann_vol*100:.2f}%")
+    print(f"5-Day Forecast Ann. Vol:   {receipt.forecast_5d_ann_vol*100:.2f}%")
+    print(f"22-Day Forecast Ann. Vol:  {receipt.forecast_22d_ann_vol*100:.2f}%")
+    print(f"Historical Mean Ann. Vol:  {receipt.historical_mean_ann_vol*100:.2f}%")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -21854,6 +21923,33 @@ def main() -> None:
         help="Output Corsi HAR-RV receipt as JSON",
     )
 
+    # Subparser: andersen-har-j (Andersen, Bollerslev & Diebold 2007 HAR-RV-J Engine)
+    har_j_parser = subparsers.add_parser(
+        "andersen-har-j",
+        aliases=["har-rv-j", "andersen-2007", "vol-jump-cascade"],
+        help="Calculate Andersen, Bollerslev & Diebold (2007) HAR-RV-J Continuous & Jump Volatility Cascade",
+    )
+    har_j_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    har_j_parser.add_argument(
+        "--linear",
+        action="store_true",
+        help="Use linear RV specification instead of log-RV",
+    )
+    har_j_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    har_j_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Andersen HAR-RV-J receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -22298,6 +22394,8 @@ def main() -> None:
         farmer_patelli_command(args)
     elif args.command in ("corsi-har-rv", "har-rv", "corsi-2009", "realized-vol-cascade"):
         corsi_har_command(args)
+    elif args.command in ("andersen-har-j", "har-rv-j", "andersen-2007", "vol-jump-cascade"):
+        andersen_har_j_command(args)
 
 
 if __name__ == "__main__":

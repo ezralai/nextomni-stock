@@ -11746,6 +11746,41 @@ def render_dashboard() -> None:
                 except Exception as har_ex:
                     st.info(f"Corsi HAR-RV evaluation deferred: {har_ex}")
 
+                # Andersen, Bollerslev & Diebold (2007) HAR-RV-J Volatility & Jump Cascade
+                st.markdown("---")
+                st.subheader("⚡ Andersen, Bollerslev & Diebold (2007) HAR-RV-J Jump Decomposition")
+                try:
+                    from src.analytics.andersen_har_rv_jump import (
+                        evaluate_har_j_from_prices,
+                    )
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 35:
+                        har_j_rec = evaluate_har_j_from_prices(
+                            close_prices,
+                            ticker=ticker_input,
+                            use_log=True,
+                        )
+                        hj_col1, hj_col2, hj_col3, hj_col4 = st.columns(4)
+                        hj_col1.metric("Continuous Daily β_C(d)", f"{har_j_rec.beta_continuous_daily:.3f}")
+                        hj_col2.metric("Continuous Weekly β_C(w)", f"{har_j_rec.beta_continuous_weekly:.3f}")
+                        hj_col3.metric("Continuous Monthly β_C(m)", f"{har_j_rec.beta_continuous_monthly:.3f}")
+                        hj_col4.metric("Jump Impact β_J", f"{har_j_rec.beta_jump:.3f}", f"Freq {har_j_rec.jump_frequency_pct:.1f}%")
+
+                        hj_col5, hj_col6, hj_col7, hj_col8 = st.columns(4)
+                        hj_col5.metric("1D Forecast Vol", f"{har_j_rec.forecast_1d_ann_vol:.2%}")
+                        hj_col6.metric("5D Forecast Vol", f"{har_j_rec.forecast_5d_ann_vol:.2%}")
+                        hj_col7.metric("Continuous Persistence", f"{har_j_rec.continuous_persistence:.3f}")
+                        hj_col8.metric("Mean Jump Ratio J/RV", f"{har_j_rec.jump_ratio_mean*100:.1f}%")
+
+                        st.caption(
+                            f"Regime: **{har_j_rec.regime}** | Total Persistence: `{har_j_rec.total_persistence:.3f}` | "
+                            f"R²: `{har_j_rec.r_squared:.3f}` | HMAC `{har_j_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for Andersen HAR-RV-J jump cascade (minimum 35 sessions required).")
+                except Exception as har_j_ex:
+                    st.info(f"Andersen HAR-RV-J evaluation deferred: {har_j_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
