@@ -11884,6 +11884,40 @@ def render_dashboard() -> None:
                 except Exception as vrp_ex:
                     st.info(f"Carr-Wu VRP evaluation deferred: {vrp_ex}")
 
+                # Cecilia Mancini (2009, 2011) Threshold Realized Variation & Jump Filter
+                st.markdown("---")
+                st.subheader("🎯 Mancini (2009, 2011) Threshold Realized Variation (TRV / TBV)")
+                try:
+                    from src.analytics.mancini_threshold_variation import (
+                        evaluate_mancini_from_prices,
+                    )
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 30:
+                        man_rec = evaluate_mancini_from_prices(
+                            close_prices,
+                            ticker=ticker_input,
+                        )
+                        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                        m_col1.metric("Continuous Vol (TRV)", f"{man_rec.annualized_continuous_vol:.2%}")
+                        m_col2.metric("Total Vol (RV)", f"{man_rec.annualized_total_vol:.2%}")
+                        m_col3.metric("Jump Variance Share", f"{man_rec.jump_variance_share*100:.1f}%")
+                        m_col4.metric("Jump Count", f"{man_rec.jump_count}", f"λ: {man_rec.jump_arrival_intensity_ann:.1f}/yr")
+
+                        m_col5, m_col6, m_col7, m_col8 = st.columns(4)
+                        m_col5.metric("Threshold Cutoff", f"{man_rec.threshold_cutoff_bps:.1f} bps")
+                        m_col6.metric("Consecutive Jumps", f"{man_rec.consecutive_jumps_detected}")
+                        m_col7.metric("Threshold Bipower (TBV)", f"{man_rec.threshold_bipower_var:.6f}")
+                        m_col8.metric("Standard Bipower (BV)", f"{man_rec.standard_bipower_var:.6f}")
+
+                        st.caption(
+                            f"Regime: **{man_rec.regime}** | Samples: `{man_rec.sample_sessions}` | "
+                            f"Derivation: `{man_rec.derivation_mode}` | HMAC `{man_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for Mancini Threshold Variation (minimum 30 sessions required).")
+                except Exception as man_ex:
+                    st.info(f"Mancini Threshold Variation evaluation deferred: {man_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting

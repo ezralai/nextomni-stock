@@ -13442,6 +13442,73 @@ def carr_wu_vrp_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def mancini_threshold_command(args: argparse.Namespace) -> None:
+    """Run Mancini (2009, 2011) Threshold Realized Variation & Jump Filter Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.mancini_threshold_variation import (
+        calculate_mancini_threshold_variation,
+        evaluate_mancini_from_prices,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    df = get_observations(ticker)
+
+    threshold_c = float(getattr(args, "c", 3.0))
+    varpi = float(getattr(args, "varpi", 0.49))
+
+    if df is not None and not df.empty and "close" in df.columns and len(df["close"].dropna()) >= 30:
+        prices = df["close"].dropna().values
+        receipt = evaluate_mancini_from_prices(
+            prices=prices,
+            ticker=ticker,
+            threshold_c=threshold_c,
+            varpi=varpi,
+        )
+    else:
+        import numpy as np
+        np.random.seed(42)
+        base_price = 100.0
+        daily_vol = 0.16 / np.sqrt(252.0)
+        daily_rets = np.random.normal(0.0004, daily_vol, 90)
+        daily_rets[45] = 0.055
+        prices = base_price * np.exp(np.cumsum(daily_rets))
+        receipt = evaluate_mancini_from_prices(
+            prices=prices,
+            ticker=ticker,
+            threshold_c=threshold_c,
+            varpi=varpi,
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Mancini (2009, 2011) Threshold Realized Variation & Jump Filter")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Sample Sessions:           {receipt.sample_sessions}")
+    print(f"Total Realized Var (RV):   {receipt.total_realized_variance:.6f} (Ann Vol: {receipt.annualized_total_vol*100:.2f}%)")
+    print(f"Continuous Var (TRV):      {receipt.truncated_continuous_var:.6f} (Ann Vol: {receipt.annualized_continuous_vol*100:.2f}%)")
+    print(f"Truncated Jump Var (TJ):   {receipt.truncated_jump_var:.6f}")
+    print(f"Jump Variance Share:       {receipt.jump_variance_share*100:.2f}%")
+    print(f"Jump Count (NJ):           {receipt.jump_count}")
+    print(f"Consecutive Jumps:         {receipt.consecutive_jumps_detected}")
+    print(f"Annualized Jump Intensity: {receipt.jump_arrival_intensity_ann:.1f} jumps/year")
+    print(f"Threshold Cutoff:          {receipt.threshold_cutoff_bps:.1f} bps")
+    print(f"Threshold Bipower (TBV):   {receipt.threshold_bipower_var:.6f}")
+    print(f"Standard Bipower (BV):     {receipt.standard_bipower_var:.6f}")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -22235,6 +22302,40 @@ def main() -> None:
         help="Output Carr-Wu VRP receipt as JSON",
     )
 
+    # Subparser: mancini-threshold (Mancini 2009 Threshold Variation Engine)
+    mancini_parser = subparsers.add_parser(
+        "mancini-threshold",
+        aliases=["threshold-rv", "truncated-variation", "mancini-2009"],
+        help="Calculate Mancini (2009, 2011) Threshold Realized Variation and Jump Filter",
+    )
+    mancini_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    mancini_parser.add_argument(
+        "-c",
+        type=float,
+        default=3.0,
+        help="Mancini threshold multiplier constant c (default: 3.0)",
+    )
+    mancini_parser.add_argument(
+        "--varpi",
+        type=float,
+        default=0.49,
+        help="Mancini power parameter varpi in (0, 0.5) (default: 0.49)",
+    )
+    mancini_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    mancini_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Mancini Threshold receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -22687,6 +22788,8 @@ def main() -> None:
         gatheral_rough_vol_command(args)
     elif args.command in ("carr-wu-vrp", "variance-risk-premium", "vrp-engine", "variance-swap-spread"):
         carr_wu_vrp_command(args)
+    elif args.command in ("mancini-threshold", "threshold-rv", "truncated-variation", "mancini-2009"):
+        mancini_threshold_command(args)
 
 
 if __name__ == "__main__":
