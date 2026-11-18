@@ -13382,6 +13382,66 @@ def gatheral_rough_vol_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def carr_wu_vrp_command(args: argparse.Namespace) -> None:
+    """Run Carr & Wu (2009) Variance Risk Premium (VRP) & Variance Swap Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.carr_wu_variance_risk_premium import (
+        calculate_carr_wu_vrp,
+        evaluate_vrp_from_market_data,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    df = get_observations(ticker)
+
+    iv_arg = getattr(args, "iv", None)
+    iv_val = float(iv_arg) if iv_arg is not None else None
+    horizon = int(getattr(args, "horizon", 22))
+
+    if df is not None and not df.empty and "close" in df.columns and len(df["close"].dropna()) >= 30:
+        prices = df["close"].dropna().values
+        receipt = evaluate_vrp_from_market_data(
+            prices=prices,
+            implied_vol=iv_val,
+            ticker=ticker,
+            horizon_days=horizon,
+        )
+    else:
+        receipt = calculate_carr_wu_vrp(
+            implied_vol=iv_val if iv_val is not None else 0.20,
+            realized_vol_forecast=float(getattr(args, "rv", 0.16)),
+            ticker=ticker,
+            horizon_days=horizon,
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Carr & Wu (2009) Variance Risk Premium (VRP) & Variance Swap Engine")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Sample Sessions:           {receipt.sample_sessions}")
+    print(f"Forecast Horizon:          {receipt.horizon_days} trading days")
+    print(f"Implied Volatility (IV):   {receipt.implied_vol_ann*100:.2f}% (Variance: {receipt.implied_variance:.6f})")
+    print(f"Realized Vol Forecast (RV):{receipt.realized_vol_forecast_ann*100:.2f}% (Variance: {receipt.realized_variance:.6f})")
+    print(f"Volatility Spread (IV-RV): {receipt.volatility_spread_pts:+.2f} vol pts")
+    print(f"Variance Risk Premium:     {receipt.variance_risk_premium:+.6f}")
+    print(f"Log VRP (ln(IV²/RV²)):     {receipt.log_vrp:+.4f}")
+    print(f"VRP Standardized Z-Score:  {receipt.vrp_zscore:+.2f}")
+    print(f"Short Var Swap Exp. PnL:   {receipt.short_variance_swap_expected_pnl_pct:+.2f}%")
+    print(f"BTZ Equity Return Alpha:   {receipt.expected_equity_excess_return_bps:+.1f} bps")
+    print(f"Regime:                    {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256:               {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -22135,6 +22195,46 @@ def main() -> None:
         help="Output Gatheral Rough Volatility receipt as JSON",
     )
 
+    # Subparser: carr-wu-vrp (Carr & Wu 2009 Variance Risk Premium Engine)
+    vrp_parser = subparsers.add_parser(
+        "carr-wu-vrp",
+        aliases=["variance-risk-premium", "vrp-engine", "variance-swap-spread"],
+        help="Calculate Carr & Wu (2009) Variance Risk Premium and Variance Swap Spread",
+    )
+    vrp_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    vrp_parser.add_argument(
+        "--iv",
+        type=float,
+        default=None,
+        help="Annualized option implied volatility (e.g. 0.20 for 20%)",
+    )
+    vrp_parser.add_argument(
+        "--rv",
+        type=float,
+        default=0.16,
+        help="Annualized realized volatility forecast for fallback calibration (default: 0.16)",
+    )
+    vrp_parser.add_argument(
+        "--horizon",
+        type=int,
+        default=22,
+        help="Forecast horizon in sessions (default: 22)",
+    )
+    vrp_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    vrp_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output Carr-Wu VRP receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -22585,6 +22685,8 @@ def main() -> None:
         patton_sheppard_command(args)
     elif args.command in ("gatheral-rough-vol", "rough-volatility", "gatheral-2018", "rbergomi-roughness"):
         gatheral_rough_vol_command(args)
+    elif args.command in ("carr-wu-vrp", "variance-risk-premium", "vrp-engine", "variance-swap-spread"):
+        carr_wu_vrp_command(args)
 
 
 if __name__ == "__main__":

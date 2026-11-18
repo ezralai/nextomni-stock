@@ -11850,6 +11850,40 @@ def render_dashboard() -> None:
                 except Exception as rough_ex:
                     st.info(f"Gatheral rough volatility evaluation deferred: {rough_ex}")
 
+                # Peter Carr & Liuren Wu (2009) Variance Risk Premium & Variance Swap Spread
+                st.markdown("---")
+                st.subheader("📊 Carr & Wu (2009) Variance Risk Premium (VRP) & Var Swap")
+                try:
+                    from src.analytics.carr_wu_variance_risk_premium import (
+                        evaluate_vrp_from_market_data,
+                    )
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 30:
+                        vrp_rec = evaluate_vrp_from_market_data(
+                            close_prices,
+                            ticker=ticker_input,
+                        )
+                        vrp_col1, vrp_col2, vrp_col3, vrp_col4 = st.columns(4)
+                        vrp_col1.metric("Implied Vol (IV)", f"{vrp_rec.implied_vol_ann:.2%}")
+                        vrp_col2.metric("Realized Vol (RV)", f"{vrp_rec.realized_vol_forecast_ann:.2%}")
+                        vrp_col3.metric("Vol Spread (IV - RV)", f"{vrp_rec.volatility_spread_pts:+.2f} pts")
+                        vrp_col4.metric("Variance Premium (VRP)", f"{vrp_rec.variance_risk_premium:.5f}", f"z: {vrp_rec.vrp_zscore:+.1f}")
+
+                        vrp_col5, vrp_col6, vrp_col7, vrp_col8 = st.columns(4)
+                        vrp_col5.metric("Short Var Swap Exp PnL", f"{vrp_rec.short_variance_swap_expected_pnl_pct:+.1f}%")
+                        vrp_col6.metric("BTZ Equity Return Alpha", f"{vrp_rec.expected_equity_excess_return_bps:+.0f} bps")
+                        vrp_col7.metric("Log VRP", f"{vrp_rec.log_vrp:+.3f}")
+                        vrp_col8.metric("Horizon", f"{vrp_rec.horizon_days}d")
+
+                        st.caption(
+                            f"Regime: **{vrp_rec.regime}** | Derivation: `{vrp_rec.derivation_mode}` | "
+                            f"HMAC `{vrp_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for Carr-Wu VRP calculation (minimum 30 sessions required).")
+                except Exception as vrp_ex:
+                    st.info(f"Carr-Wu VRP evaluation deferred: {vrp_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
