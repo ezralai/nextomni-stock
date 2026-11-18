@@ -156,8 +156,11 @@ stock/
 
 ## Setup & Installation
 
+> [!TIP]
+> **Setting up on a new computer?** See the complete, step-by-step reproduction guide: **[SETUP_NEW_MACHINE.md](SETUP_NEW_MACHINE.md)** to recreate all virtual environments, CodeGraph indices, local SQLite databases, and models from scratch in under 2 minutes.
+
 ### Prerequisites
-- Python 3.12 (Recommended for macOS binary wheel support)
+- Python 3.10, 3.11, or 3.12
 - Git
 
 ### Quickstart
@@ -166,16 +169,19 @@ stock/
 git clone https://github.com/ezralai/nextomni-stock.git
 cd nextomni-stock
 
-# 2. Create and activate Python 3.12 virtual environment
-/usr/local/bin/python3.12 -m venv .venv
-source .venv/bin/activate
+# 2. Create and activate Python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # 3. Install dependencies
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# 4. Run the full automated test suite (46 tests)
-pytest -v
+# 4. Rebuild CodeGraph AST index
+python .agents/skills/codegraph/scripts/build_graph.py
+
+# 5. Run the full automated test suite (2,012 tests)
+pytest
 ```
 
 ---
