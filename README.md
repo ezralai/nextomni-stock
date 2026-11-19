@@ -163,7 +163,7 @@ stock/
 - Python 3.10, 3.11, or 3.12
 - Git
 
-### Quickstart
+### Quickstarts
 ```bash
 # 1. Clone repository
 git clone https://github.com/ezralai/nextomni-stock.git
