@@ -239,7 +239,7 @@ streamlit run src/dashboard/app.py
 ### Dashboard Tabs:
 1. **Live Market Monitor:** Real-time exchange operational status (NYSE, Bursa Malaysia), countdown timers, live quotes table with data latency badges (`REALTIME` / `DELAYED_15MIN`), provider source, and cache refresh button.
 2. **Stock Analytics & EDA:** Candlestick/Adjusted Close chart with SMA 5, SMA 20, SMA 50 overlays, volume histogram, 21-session rolling volatility, and peak-to-trough drawdown curves.
-3. **Multi-Horizon Forecasts:** 3 horizon KPI cards ($P_{t+1}$, $P_{t+5}$, $P_{t+21}$), forward price projection trajectory, and one-click "Register Forecasts in Audit Log" button.
+3. **Multi-Horizon Forecast:** 3 horizon KPI cards ($P_{t+1}$, $P_{t+5}$, $P_{t+21}$), forward price projection trajectory, and one-click "Register Forecasts in Audit Log" button.
 4. **Prediction Audit Log:** Reconciled predicted-versus-actual audit log, directional accuracy badges (✓ / ✗), and one-click "Reconcile Past Predictions" button.
 5. **Model Performance:** Detailed walk-forward validation comparison table and quantitative Ridge beta coefficient importance breakdown.
 
