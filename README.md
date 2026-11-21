@@ -218,7 +218,7 @@ python -m src.cli evaluate-pending
 # 8. Inspect predictions audit log
 python -m src.cli list-predictions
 
-# 9. Inspect real-time exchange operational status and calendar countdowns
+# 9. Inspect real-time exchange operational status and calendar countdown
 python -m src.cli session-status
 
 # 10. Monitor real-time quotes with session status and latency badges
