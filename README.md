@@ -105,7 +105,7 @@ Chronological expanding-window walk-forward backtest (minimum initial training w
 
 ---
 
-## Project Structure
+## Project Structures
 
 ```
 stock/
