@@ -93,7 +93,14 @@ class CodeGraphQueryEngine:
         """Compute recursive upstream callers that would be affected by changing target_symbol."""
         targets = self.find_node_ids(target_symbol)
         if not targets:
-            return {"target": target_symbol, "matched_nodes": [], "affected_files": [], "call_paths": []}
+            return {
+                "target": target_symbol,
+                "matched_nodes": [],
+                "total_affected_nodes": 0,
+                "affected_files": [],
+                "call_paths_count": 0,
+                "sample_paths": [],
+            }
 
         queue: deque = deque([(t, 0, [t]) for t in targets])
         visited: Set[str] = set(targets)
@@ -102,7 +109,7 @@ class CodeGraphQueryEngine:
 
         while queue:
             curr_id, depth, path = queue.popleft()
-            curr_file = self.nodes.get(curr_id, {}).get("file", curr_id.split(":")[0])
+            curr_file = self.nodes.get(curr_id, {}).get("file", curr_id.split(":")[0]).replace("\\", "/")
             if curr_file and not curr_file.startswith("external:") and not curr_file.startswith("db_table:"):
                 affected_files.add(curr_file)
 
@@ -162,7 +169,8 @@ class CodeGraphQueryEngine:
         exempt_prefixes = ("main", "run", "cli", "__", "test_")
 
         for node_id, node in self.nodes.items():
-            if node["type"] == "function" and node.get("file", "").startswith("src/"):
+            node_file = node.get("file", "").replace("\\", "/")
+            if node["type"] == "function" and node_file.startswith("src/"):
                 fn_name = node["name"]
                 if any(fn_name.startswith(p) for p in exempt_prefixes):
                     continue
@@ -172,7 +180,7 @@ class CodeGraphQueryEngine:
                 if not calls_edges:
                     dead_candidates.append({
                         "function_id": node_id,
-                        "file": node["file"],
+                        "file": node_file,
                         "name": fn_name,
                         "line": node.get("line"),
                         "total_inbound_edges": len(in_edges),
@@ -183,7 +191,8 @@ class CodeGraphQueryEngine:
         """List functions in src/ lacking test coverage and suggest corresponding test locations."""
         suggestions = []
         for node_id, node in self.nodes.items():
-            if node["type"] == "function" and node.get("file", "").startswith("src/"):
+            node_file = node.get("file", "").replace("\\", "/")
+            if node["type"] == "function" and node_file.startswith("src/"):
                 fn_name = node["name"]
                 if fn_name.startswith("__") or fn_name == "main":
                     continue
@@ -191,11 +200,11 @@ class CodeGraphQueryEngine:
                 in_edges = self.inbound.get(node_id, [])
                 test_edges = [e for e in in_edges if e["type"] == "TESTS"]
                 if not test_edges:
-                    src_file = Path(node["file"])
+                    src_file = Path(node_file)
                     suggested_test_file = f"tests/test_{src_file.stem}.py"
                     suggestions.append({
                         "function_id": node_id,
-                        "file": node["file"],
+                        "file": node_file,
                         "name": fn_name,
                         "line": node.get("line"),
                         "suggested_test_file": suggested_test_file,

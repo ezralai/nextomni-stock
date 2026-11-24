@@ -234,7 +234,7 @@ def extract_repository_graph(
     py_files = sorted(list(root_dir.glob("src/**/*.py")) + list(root_dir.glob("tests/**/*.py")))
 
     for py_file in py_files:
-        rel_path = str(py_file.relative_to(root_dir))
+        rel_path = str(py_file.relative_to(root_dir)).replace("\\", "/")
         curr_hash = compute_file_hash(py_file)
         new_hashes[rel_path] = curr_hash
 

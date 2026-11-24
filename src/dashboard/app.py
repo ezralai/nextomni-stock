@@ -73,9 +73,27 @@ def render_dashboard() -> None:
         initial_sidebar_state="expanded",
     )
 
+    # Inject Universal NextOmni Ecosystem Theme
+    css_path = Path(__file__).parent / "assets" / "omni-theme.css"
+    if css_path.exists():
+        with open(css_path, "r", encoding="utf-8") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
     # Sidebar: Exchange & Stock Selector
     st.sidebar.title("NextOmni Stock")
     st.sidebar.caption("Dual-Exchange Quantitative Intelligence Service")
+
+    with st.sidebar.expander("🌐 NextOmni Ecosystem Switcher", expanded=False):
+        st.markdown(
+            """
+            - 🏠 **[Master Portal (5000)](http://localhost:5000)**
+            - 🧘 **[NextOmni Life (3000)](http://localhost:3000)**
+            - 🎓 **[NextOmni Study (3001)](http://localhost:3001)**
+            - 💳 **[NextOmni Finance (3002)](http://localhost:3002)**
+            - 🧠 **[NextOmni Intel (8000)](http://localhost:8000/docs)**
+            - 📈 **NextOmni Stock (Active)**
+            """
+        )
 
     raw_exchange = st.sidebar.selectbox(
         "Select Exchange",
@@ -11917,6 +11935,38 @@ def render_dashboard() -> None:
                         st.info("Insufficient observation history for Mancini Threshold Variation (minimum 30 sessions required).")
                 except Exception as man_ex:
                     st.info(f"Mancini Threshold Variation evaluation deferred: {man_ex}")
+
+                # Barndorff-Nielsen, Hansen, Lunde & Shephard (2008, 2011) Realized Kernel Engine
+                st.markdown("---")
+                st.subheader("🛡️ Barndorff-Nielsen et al. (2008, 2011) Flat-Top Parzen Realized Kernel")
+                try:
+                    from src.analytics.realized_kernel import evaluate_realized_kernel_from_prices
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 20:
+                        rk_rec = evaluate_realized_kernel_from_prices(
+                            close_prices,
+                            ticker=ticker_input,
+                        )
+                        rk_col1, rk_col2, rk_col3, rk_col4 = st.columns(4)
+                        rk_col1.metric("Kernel Vol (K)", f"{rk_rec.annualized_kernel_vol:.2%}", delta=f"{rk_rec.noise_bias_correction_pct:+.1f}% vs RV")
+                        rk_col2.metric("Raw Realized Vol (RV)", f"{rk_rec.annualized_raw_vol:.2%}")
+                        rk_col3.metric("Optimal Bandwidth (H*)", f"{rk_rec.optimal_bandwidth} lags")
+                        rk_col4.metric("Noise-to-Signal (ξ)", f"{rk_rec.noise_to_signal_ratio:.4f}")
+
+                        rk_col5, rk_col6, rk_col7, rk_col8 = st.columns(4)
+                        rk_col5.metric("Noise Var (ω²)", f"{rk_rec.noise_variance:.2e}")
+                        rk_col6.metric("Int. Quarticity (IQ)", f"{rk_rec.integrated_quarticity:.2e}")
+                        rk_col7.metric("Kernel Function", rk_rec.kernel_function)
+                        rk_col8.metric("Noise Impact Regime", rk_rec.noise_regime)
+
+                        st.caption(
+                            f"Regime: **{rk_rec.noise_regime}** | Samples: `{rk_rec.sample_sessions}` | "
+                            f"Derivation: `{rk_rec.derivation_mode}` | HMAC `{rk_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for Realized Kernel (minimum 20 sessions required).")
+                except Exception as rk_ex:
+                    st.info(f"Realized Kernel evaluation deferred: {rk_ex}")
 
 
     # =========================================================================
