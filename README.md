@@ -83,7 +83,7 @@ Predictions are recorded immutably with UUID4 identifiers and evaluated against 
 
 ---
 
-## Empirical Walk-Forward Validation Results
+## Empirical Walk-Forward Validation Result
 
 Chronological expanding-window walk-forward backtest (minimum initial training window: 120 trading sessions, evaluated fold-by-fold across historical out-of-sample datas):
 
