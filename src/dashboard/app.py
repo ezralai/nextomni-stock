@@ -12033,6 +12033,40 @@ def render_dashboard() -> None:
                 except Exception as pa_ex:
                     st.info(f"Pre-averaging evaluation deferred: {pa_ex}")
 
+                # Aït-Sahalia & Jacod (2009, 2012) Power Variation Ratio Jump Test Engine
+                st.markdown("---")
+                st.subheader("⚡ Aït-Sahalia & Jacod (2009) Power Variation Ratio Jump Test")
+                try:
+                    from src.analytics.aitsahalia_jacod_jumps import evaluate_aitsahalia_from_prices
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 30:
+                        as_rec = evaluate_aitsahalia_from_prices(
+                            close_prices,
+                            ticker=ticker_input,
+                            p=4.0,
+                            k=2,
+                        )
+                        as_col1, as_col2, as_col3, as_col4 = st.columns(4)
+                        as_col1.metric("Test Ratio S(4, 2)", f"{as_rec.test_ratio_s:.3f}", delta=f"Null: {as_rec.continuous_null_target:.1f} vs Alt: {as_rec.jump_alternative_target:.1f}")
+                        as_col2.metric("Test Statistic (Tn)", f"{as_rec.standardized_test_stat:.2f}")
+                        as_col3.metric("P-Value (Continuity)", f"{as_rec.p_value:.4f}")
+                        as_col4.metric("Jump Arrival", "JUMP DETECTED" if as_rec.is_jump_detected else "CONTINUOUS PATH", delta=as_rec.path_regime)
+
+                        as_col5, as_col6, as_col7, as_col8 = st.columns(4)
+                        as_col5.metric("Power Order (p)", f"{as_rec.power_p:.1f}")
+                        as_col6.metric("Subsample Step (k)", f"{as_rec.subsample_k}")
+                        as_col7.metric("Fine Power Var B(p)", f"{as_rec.high_freq_power_var:.2e}")
+                        as_col8.metric("Coarse Power Var B(p,k)", f"{as_rec.coarse_freq_power_var:.2e}")
+
+                        st.caption(
+                            f"Regime: **{as_rec.path_regime}** | Sessions: `{as_rec.sample_sessions}` | "
+                            f"Derivation: `{as_rec.derivation_mode}` | HMAC `{as_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for Aït-Sahalia Jump Test (minimum 30 sessions required).")
+                except Exception as as_ex:
+                    st.info(f"Aït-Sahalia Jump Test evaluation deferred: {as_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
