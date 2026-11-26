@@ -13572,6 +13572,80 @@ def realized_kernel_command(args: argparse.Namespace) -> None:
     print("=" * 72)
 
 
+def harq_volatility_command(args: argparse.Namespace) -> None:
+    """Run Bollerslev, Patton & Quaedvlieg (2016) HARQ Volatility Engine."""
+    import json
+    from dataclasses import asdict
+    from src.analytics.bollerslev_harq_volatility import (
+        evaluate_harq_from_prices,
+        persist_as_record,
+    )
+
+    ticker = (getattr(args, "ticker", None) or "SPY").strip().upper()
+    try:
+        df = get_observations(ticker)
+    except Exception:
+        df = None
+
+    is_full_harq_f = getattr(args, "full_harq", False)
+
+    if df is not None and not df.empty and "close" in df.columns and len(df["close"].dropna()) >= 35:
+        prices = df["close"].dropna().values
+        receipt = evaluate_harq_from_prices(
+            prices=prices,
+            ticker=ticker,
+            is_full_harq_f=is_full_harq_f,
+        )
+    else:
+        import numpy as np
+        np.random.seed(42)
+        base_price = 100.0
+        daily_vol = 0.16 / np.sqrt(252.0)
+        daily_rets = np.random.normal(0.0004, daily_vol, 90)
+        vol_regime = np.ones(90)
+        vol_regime[30:50] = 2.5
+        daily_rets = daily_rets * vol_regime
+        prices = base_price * np.exp(np.cumsum(daily_rets))
+        receipt = evaluate_harq_from_prices(
+            prices=prices,
+            ticker=ticker,
+            is_full_harq_f=is_full_harq_f,
+        )
+
+    if getattr(args, "persist", False):
+        persist_as_record(receipt)
+
+    if getattr(args, "json", False):
+        print(json.dumps(asdict(receipt), indent=2))
+        return
+
+    print("=" * 72)
+    print("Bollerslev, Patton & Quaedvlieg (2016) HARQ Realized Quarticity Engine")
+    print("=" * 72)
+    print(f"Ticker:                    {receipt.ticker}")
+    print(f"Sample Sessions:           {receipt.sample_sessions}")
+    print(f"Model Variant:             {'HARQ-F (Full Multi-Frequency)' if receipt.is_full_harq_f else 'HARQ (Daily Attenuation)'}")
+    print(f"Constant (beta_0):         {receipt.beta_0:.6f}")
+    print(f"Baseline Daily (beta_d):   {receipt.beta_daily:.4f}")
+    print(f"Quarticity Int (beta_dQ):  {receipt.beta_daily_quarticity:.4f}")
+    print(f"Weekly Lag (beta_w):       {receipt.beta_weekly:.4f}")
+    print(f"Monthly Lag (beta_m):      {receipt.beta_monthly:.4f}")
+    if receipt.is_full_harq_f:
+        print(f"Weekly Quarticity (beta_wQ):{receipt.beta_weekly_quarticity:.4f}")
+        print(f"Monthly Quarticity (beta_mQ):{receipt.beta_monthly_quarticity:.4f}")
+    print(f"Effective Daily Beta:      {receipt.effective_daily_persistence:.4f}")
+    print(f"Attenuation Damping:       {receipt.attenuation_effect_pct:.1f}%")
+    print(f"HARQ R^2:                  {receipt.r_squared_harq:.4f} (Baseline HAR: {receipt.r_squared_standard_har:.4f})")
+    print(f"R^2 Improvement:           {receipt.r_squared_improvement_pct:+.2f}%")
+    print(f"1-Day Ahead Ann Vol:       {receipt.forecast_1d_ann_vol*100:.2f}%")
+    print(f"5-Day Ahead Ann Vol:       {receipt.forecast_5d_ann_vol*100:.2f}%")
+    print(f"22-Day Ahead Ann Vol:      {receipt.forecast_22d_ann_vol*100:.2f}%")
+    print(f"Attenuation Regime:        {receipt.regime}")
+    print(f"Derivation Mode:           {receipt.derivation_mode}")
+    print(f"HMAC-SHA256 Signature:     {receipt.hmac_signature[:16]}...")
+    print("=" * 72)
+
+
 def main() -> None:
 
 
@@ -22427,6 +22501,33 @@ def main() -> None:
         help="Output Realized Kernel receipt as JSON",
     )
 
+    # Subparser: harq-volatility (Bollerslev, Patton & Quaedvlieg 2016 Realized Quarticity Model)
+    harq_parser = subparsers.add_parser(
+        "harq-volatility",
+        aliases=["harq", "harq-f", "bollerslev-2016"],
+        help="Calculate Bollerslev, Patton & Quaedvlieg (2016) HARQ Realized Quarticity Model",
+    )
+    harq_parser.add_argument(
+        "--ticker",
+        default="SPY",
+        help="Underlying asset ticker symbol (default: SPY)",
+    )
+    harq_parser.add_argument(
+        "--full-harq",
+        action="store_true",
+        help="Estimate full HARQ-F model with weekly and monthly quarticity interactions",
+    )
+    harq_parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Persist receipt to SQLite audit ledger",
+    )
+    harq_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output HARQ receipt as JSON",
+    )
+
     args = parser.parse_args()
 
     if args.command == "sync":
@@ -22883,6 +22984,8 @@ def main() -> None:
         mancini_threshold_command(args)
     elif args.command in ("realized-kernel", "barndorff-kernel", "parzen-kernel", "noise-robust-rv"):
         realized_kernel_command(args)
+    elif args.command in ("harq-volatility", "harq", "harq-f", "bollerslev-2016"):
+        harq_volatility_command(args)
 
 
 if __name__ == "__main__":

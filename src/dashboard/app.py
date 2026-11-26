@@ -11968,6 +11968,39 @@ def render_dashboard() -> None:
                 except Exception as rk_ex:
                     st.info(f"Realized Kernel evaluation deferred: {rk_ex}")
 
+                # Bollerslev, Patton & Quaedvlieg (2016) HARQ Volatility Engine
+                st.markdown("---")
+                st.subheader("🎯 Bollerslev, Patton & Quaedvlieg (2016) HARQ Realized Quarticity Cascade")
+                try:
+                    from src.analytics.bollerslev_harq_volatility import evaluate_harq_from_prices
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 35:
+                        harq_rec = evaluate_harq_from_prices(
+                            close_prices,
+                            ticker=ticker_input,
+                            is_full_harq_f=False,
+                        )
+                        hq_col1, hq_col2, hq_col3, hq_col4 = st.columns(4)
+                        hq_col1.metric("1D Forecast Vol", f"{harq_rec.forecast_1d_ann_vol:.2%}", delta=f"{harq_rec.r_squared_improvement_pct:+.1f}% R² vs HAR")
+                        hq_col2.metric("5D Forecast Vol", f"{harq_rec.forecast_5d_ann_vol:.2%}")
+                        hq_col3.metric("22D Forecast Vol", f"{harq_rec.forecast_22d_ann_vol:.2%}")
+                        hq_col4.metric("HARQ R²", f"{harq_rec.r_squared_harq:.3f}", delta=f"Base HAR: {harq_rec.r_squared_standard_har:.3f}")
+
+                        hq_col5, hq_col6, hq_col7, hq_col8 = st.columns(4)
+                        hq_col5.metric("Baseline Daily (βd)", f"{harq_rec.beta_daily:.3f}")
+                        hq_col6.metric("Quarticity Int (βdQ)", f"{harq_rec.beta_daily_quarticity:.3f}")
+                        hq_col7.metric("Effective Daily β", f"{harq_rec.effective_daily_persistence:.3f}")
+                        hq_col8.metric("Quarticity Damping", f"{harq_rec.attenuation_effect_pct:.1f}%")
+
+                        st.caption(
+                            f"Regime: **{harq_rec.regime}** | Samples: `{harq_rec.sample_sessions}` | "
+                            f"Derivation: `{harq_rec.derivation_mode}` | HMAC `{harq_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for HARQ Volatility Engine (minimum 35 sessions required).")
+                except Exception as hq_ex:
+                    st.info(f"HARQ Volatility evaluation deferred: {hq_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
