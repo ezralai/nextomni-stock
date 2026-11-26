@@ -12001,6 +12001,38 @@ def render_dashboard() -> None:
                 except Exception as hq_ex:
                     st.info(f"HARQ Volatility evaluation deferred: {hq_ex}")
 
+                # Christensen, Oomen & Podolskij (2014) Pre-averaging Jump Test Engine
+                st.markdown("---")
+                st.subheader("🔬 Christensen et al. (2014) Noise-Robust Pre-averaging Jump Test")
+                try:
+                    from src.analytics.christensen_preaveraging_jumps import evaluate_preaveraging_from_prices
+                    close_prices = hist_df['close'].dropna().values
+                    if len(close_prices) >= 30:
+                        pa_rec = evaluate_preaveraging_from_prices(
+                            close_prices,
+                            ticker=ticker_input,
+                        )
+                        pa_col1, pa_col2, pa_col3, pa_col4 = st.columns(4)
+                        pa_col1.metric("Pre-averaged Vol (PRV)", f"{pa_rec.annualized_total_vol:.2%}", delta=f"Raw: {math.sqrt(pa_rec.raw_realized_var*252):.2%}")
+                        pa_col2.metric("Continuous Vol (PBV)", f"{pa_rec.annualized_continuous_vol:.2%}")
+                        pa_col3.metric("Jump Ratio", f"{pa_rec.jump_ratio*100:.1f}%", delta=f"{pa_rec.preaveraged_jump_var:.6f}")
+                        pa_col4.metric("Jump Test Z-Score", f"{pa_rec.jump_test_z_score:.2f}", delta="Jump Detected" if pa_rec.is_jump_detected else "No Jump")
+
+                        pa_col5, pa_col6, pa_col7, pa_col8 = st.columns(4)
+                        pa_col5.metric("Noise Var (ω²)", f"{pa_rec.noise_variance_estimate:.2e}")
+                        pa_col6.metric("Pre-avg Window (k)", f"{pa_rec.block_size_k} bars", f"θ: {pa_rec.tuning_theta}")
+                        pa_col7.metric("Derivation Mode", pa_rec.derivation_mode)
+                        pa_col8.metric("Microstructure Regime", pa_rec.noise_regime)
+
+                        st.caption(
+                            f"Regime: **{pa_rec.noise_regime}** | Samples: `{pa_rec.sample_sessions}` | "
+                            f"Derivation: `{pa_rec.derivation_mode}` | HMAC `{pa_rec.hmac_signature[:16]}…`"
+                        )
+                    else:
+                        st.info("Insufficient observation history for Pre-averaging Engine (minimum 30 sessions required).")
+                except Exception as pa_ex:
+                    st.info(f"Pre-averaging evaluation deferred: {pa_ex}")
+
 
     # =========================================================================
     # TAB 3: Multi-Horizon Price Forecasting
