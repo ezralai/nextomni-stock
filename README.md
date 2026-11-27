@@ -245,7 +245,7 @@ streamlit run src/dashboard/app.py
 
 ---
 
-## Development Roadmap
+## Development Roadmaps
 
 - [x] **Phase 0:** Repository setup, data provider research, exchange calendar verification, and environment foundation.
 - [x] **Phase 1:** Historical data pipeline (SQLite storage, validation, Yahoo Finance adapter, corporate actions, and calendar cross-referencing).
