@@ -1,4 +1,4 @@
-# NextOmni Stock (`nextomni-stock`)
+ # NextOmni Stock (`nextomni-stock`)
 ## Real-Time Market Monitoring, Multi-Horizon Price Forecasting & Reconciled Prediction Evaluation
 
 A portfolio-quality, production-ready quantitative financial intelligence system integrated within the **NextOmni** ecosystem. Designed for multi-exchange market monitoring, multi-horizon price forecasting, and automated predicted-versus-actual evaluation across two major international stock exchanges:
@@ -46,7 +46,7 @@ A portfolio-quality, production-ready quantitative financial intelligence system
 
 ---
 
-## Key Methodological Principle
+## Key Methodological Principles
 
 ### 1. Dual-Exchange Calendar Science
 - Powered by `exchange_calendars` to handle exchange-specific holiday schedules, timezones, and trading hours.
